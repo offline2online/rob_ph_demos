@@ -628,3 +628,105 @@ test("template HTML: an event handler hidden behind a quoted '>' is refused; ord
     assert.equal(res.status, 200, html);
   }
 });
+
+// ── public endpoint abuse limits and CSP reports ────────────────────────
+
+function limitedApi({ limit, logs = [] } = {}) {
+  let t = Date.parse("2026-11-23T00:00:00Z");
+  const api = createConfigApi({
+    store: createMemoryStore(),
+    blobs: createMemoryBlobs(),
+    auth: createStaticAuth({}),
+    log: (level, msg) => logs.push(`${level} ${msg}`),
+    screensPerClientLimit: limit,
+    clock: () => t,
+  });
+  return { api, logs, advance: (ms) => { t += ms; } };
+}
+
+test("screen read: a per-client limit per minute; 429 is never cached; other clients and a new minute are unaffected", async () => {
+  const { api, advance } = limitedApi({ limit: 5 });
+  const get = (code, ip) => api.handle({ method: "GET", path: `/api/screens/${code}`, headers: {}, query: {}, ip });
+  const codes = [];
+  for (let i = 0; i < 7; i++) codes.push((await get(`GUESS-${i}`, "203.0.113.9")).status);
+  assert.deepEqual(codes, [404, 404, 404, 404, 404, 429, 429]);
+  const r = await get("GUESS-9", "203.0.113.9");
+  assert.equal(r.body.error.code, "rate-limited");
+  assert.equal(r.headers["Cache-Control"], "no-store");
+  assert.ok(Number(r.headers["Retry-After"]) >= 1);
+  assert.equal((await get("GUESS-1", "198.51.100.4")).status, 404, "another address");
+  assert.equal((await get("GUESS-1")).status, 404, "no address passed (local dev servers): not limited");
+  assert.equal((await api.handle({ method: "GET", path: "/api/health", headers: {}, query: {}, ip: "203.0.113.9" })).status, 200, "only /api/screens/** is limited");
+  advance(60000);
+  assert.equal((await get("GUESS-1", "203.0.113.9")).status, 404, "a new minute");
+});
+
+test("the screen read's client address follows the proxy's rule (src/rate-limit.js = ph-proxy/src/client-ip.js)", () => {
+  const { clientIpFromHeaders } = require("../src/rate-limit");
+  const twin = require("../../ph-proxy/src/client-ip").clientIpFromHeaders;
+  const cases = [
+    [{ "x-forwarded-for": "1.2.3.4, 203.0.113.9" }, {}],
+    [{ "x-forwarded-for": "6.6.6.6, 203.0.113.9, 35.1.1.1" }, { trustedHops: 2 }],
+    [{ "x-forwarded-for": "203.0.113.9" }, { trustedHops: 2 }],
+    [{}, { fallback: "169.254.1.1" }],
+    [{ "x-forwarded-for": " , " }, {}],
+    [{ "x-forwarded-for": "1.1.1.1, 2.2.2.2" }, { trustedHops: "junk" }],
+  ];
+  for (const [h, o] of cases) assert.equal(clientIpFromHeaders(h, o), twin(h, o), JSON.stringify(h));
+  const index = require("node:fs").readFileSync(require("node:path").join(__dirname, "..", "index.js"), "utf8");
+  assert.match(index, /clientIpFromHeaders\(req\.headers/, "index.js keys the limit on the trusted address");
+});
+
+test("CSP reports: 204 always; one short, sanitised log line per violation; extensions and junk ignored; rate limited", async () => {
+  const { api, logs } = limitedApi({ limit: 0 });
+  const post = (body, type = "application/csp-report", ip = "203.0.113.9") =>
+    api.handle({ method: "POST", path: "/api/csp-report", headers: { "content-type": type }, query: {}, body: Buffer.from(typeof body === "string" ? body : JSON.stringify(body)), ip });
+  const report = {
+    "csp-report": {
+      "document-uri": "https://screens.example.com/pharmacy-screen.html?device=DEV-SECRET-1&promo=morning",
+      "effective-directive": "script-src-elem",
+      "blocked-uri": "https://evil.example.com/x.js?token=abc",
+      "source-file": "https://screens.example.com/assets/js/player.0123456789.js",
+      "line-number": 42,
+      disposition: "report",
+    },
+  };
+  const r = await post(report);
+  assert.equal(r.status, 204);
+  assert.equal(r.body, null);
+  assert.equal(r.headers["Cache-Control"], "no-store");
+  assert.equal(logs.length, 1);
+  assert.equal(logs[0], "warn [csp] report script-src-elem blocked https://evil.example.com on /pharmacy-screen.html at /assets/js/player.0123456789.js:42");
+  assert.doesNotMatch(logs[0], /DEV-SECRET|token=/, "no query strings logged");
+  // The Reporting API's shape.
+  await post([{ type: "csp-violation", body: { documentURL: "https://s.example/admin/", effectiveDirective: "connect-src", blockedURL: "https://x.example/a", disposition: "report" } }, { type: "deprecation", body: {} }], "application/reports+json");
+  assert.equal(logs.at(-1), "warn [csp] report connect-src blocked https://x.example on /admin/");
+  assert.equal(logs.length, 2);
+  // Extensions, junk and oversized bodies: 204, nothing logged.
+  assert.equal((await post({ "csp-report": { "blocked-uri": "chrome-extension://abc/x.js", "effective-directive": "script-src" } })).status, 204);
+  assert.equal((await post("not json")).status, 204);
+  assert.equal((await post({ "csp-report": { "blocked-uri": "x".repeat(9000) } })).status, 204);
+  assert.equal(logs.length, 2);
+  await post({ "csp-report": { "blocked-uri": "inline", "effective-directive": "script-src-elem\u0000\n", "document-uri": "https://s.example/admin/" } });
+  assert.equal(logs.at(-1), "warn [csp] report script-src-elem?? blocked inline on /admin/");
+  // Per client: 30 a minute are logged, the rest still get 204.
+  for (let i = 0; i < 40; i++) assert.equal((await post(report, undefined, "198.51.100.7")).status, 204);
+  assert.equal(logs.filter((l) => l.includes("evil.example")).length, 1 + 30);
+  assert.equal((await api.handle({ method: "GET", path: "/api/csp-report", headers: {}, query: {} })).status, 405);
+  const pre = await api.handle({ method: "OPTIONS", path: "/api/csp-report", headers: {}, query: {} });
+  assert.equal(pre.headers["Access-Control-Allow-Methods"], "POST, OPTIONS");
+});
+
+test("the screen read's default limit fits a shared-address estate: 600 a minute everywhere it is set", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const root = path.join(__dirname, "..", "..", "..");
+  const read = (p) => fs.readFileSync(path.join(root, p), "utf8");
+  // A screen asks every 15 s (js/live-data.js CONFIG_POLL_MS), so 600 is about 150 screens behind one address.
+  assert.match(read("pharmacy-screen/js/live-data.js"), /CONFIG_POLL_MS = 15000;/);
+  for (const p of ["pharmacy-screen/config-api/index.js", "aws/lambda/config-api.js"]) {
+    assert.match(read(p), /count\(env\.PS_RATE_LIMIT_SCREENS_PER_IP_PER_MIN, 600\)/, p);
+  }
+  assert.match(read(".env.example"), /^PS_RATE_LIMIT_SCREENS_PER_IP_PER_MIN=600$/m);
+  assert.match(read("docs/CONFIGURATION.md"), /\| `PS_RATE_LIMIT_SCREENS_PER_IP_PER_MIN` \|[^\n]*\| `600` \| `600` \|/);
+});

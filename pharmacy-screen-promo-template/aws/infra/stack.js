@@ -4,22 +4,31 @@
 // to their Personalisation Hub instance. One CloudFormation stack:
 //
 //   CloudFront (one HTTPS domain)
-//     /*                       S3 site bucket (screen page, admin editor), Origin Access Control
+//     /*                       S3 site bucket (screen page), Origin Access Control
+//     /admin/*                 the same bucket (the admin editor), with the editor's Content-Security-Policy
 //     /pharmacyScreen/media/*  S3 media bucket (logos, backgrounds), Origin Access Control
-//     /api/screens/*           API Gateway, cached up to 60 s as the API's Cache-Control says
+//     /api/screens/*           API Gateway, cached up to 60 s as the API's Cache-Control says; the viewer
+//                              address goes to the API (not in the cache key) for its per-client limit
 //     /api/*                   API Gateway, not cached
 //   API Gateway HTTP API -> two Lambda functions (optionally inside the retailer's VPC)
-//     ConfigApi   /api/health, /api/screens/**, /api/admin/**           (lambda/config-api.js)
+//     ConfigApi   /api/health, /api/screens/**, /api/csp-report, /api/admin/**   (lambda/config-api.js)
 //     PhApi       /api/settings/ph-api[/**], /api/device/**             (lambda/ph-proxy.js)
 //   DynamoDB table        config records, audit logs, published screens, PH API settings
 //   KMS key               wraps the PH API token's data key (90-day rotation); only PhApi may use it
 //   Cognito user pool     admin sign-in, group "admin" (or the retailer's own OIDC provider instead)
-//   Secrets Manager       the value CloudFront sends API Gateway, so PhApi can trust the viewer address
+//   Secrets Manager       the value CloudFront sends API Gateway: both functions refuse a request without it
+//                         (403) and read it by reference at run time (lambda/origin-secret.js), never from
+//                         their environment; it also lets them trust the viewer address
+//
+// Content-Security-Policy: infra/csp.js, sent as Content-Security-Policy-Report-Only (a custom header; the
+// response headers policy's own CSP field can only enforce) on the screen and the editor.
 //
 // Parameters: infra/params.js. Deploy and tear down: scripts/deploy.mjs.
 // Everything is deleted with the stack unless retainData is set, which keeps
 // the table, the media bucket, the KMS key and the user pool.
 
+const fs = require("node:fs");
+const nodePath = require("node:path");
 const cdk = require("aws-cdk-lib");
 const s3 = require("aws-cdk-lib/aws-s3");
 const s3deploy = require("aws-cdk-lib/aws-s3-deployment");
@@ -41,9 +50,10 @@ const secretsmanager = require("aws-cdk-lib/aws-secretsmanager");
 const { Duration, RemovalPolicy, CfnOutput } = cdk;
 
 const PH_ROUTES = ["/api/settings/ph-api", "/api/settings/ph-api/{proxy+}", "/api/device/{proxy+}"];
-const CONFIG_ROUTES = ["/api/health", "/api/screens/{proxy+}", "/api/admin/{proxy+}"];
+const CONFIG_ROUTES = ["/api/health", "/api/screens/{proxy+}", "/api/csp-report", "/api/admin/{proxy+}"];
 const { STORE_ROOT } = require("./constants");
 const { adminConfig, adminConfigJs } = require("./admin-config");
+const { CSP_HEADER, screenCsp, editorCsp } = require("./csp");
 
 // CloudFront viewer-request function: "/" goes to the admin editor (as on our
 // Firebase Hosting site), "/admin" gets its slash, and a directory URL serves
@@ -96,8 +106,9 @@ class PharmacyScreenStack extends cdk.Stack {
     const siteBucket = new s3.Bucket(this, "SiteFiles", { ...bucketBase, removalPolicy: RemovalPolicy.DESTROY, autoDeleteObjects: true });
     const mediaBucket = new s3.Bucket(this, "MediaFiles", { ...bucketBase, removalPolicy: keepData, autoDeleteObjects: !p.retainData });
 
-    // CloudFront sends this to API Gateway on every request; PhApi trusts the
-    // viewer address only on requests that carry it (lambda/apigw.js).
+    // CloudFront sends this to API Gateway on every request; both functions
+    // refuse requests without it and trust the viewer address only on requests
+    // that carry it (lambda/apigw.js). The functions get its ARN, not its value.
     const originVerify = new secretsmanager.Secret(this, "OriginVerify", {
       description: `${p.stackName}: header value CloudFront adds to API requests`,
       generateSecretString: { passwordLength: 48, excludePunctuation: true },
@@ -119,6 +130,8 @@ class PharmacyScreenStack extends cdk.Stack {
         vpc.addGatewayEndpoint("S3Endpoint", { service: ec2.GatewayVpcEndpointAwsService.S3 });
         vpc.addGatewayEndpoint("DynamoDbEndpoint", { service: ec2.GatewayVpcEndpointAwsService.DYNAMODB });
         vpc.addInterfaceEndpoint("KmsEndpoint", { service: ec2.InterfaceVpcEndpointAwsService.KMS, subnets, securityGroups, privateDnsEnabled: true });
+        // The functions read the origin secret at run time (an interface endpoint has an hourly cost, like KMS's).
+        vpc.addInterfaceEndpoint("SecretsManagerEndpoint", { service: ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER, subnets, securityGroups, privateDnsEnabled: true });
       }
     }
 
@@ -136,12 +149,35 @@ class PharmacyScreenStack extends cdk.Stack {
         strictTransportSecurity: { accessControlMaxAge: Duration.days(365), includeSubdomains: false, override: true },
       },
     });
+    // A CloudFront origin header is a fixed value in the distribution's config: the template holds only the
+    // {{resolve:secretsmanager:…}} dynamic reference (CloudFormation fills it in at deploy), and the value can be
+    // read back with cloudfront:GetDistributionConfig. Changing the secret needs a redeploy. The functions never
+    // get the value in their environment (PS_ORIGIN_VERIFY_SECRET_ARN below).
     const apiOrigin = new origins.HttpOrigin(apiHost, {
       protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
       readTimeout: Duration.seconds(30),
       customHeaders: { "x-origin-verify": originVerify.secretValue.unsafeUnwrap() },
     });
-    // The public screen config: the API answers Cache-Control max-age=15, which
+    const withCsp = (id, value, comment) =>
+      new cloudfront.ResponseHeadersPolicy(this, id, {
+        comment,
+        securityHeadersBehavior: {
+          contentTypeOptions: { override: true },
+          referrerPolicy: { referrerPolicy: cloudfront.HeadersReferrerPolicy.SAME_ORIGIN, override: true },
+          strictTransportSecurity: { accessControlMaxAge: Duration.days(365), includeSubdomains: false, override: true },
+        },
+        customHeadersBehavior: { customHeaders: [{ header: CSP_HEADER, value, override: true }] },
+      });
+    const screenHeaders = withCsp("ScreenHeaders", screenCsp(), `${p.stackName}: screen page security headers and CSP`);
+    // Forwards the viewer address (for the screen read's per-client limit) and ?promo=; neither the Host header
+    // (API Gateway needs its own) nor anything else. Not part of the cache key (ScreensCache).
+    const screensOrigin = new cloudfront.OriginRequestPolicy(this, "ScreensOriginRequest", {
+      comment: `${p.stackName}: published screen config, viewer address for the rate limit`,
+      headerBehavior: cloudfront.OriginRequestHeaderBehavior.allowList("CloudFront-Viewer-Address"),
+      queryStringBehavior: cloudfront.OriginRequestQueryStringBehavior.allowList("promo"),
+      cookieBehavior: cloudfront.OriginRequestCookieBehavior.none(),
+    });
+    // The public screen config: the API answers Cache-Control max-age=5, which
     // this policy honours (up to 60 s), keyed by path and ?promo= only.
     const screensCache = new cloudfront.CachePolicy(this, "ScreensCache", {
       comment: `${p.stackName}: published screen config`,
@@ -160,6 +196,7 @@ class PharmacyScreenStack extends cdk.Stack {
       comment: `${p.stackName}: / -> /admin/, directory index`,
     });
     const https = cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS;
+    const siteOrigin = origins.S3BucketOrigin.withOriginAccessControl(siteBucket);
     const distribution = new cloudfront.Distribution(this, "Site", {
       comment: `${p.stackName}: pharmacy screen and admin`,
       domainNames: p.domainName ? [p.domainName] : undefined,
@@ -167,10 +204,10 @@ class PharmacyScreenStack extends cdk.Stack {
       minimumProtocolVersion: p.certificateArn ? cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021 : undefined,
       httpVersion: cloudfront.HttpVersion.HTTP2_AND_3,
       defaultBehavior: {
-        origin: origins.S3BucketOrigin.withOriginAccessControl(siteBucket),
+        origin: siteOrigin,
         viewerProtocolPolicy: https,
         cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
-        responseHeadersPolicy: headers,
+        responseHeadersPolicy: screenHeaders,
         functionAssociations: [{ function: router, eventType: cloudfront.FunctionEventType.VIEWER_REQUEST }],
       },
       additionalBehaviors: {
@@ -185,6 +222,7 @@ class PharmacyScreenStack extends cdk.Stack {
           viewerProtocolPolicy: https,
           allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
           cachePolicy: screensCache,
+          originRequestPolicy: screensOrigin,
           responseHeadersPolicy: headers,
         },
         "api/*": {
@@ -199,6 +237,7 @@ class PharmacyScreenStack extends cdk.Stack {
     });
     const siteUrl = p.domainName ? `https://${p.domainName}` : `https://${distribution.distributionDomainName}`;
     const adminUrl = `${siteUrl}/admin/`;
+    // The editor's behaviour is added below, once its sign-in (and so its token endpoint) is known.
 
     if (p.hostedZoneId) {
       const zone = route53.HostedZone.fromHostedZoneAttributes(this, "Zone", { hostedZoneId: p.hostedZoneId, zoneName: p.hostedZoneName });
@@ -270,6 +309,15 @@ class PharmacyScreenStack extends cdk.Stack {
       };
     }
 
+    // The editor: the same files, with its own CSP. It calls the sign-in's token endpoint itself (OIDC with PKCE).
+    const tokenOrigin = userPool ? oidc.tokenUrl.replace(/\/oauth2\/token$/, "") : new URL(oidc.tokenUrl).origin;
+    distribution.addBehavior("admin/*", siteOrigin, {
+      viewerProtocolPolicy: https,
+      cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+      responseHeadersPolicy: withCsp("EditorHeaders", editorCsp({ connect: [tokenOrigin] }), `${p.stackName}: admin editor security headers and CSP`),
+      functionAssociations: [{ function: router, eventType: cloudfront.FunctionEventType.VIEWER_REQUEST }],
+    });
+
     // ── functions ───────────────────────────────────────────────────────
     const code = lambda.Code.fromAsset(p.lambdaAsset);
     const authEnv = {
@@ -300,6 +348,7 @@ class PharmacyScreenStack extends cdk.Stack {
       PS_MEDIA_BUCKET: mediaBucket.bucketName,
       PS_MEDIA_BASE_URL: siteUrl,
       PS_ALLOWED_ORIGINS: siteUrl,
+      PS_ORIGIN_VERIFY_SECRET_ARN: originVerify.secretArn,
       ...authEnv,
     }, "Pharmacy screen config API: pharmacies, promotions, templates, services, published screen config");
     const phFn = fn("PhApi", "aws/lambda/ph-proxy.handler", {
@@ -307,9 +356,11 @@ class PharmacyScreenStack extends cdk.Stack {
       PH_ROOT: STORE_ROOT,
       PH_TOKEN_KMS_KEY: tokenKey.keyArn,
       PH_API_DEFAULT_BASE_URL: p.phApiBaseUrl,
+      // Hosts an admin may save as a base URL; unset = the host of the default base URL only.
+      ...(p.phApiAllowedHosts.length ? { PH_API_ALLOWED_HOSTS: p.phApiAllowedHosts.join(",") } : {}),
       PH_ALLOWED_ORIGINS: siteUrl,
       PH_TRUSTED_PROXY_HOPS: "2",
-      PS_ORIGIN_VERIFY: originVerify.secretValue.unsafeUnwrap(),
+      PS_ORIGIN_VERIFY_SECRET_ARN: originVerify.secretArn,
       ...authEnv,
     }, "Pharmacy screen PH API settings (encrypted token) and Location API proxy");
 
@@ -318,6 +369,8 @@ class PharmacyScreenStack extends cdk.Stack {
     mediaBucket.grantDelete(configFn);
     table.grantReadWriteData(phFn);
     tokenKey.grantEncryptDecrypt(phFn);
+    originVerify.grantRead(configFn);
+    originVerify.grantRead(phFn);
 
     const configInt = new integrations.HttpLambdaIntegration("ConfigApiIntegration", configFn);
     const phInt = new integrations.HttpLambdaIntegration("PhApiIntegration", phFn);
@@ -333,18 +386,36 @@ class PharmacyScreenStack extends cdk.Stack {
       logoutParam: oidc.logoutParam,
       scopes: p.oidcScopes,
     });
-    new s3deploy.BucketDeployment(this, "SiteUpload", {
+    // The screen's fingerprinted files (assets/: scripts, stylesheets, fonts, the Christmas photo; their names are
+    // the hash of their content, scripts/deploy.mjs buildShell) are uploaded first and kept by browsers and the CDN
+    // for a year: a name never changes what it answers. Earlier builds' files are kept (no prune), so a player still
+    // on the previous page can finish loading it. Everything else (the page, sw.js, the admin editor) is no-cache,
+    // and uploaded after, so a page never names a file that is not there yet.
+    // (A site staged empty, as for cdk destroy, has no assets/.)
+    const assetsDir = nodePath.join(p.siteAsset, "assets");
+    const assetUpload = fs.existsSync(assetsDir) && new s3deploy.BucketDeployment(this, "SiteAssetsUpload", {
+      sources: [s3deploy.Source.asset(assetsDir)],
+      destinationBucket: siteBucket,
+      destinationKeyPrefix: "assets/",
+      cacheControl: [s3deploy.CacheControl.fromString("public, max-age=31536000, immutable")],
+      prune: false,
+      memoryLimit: 512,
+    });
+    const siteUpload = new s3deploy.BucketDeployment(this, "SiteUpload", {
       sources: [
-        s3deploy.Source.asset(p.siteAsset, { exclude: ["admin/config.js"] }),
+        s3deploy.Source.asset(p.siteAsset, { exclude: ["admin/config.js", "assets/*"] }),
         s3deploy.Source.data("admin/config.js", adminConfigJs(editorConfig, (v) => this.toJsonString(v))),
       ],
       destinationBucket: siteBucket,
       distribution,
       distributionPaths: ["/*"],
       cacheControl: [s3deploy.CacheControl.noCache()],
+      // assets/ is the upload above's: excluded files are neither uploaded nor pruned here.
+      exclude: ["assets/*"],
       prune: true,
       memoryLimit: 512,
     });
+    if (assetUpload) siteUpload.node.addDependency(assetUpload);
 
     // ── outputs (scripts/deploy.mjs prints them) ────────────────────────
     const out = (id, value, description) => new CfnOutput(this, id, { value, description });

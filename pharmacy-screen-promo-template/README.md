@@ -60,16 +60,24 @@ The site root redirects to the admin app. The API is served through the same Hos
 | Path | Function |
 |---|---|
 | `/api/settings/ph-api`, `/api/settings/ph-api/**`, `/api/device/**` | `pharmacyScreenPhApi` (PH API settings, Location API proxy) |
-| `/api/health`, `/api/screens/**`, `/api/admin/**` | `pharmacyScreenConfigApi` (config API) |
+| `/api/health`, `/api/screens/**`, `/api/csp-report`, `/api/admin/**` | `pharmacyScreenConfigApi` (config API) |
 
-Both functions are Cloud Functions (2nd gen) in `us-central1`, also reachable directly at
-`https://us-central1-rob-ph-demos.cloudfunctions.net/pharmacyScreenConfigApi` and `…/pharmacyScreenPhApi`.
+Both functions are Cloud Functions (2nd gen) in `australia-southeast1` (Sydney, next to the stores; they ran in
+`us-central1` until 23 Nov 2026, and the deploy removes the old copies), also reachable directly at
+`https://australia-southeast1-rob-ph-demos.cloudfunctions.net/pharmacyScreenConfigApi` and `…/pharmacyScreenPhApi`.
+Neither keeps an instance warm (`PS_MIN_INSTANCES` / `PH_MIN_INSTANCES`, default 0), so the first request after a
+quiet spell has a cold start; keeping one warm is a monthly cost and the owner's decision
+([docs/CONFIGURATION.md](docs/CONFIGURATION.md)).
+
+The screen page and the editor are sent a `Content-Security-Policy-Report-Only` header (`aws/infra/csp.js`, the
+same in `firebase.json`); violations are reported to `/api/csp-report` and logged by the config API
+([docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) → "Content-Security-Policy").
 
 What runs where:
 
 | Part | Where | Notes |
 |---|---|---|
-| Screen and admin pages | Hosting site `rob-ph-demos-pharmacy-screen` (HTTPS) | Static files from `pharmacy-screen/` by allow-list (the screen and its service worker `sw.js`, `admin/`, and `seed/fixtures/` for the editor's Reset); server code, tests, tools, package files and env files are never published. The screen is kept on each player by `sw.js` and downloaded again only when a deploy changes it (`pharmacy-screen/README.md` → "Kept on the device") |
+| Screen and admin pages | Hosting site `rob-ph-demos-pharmacy-screen` (HTTPS) | Static files from `pharmacy-screen/` by allow-list (the screen and its service worker `sw.js`, `admin/`, and `seed/fixtures/` for the editor's Reset); server code, tests, tools, package files and env files are never published. The screen is kept on each player by `sw.js`, and after a deploy each player downloads only the files that changed (`pharmacy-screen/README.md` → "Kept on the device"). Fingerprinted `assets/` are served `Cache-Control: public, max-age=31536000, immutable`; the page, `sw.js` and everything else `no-cache` (`firebase.json`) |
 | Config store | Firestore `pharmacyScreen/` | Rules (repo-root `firestore.rules`): no client writes anywhere; public reads only of `pharmacyScreen/published/screens/*`; settings and token documents (`pharmacyScreen/private/**`) unreadable |
 | Logos and backgrounds | Bucket `rob-ph-demos-pharmacy-screen-media` | Its own bucket, so its rules (`config-api/rules/storage.rules`) never replace the default bucket's (the menu-board demo's) |
 | PH API token | Firestore `pharmacyScreen/private/settings/phApi`, envelope-encrypted | Data key wrapped by Cloud KMS `projects/rob-ph-demos/locations/global/keyRings/pharmacy-screen/cryptoKeys/ph-api-token` (90-day rotation); decrypted only inside `pharmacyScreenPhApi` |

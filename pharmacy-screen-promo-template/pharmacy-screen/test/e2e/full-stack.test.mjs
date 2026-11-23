@@ -139,15 +139,16 @@ test('Seasonal: promo=occasions plays the standalone Christmas design, signing o
   assert.deepEqual(outside, [], 'no request leaves the origin');
   await s.ctx.close();
 
-  // Playing (no scene=): the beats loop in CSS, on keyframes for the seeded seconds (Christmas 3 s + 4 s, a 7 s loop);
-  // reduced motion stills the decorations and the beats still change.
+  // Playing (no scene=): the beats play once through in CSS (.once; loop=1 loops them), on keyframes for the seeded
+  // seconds (Christmas 3 s + 4 s, 7 s, the last beat ending visible); reduced motion stills the decorations and the
+  // beats still change.
   const ctx1 = await browser.newContext({ viewport: { width: 960, height: 540 }, reducedMotion: 'reduce' });
   s = await screen('device=DEVICE-VIC-MP-001&promo=occasions&orientation=landscape&now=wed-12:00&date=2026-07-01', { ctx: ctx1 });
   const motion = await s.page.evaluate(() => {
     const cs = (q) => getComputedStyle(document.querySelector('#screen ' + q));
     return { root: document.querySelector('#screen .occ').className, sparkle: cs('.gl i').animationName, photo: cs('.photo').animationName, beat: cs('.b1').animationName, loop: cs('.b1').animationDuration, gl: cs('.gl').display, gp: cs('.gp').display };
   });
-  assert.deepEqual(motion, { root: 'occ occ-christmas', sparkle: 'none', photo: 'none', beat: 'occT3_4B1', loop: '7s', gl: 'block', gp: 'none' });
+  assert.deepEqual(motion, { root: 'occ occ-christmas once', sparkle: 'none', photo: 'none', beat: 'occTo3_4B1', loop: '7s', gl: 'block', gp: 'none' });
   await s.ctx.close();
 
   // Every design under reduced motion: no decoration (or its ::before/::after) animates, the beats still do.

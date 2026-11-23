@@ -89,6 +89,10 @@ button.text{border-color:transparent;background:none;color:var(--primary);paddin
 .cprow .cpwrap{flex:1 1 auto}
 .cprow #cpUrl{min-width:0}.cprow #cpTx{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .cprow .pbdur{flex:none}
+/* Shown, selected, when the browser refuses to copy (a content frame without clipboard access): a read-only field
+   (grey fill) holding the experience URL, for Ctrl+C / Cmd+C. */
+.cpfield{margin-top:8px;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;background:var(--panel);color:var(--text)}
+.cpfield[hidden]{display:none}
 .pbdur{display:inline-flex;align-items:center;gap:4px;font-size:13px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
 .pbdur b{color:var(--text);font-weight:500}
 .infowrap{position:relative;display:inline-flex}

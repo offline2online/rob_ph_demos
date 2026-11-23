@@ -43,6 +43,8 @@ Saving, replacing and removing the token need the admin role and are audit-logge
 | Request timeout per server (screen) | 8 s | `live-data.js` |
 | "Last 30 minutes" bar state | 30 minutes before close | `pharmacy-screen/js/hours.js` `LAST_MINUTES` |
 | Screen update check (service worker) | Every 30 minutes, and on every page load | `pharmacy-screen/js/player.js` |
+| Screen file caching | `assets/` (fingerprinted scripts, stylesheets, fonts, photo): `public, max-age=31536000, immutable`; the page, `sw.js` and everything else: `no-cache` | `firebase.json`, `aws/infra/stack.js` |
+| Playback (screen) | Once through, then the last scene stays (still following the store's clock and new data) until the next campaign loads; from the first scene again when the page is loaded or shown again, or a season changes at midnight; `loop=1` loops forever. The editor's preview always loops | `pharmacy-screen/js/player.js` |
 | Public config cache | 5 s (`Cache-Control: public, max-age=5`, with an `ETag`) | `config-api/src/api.js` |
 | Upload limits | Logos PNG/WebP ≤ 2 MB; backgrounds PNG/JPEG/WebP ≤ 5 MB (≤ 4 MB on AWS) | `config-api/src/service.js` |
 
@@ -93,7 +95,11 @@ Function settings are written by the deploy; you only set them yourself to run a
 | `PS_FIRESTORE_ROOT` | Top-level Firestore collection (Firebase) | `pharmacyScreen` | `pharmacyScreen` | No | `.env.rob-ph-demos` |
 | `PS_ROOT` | Key prefix in the DynamoDB table (AWS) | `pharmacyScreen` | `pharmacyScreen` | No | The CDK stack |
 | `PS_TABLE` | DynamoDB table name (AWS) | None (required on AWS) | `PharmacyScreen-Config…` | No | The CDK stack |
-| `PS_REGION` | Cloud Functions region (Firebase) | `us-central1` | `us-central1` | No | `.env.rob-ph-demos` |
+| `PS_REGION` | Cloud Functions region (Firebase). Must match the region in `firebase.json`'s rewrites | `australia-southeast1` | `australia-southeast1` | No | `.env.rob-ph-demos` |
+| `PS_MIN_INSTANCES` | Instances kept warm (Firebase). `0` scales to zero, with a cold start after idle; above `0` is a monthly cost whether or not screens call it, so only with the owner's yes | `0` | `1` | No | Default (`.env.rob-ph-demos` to change it) |
+| `PS_RATE_LIMIT_SCREENS_PER_IP_PER_MIN` | `GET /api/screens/**` requests per client address per minute, per instance; past it `429` with `Retry-After` (`0` = no limit). Answers the CDN serves from cache are not counted. Sizing: a screen asks every 15 s (4 a minute), so 600 fits about 150 screens behind one shared address (a pharmacy group's head-office firewall); raise it for more | `600` | `600` | No | Default |
+| `PS_TRUSTED_PROXY_HOPS` | `X-Forwarded-For` entries, from the right, added by our own platform: the address the screen read's limit counts (Firebase; as `PH_TRUSTED_PROXY_HOPS`) | `1` | `1` | No | Default |
+| `PS_ORIGIN_VERIFY_SECRET_ARN` | ARN of the Secrets Manager secret holding the value CloudFront adds to every API request (AWS). Both functions read it at run time and answer `403` to a request without that value (`503` if the secret cannot be read); it also decides whether the viewer address is trusted. Also used by `PhApi` | None (no check) | `arn:aws:secretsmanager:ap-southeast-2:…:secret:OriginVerify…` | No (a reference; only the two functions' roles may read the secret) | The CDK stack |
 | `PS_OIDC_ISSUER` | OIDC issuer URL (AWS) | None (required on AWS) | `https://cognito-idp.ap-southeast-2.amazonaws.com/ap-southeast-2_AbC…` | No | The CDK stack (Cognito, or `--oidc-issuer`); also used by `PhApi` |
 | `PS_OIDC_AUDIENCE` | The admin editor's client id; ID tokens must carry it as `aud` (AWS) | None (required on AWS) | `3n4b5…` | No | The CDK stack; also used by `PhApi` |
 | `PS_OIDC_JWKS_URI` | Signing keys URL (AWS) | `<issuer>/.well-known/jwks.json` from discovery | `https://…/.well-known/jwks.json` | No | The CDK stack; also used by `PhApi` |
@@ -106,27 +112,29 @@ Function settings are written by the deploy; you only set them yourself to run a
 | `PH_TOKEN_KMS_KEY` | KMS key that wraps the token's data key: Cloud KMS key name, or AWS KMS key ARN | None: saving a token answers `SECRET_STORE_NOT_CONFIGURED` | `arn:aws:kms:ap-southeast-2:111122223333:key/…` | No (a key reference; only the function's role may use the key) | `.env.rob-ph-demos`; the CDK stack |
 | `PH_LOCAL_KMS_KEY` | Base64 of 32 random bytes, for `PH_SECRET_STORE=local` | None | `<base64 32 bytes>` | **Yes**. Emulators and tests only: refused on Cloud Functions/Run and Lambda | Never in a deployment |
 | `PH_API_DEFAULT_BASE_URL` | Comma-separated https URLs used until an admin saves a list | `https://ph.mipharmacy.net` | `https://ph.mipharmacy.net` | No | `.env.rob-ph-demos`; the CDK stack (`--ph-api-base-url`) |
-| `PH_API_ALLOWED_HOSTS` | Comma-separated hosts an admin may save as a PH API base URL (the token is sent to them). `.example.com` allows any host under it; `*` any https host | The hosts of `PH_API_DEFAULT_BASE_URL` | `ph.mipharmacy.net,.personalisationhub.com` | No | Default |
+| `PH_API_ALLOWED_HOSTS` | Comma-separated hosts an admin may save as a PH API base URL (the token is sent to them). `.example.com` allows any host under it; `*` any https host | The hosts of `PH_API_DEFAULT_BASE_URL` | `ph.mipharmacy.net,.personalisationhub.com` | No | Default; the CDK stack (`--ph-api-allowed-hosts`, which does not accept `*`) |
 | `PH_ADMIN_CLAIM` | Firebase custom claim marking an admin (Firebase) | `admin` | `admin` | No | `.env.rob-ph-demos` (on AWS `PS_ADMIN_CLAIM` is used) |
 | `PH_ALLOWED_ORIGINS` | Comma-separated origins allowed to call the settings endpoints from a browser | None | `https://screens.mipharmacy.net` | No | `.env.rob-ph-demos`; the CDK stack |
 | `PH_SETTINGS_DOC` | Firestore document for the settings and encrypted token (Firebase) | `pharmacyScreen/private/settings/phApi` | | No | `.env.rob-ph-demos` |
 | `PH_AUDIT_COLLECTION` | Firestore collection for the settings audit log (Firebase) | `pharmacyScreen/private/auditLog` | | No | `.env.rob-ph-demos` |
 | `PH_TABLE` | DynamoDB table (AWS) | None (required on AWS) | `PharmacyScreen-Config…` | No | The CDK stack |
 | `PH_ROOT` | Key prefix in that table (AWS) | `pharmacyScreen` | `pharmacyScreen` | No | The CDK stack |
-| `PH_REGION` | Cloud Functions region (Firebase) | `us-central1` | `us-central1` | No | `.env.rob-ph-demos` |
+| `PH_REGION` | Cloud Functions region (Firebase). Must match the region in `firebase.json`'s rewrites | `australia-southeast1` | `australia-southeast1` | No | `.env.rob-ph-demos` |
+| `PH_MIN_INSTANCES` | Instances kept warm (Firebase). `0` scales to zero; above `0` is a monthly cost, only with the owner's yes | `0` | `1` | No | Default (`.env.rob-ph-demos` to change it) |
 | `PH_PROXY_CACHE_SECONDS` | Seconds a device's answer and the decrypted settings are reused | `15` | `15` | No | Default |
 | `PH_PROXY_TIMEOUT_MS` | Timeout per PH server call, ms | `8000` | `8000` | No | Default |
 | `PH_PROXY_STALE_SECONDS` | Seconds the last good answer may be served (`meta.stale`) when a rate limit trips | `600` | `600` | No | Default |
 | `PH_RATE_LIMIT_PER_DEVICE_PER_MIN` | Cache misses per device per minute, per instance | `12` | `12` | No | Default |
 | `PH_RATE_LIMIT_PER_IP_PER_MIN` | Cache misses per client address per minute, per instance | `600` | `600` | No | Default |
 | `PH_UPSTREAM_CALLS_PER_MIN` | Calls to PH per minute, per instance | `1200` | `1200` | No | Default |
+| `PH_RATE_LIMIT_UNKNOWN_PER_IP_PER_MIN` | "Not registered to a store" answers per client address per minute, per instance. Past it, that address gets `429` for any device without a recent good answer; devices known to be real are still refreshed. A lookup for a device not yet known holds a slot while it is in flight (so requests sent all at once count against each other) and gives it back when the answer is a real device or a failure Not-found answers are kept in their own small cache, so they never push a real device's fallback out | `30` | `30` | No | Default |
 | `PH_SESSION_AUTH` | `on` or `off`: whether `POST /api/auth/ph-session` (sign-in from Personalisation Hub) exists (Firebase) | `on` | `on` | No | Default |
 | `PH_REQUIRE_PH_SESSION` | `true`: the settings endpoints accept only sessions started from Personalisation Hub (Firebase) | `false` | `true` | No | `.env.rob-ph-demos`, together with `PS_REQUIRE_PH_SESSION` |
 | `PH_SESSION_HQ_ROLES` | Comma-separated HQ Admin roles that open the editor as an administrator | `ADMIN` | `ADMIN,HELP_DESK` | No | Default |
 | `PH_SESSION_MAX_HOURS` | Longest an editor session lasts before Personalisation Hub is asked again | `8` | `8` | No | Default |
 | `PH_SESSION_RATE_LIMIT_PER_IP_PER_MIN` | Sign-in attempts per client address per minute, per instance | `30` | `30` | No | Default |
 | `PH_TRUSTED_PROXY_HOPS` | `X-Forwarded-For` entries, from the right, added by our own platform | `1` (Firebase); `2` on AWS | `1` | No | `.env.rob-ph-demos`; the CDK stack |
-| `PS_ORIGIN_VERIFY` | Value CloudFront adds to every API request, so the proxy trusts the viewer address only behind CloudFront (AWS) | None | `<generated>` | **Yes** (generated into Secrets Manager by the stack; never set by hand) | The CDK stack |
+| `PS_ORIGIN_VERIFY` | The CloudFront origin value itself, for tests and local runs only (a deployment uses `PS_ORIGIN_VERIFY_SECRET_ARN`; the stack never puts the value in a function's environment) | None | `<test value>` | **Yes** | Tests only |
 
 ### Set by the platform (read, never set)
 
@@ -175,9 +183,10 @@ https://<site>/pharmacy-screen.html?device=${UniqueDeviceID}&promo=<promo id>&or
 | `device` | Device ID, `[A-Za-z0-9._:-]`, 1–128 characters | None: "Invalid screen URL" | `${UniqueDeviceID}` (PH swaps in the screen's ID) | **Yes** |
 | `promo` | A promo ID (see [DATA-CONTRACT.md](DATA-CONTRACT.md) → "Promo IDs") | The first promotion | `morning` | **Yes** |
 | `orientation` | `portrait` (1080x1920) or `landscape` (1920x1080) | `portrait` | `landscape` | **Yes** |
+| `loop` | Flag: loop the promotion forever, for a screen that shows this one campaign only. Without it the promotion plays once through and stays on its last scene (a Seasonal promotion: its last beat) until the player loads the next campaign; it plays from the start again when the page is loaded or shown again, or a season changes at midnight | Off: plays once, then holds its last scene | `loop=1` | Optional: only on a screen with no rotation |
 | `mockapi` | Flag: read the fixtures (`pharmacy-screen/fixtures/`) instead of the API | Off | `mockapi=1` | No, testing only |
 | `debug` | Flag: show the debug panel (device, store code, last fetches, server used, store time, bar state) with a test time override | Off | `debug=1` | No, testing only |
-| `scene` | Hold on scene *n* (0-based) instead of playing the loop | Plays the loop | `scene=2` | No, testing only |
+| `scene` | Hold on scene *n* (0-based) instead of playing the promotion | Plays the promotion (once, then holds its last scene; `loop=1` loops) | `scene=2` | No, testing only |
 | `now` | Pretend the store's local time is this (`<day>-<HH:MM>`), for the "Open today" bar | Real time in `store_timezone` | `now=fri-18:45` | No, testing only |
 | `date` | Pretend the store's date is this (`YYYY-MM-DD`, or `MM-DD` for this year), for which season the Seasonal promotion plays | Today in `store_timezone` | `date=2026-12-20` | No, testing only |
 | `nosw` | Flag: don't keep the screen on the device (no service worker) | Off | `nosw=1` | No |
