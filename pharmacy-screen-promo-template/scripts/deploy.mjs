@@ -374,14 +374,18 @@ export function buildPlan({ project, site, bucket, skipSetup = false }) {
       label: `Add ${site}.web.app and ${site}.firebaseapp.com to Auth authorized domains`,
       args: { project, domains: [`${site}.web.app`, `${site}.firebaseapp.com`] },
     });
-    steps.push({
-      phase: "setup",
-      kind: "run",
-      optional: true,
-      label: "Artifact Registry cleanup policy for function images (keeps the deploy non-interactive)",
-      cmd: fb("functions:artifacts:setpolicy", "--location", REGION, "--days", "7", "--force", "--project", project),
-    });
   }
+
+  // In the deploy phase, so it runs with --skip-setup (CI) too: without a cleanup policy in the functions' region
+  // `firebase deploy` ends in an error after creating the functions and never publishes Hosting. That is what left
+  // the site pointing at functions that no longer existed on 23 Nov 2026, when the functions moved region.
+  steps.push({
+    phase: "deploy",
+    kind: "run",
+    optional: true,
+    label: "Artifact Registry cleanup policy for function images (keeps the deploy non-interactive)",
+    cmd: fb("functions:artifacts:setpolicy", "--location", REGION, "--days", "7", "--force", "--project", project),
+  });
 
   // In the deploy phase, so it runs with --skip-setup (CI) too.
   steps.push({
@@ -399,23 +403,32 @@ export function buildPlan({ project, site, bucket, skipSetup = false }) {
     label: `Write the admin editor's Firebase sign-in config (web app "${ADMIN_WEB_APP}") into the staged admin/config.js`,
     args: { project },
   });
+  // Functions first and on their own, then everything else, then a check that the site's API answers. One
+  // `firebase deploy` of both stops before Hosting when the functions step ends in any error (a cleanup-policy
+  // warning included), which leaves the site's rewrites pointing at the previous functions. The functions step may
+  // therefore fail without stopping the deploy; the health check after Hosting is what decides, and it fails the
+  // deploy loudly when the API does not answer.
+  const deploy = (only) => fb("deploy", "--project", project, "--non-interactive", "--only", only.join(","));
   steps.push({
     phase: "deploy",
     kind: "run",
-    label: "Deploy Hosting, functions, Firestore rules and indexes, Storage rules",
-    cmd: fb(
-      "deploy",
-      "--project", project,
-      "--non-interactive",
-      "--only",
-      [
-        "hosting:pharmacy-screen",
-        ...CODEBASES.map((c) => `functions:${c}`),
-        "firestore:rules",
-        "firestore:indexes",
-        "storage:pharmacy-screen-media",
-      ].join(",")
-    ),
+    optional: true,
+    optionalNote: "the functions deploy reported an error; the API check after Hosting decides whether the deploy is good",
+    label: "Deploy the functions",
+    cmd: deploy(CODEBASES.map((c) => `functions:${c}`)),
+  });
+  steps.push({
+    phase: "deploy",
+    kind: "run",
+    label: "Deploy Hosting, Firestore rules and indexes, Storage rules",
+    cmd: deploy(["hosting:pharmacy-screen", "firestore:rules", "firestore:indexes", "storage:pharmacy-screen-media"]),
+  });
+  steps.push({
+    phase: "deploy",
+    kind: "task",
+    task: "checkApi",
+    label: "Check the site's API answers (config API and PH API proxy, through Hosting)",
+    args: { site },
   });
   return steps;
 }
@@ -446,7 +459,31 @@ async function googleApi(method, url, project, body) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// The site's own /api routes, through Hosting's rewrites: the config API's health route must answer 200, and the
+// proxy must answer a device read as JSON (a made-up device is a clean JSON error; Hosting's own "Page not found"
+// HTML means the rewrite reaches no function). Tried for up to two minutes: a new release takes a moment.
+export async function checkApi({ site, origin = `https://${site}.web.app`, fetchImpl = fetch, tries = 12, waitMs = 10000 }) {
+  let last = "";
+  for (let i = 0; i < tries; i++) {
+    try {
+      const bust = `deploycheck=${Date.now()}`;
+      const health = await fetchImpl(`${origin}/api/health?${bust}`, { cache: "no-store" });
+      const device = await fetchImpl(`${origin}/api/device/DEPLOY-CHECK/campaign_data?${bust}`, { cache: "no-store" });
+      const json = String(device.headers.get("content-type") || "").includes("application/json");
+      if (health.status === 200 && json) return `config API ${health.status}, PH API proxy ${device.status} (JSON)`;
+      last = `health ${health.status}, device read ${device.status}${json ? "" : " (not JSON: no function behind the rewrite)"}`;
+    } catch (e) {
+      last = String((e && e.message) || e);
+    }
+    if (i < tries - 1) await new Promise((r) => setTimeout(r, waitMs));
+  }
+  throw new Error(`The site's API does not answer after the deploy: ${last}. The editor and screens cannot load data until this is fixed.`);
+}
+
 const TASKS = {
+  async checkApi(args) {
+    return checkApi(args);
+  },
   async stage() {
     return stage();
   },

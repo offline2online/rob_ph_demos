@@ -238,16 +238,16 @@ test("the deploy plan installs, sets up and deploys every part, in that order", 
   const phases = plan.map((s) => s.phase);
   assert.deepEqual([...new Set(phases)], ["install", "setup", "deploy"]);
   assert.equal(plan[0].task, "stage", "files and rules are staged before anything deploys");
-  const deploy = plan.at(-1);
-  const only = deploy.cmd[deploy.cmd.indexOf("--only") + 1].split(",");
-  assert.deepEqual(only, [
-    "hosting:pharmacy-screen",
-    "functions:pharmacy-screen-config-api",
-    "functions:pharmacy-screen-ph-proxy",
-    "firestore:rules",
-    "firestore:indexes",
-    "storage:pharmacy-screen-media",
-  ]);
+  // Functions on their own first, then Hosting and the rules, then a check that the site's API answers: one
+  // `firebase deploy` of both never publishes Hosting when the functions step ends in any error (23 Nov 2026).
+  const [functionsStep, deploy, check] = plan.slice(-3);
+  const onlyOf = (step) => step.cmd[step.cmd.indexOf("--only") + 1].split(",");
+  assert.deepEqual(onlyOf(functionsStep), ["functions:pharmacy-screen-config-api", "functions:pharmacy-screen-ph-proxy"]);
+  assert.equal(functionsStep.optional, true, "an error from the functions step does not stop Hosting from being published");
+  assert.deepEqual(onlyOf(deploy), ["hosting:pharmacy-screen", "firestore:rules", "firestore:indexes", "storage:pharmacy-screen-media"]);
+  assert.notEqual(deploy.optional, true);
+  assert.deepEqual([check.kind, check.task, check.args.site], ["task", "checkApi", t.site]);
+  assert.ok(functionsStep.cmd.includes("--non-interactive") && !functionsStep.cmd.includes("--force"));
   assert.ok(deploy.cmd.includes("--non-interactive"));
   assert.ok(!deploy.cmd.includes("--force"), "no --force: it would delete Firestore indexes the menu-board demo owns");
   const labels = plan.map((s) => s.label).join("\n");
@@ -255,14 +255,19 @@ test("the deploy plan installs, sets up and deploys every part, in that order", 
     assert.match(labels, want);
   }
   assert.ok(plan.find((s) => s.phase === "setup" && s.cmd && s.cmd.includes("firebase.googleapis.com")), "the Firebase Management API is enabled (admin web app)");
-  assert.equal(plan.at(-2).task, "adminConfig", "the admin config is written right before firebase deploy");
+  assert.equal(plan.at(-4).task, "adminConfig", "the admin config is written right before firebase deploy");
   const setupFree = buildPlan({ ...t, skipSetup: true });
   assert.deepEqual([...new Set(setupFree.map((s) => s.phase))], ["install", "deploy"]);
-  assert.equal(setupFree.at(-2).task, "adminConfig", "CI (--skip-setup) writes the admin config too");
+  assert.equal(setupFree.at(-4).task, "adminConfig", "CI (--skip-setup) writes the admin config too");
+  // The image cleanup policy for the functions' region is set in CI too: without it firebase deploy ends in an error.
+  for (const p of [plan, setupFree]) {
+    const policy = p.find((x) => x.cmd && x.cmd.includes("functions:artifacts:setpolicy"));
+    assert.deepEqual([policy.phase, policy.optional, policy.cmd.includes(REGION)], ["deploy", true, true]);
+  }
   // The functions moved region: their old copies are deleted first, by name, in that region only, and a deploy
   // where they are already gone carries on.
   for (const p of [plan, setupFree]) {
-    const legacy = p.at(-3);
+    const legacy = p.at(-5);
     assert.equal(legacy.phase, "deploy");
     assert.equal(legacy.optional, true);
     assert.deepEqual(legacy.cmd.slice(legacy.cmd.indexOf("functions:delete")), ["functions:delete", ...LEGACY_FUNCTIONS, "--region", LEGACY_REGION, "--force", "--project", t.project]);
@@ -305,4 +310,19 @@ test("CI workflow template deploys from main, with setup skipped, and matches th
   if (existsSync(installed)) assert.equal(readFileSync(installed, "utf8"), yml, "the installed workflow is the template");
   assert.match(yml, /npm run deploy -- --skip-setup/);
   assert.match(yml, /secrets\.FIREBASE_SERVICE_ACCOUNT_ROB_PH_DEMOS/);
+});
+
+test("the deploy fails when the site's API does not answer afterwards, and passes when it does", async () => {
+  const { checkApi } = await import("../scripts/deploy.mjs");
+  const reply = (status, type) => ({ status, headers: { get: () => type } });
+  const up = async (url) => (url.includes("/api/health") ? reply(200, "application/json") : reply(404, "application/json; charset=utf-8"));
+  assert.match(await checkApi({ site: "s", fetchImpl: up, tries: 1 }), /config API 200, PH API proxy 404 \(JSON\)/);
+  // What Hosting answered on 23 Nov 2026: its own HTML "Page not found" for every /api route.
+  const gone = async () => reply(404, "text/html; charset=UTF-8");
+  await assert.rejects(checkApi({ site: "s", fetchImpl: gone, tries: 2, waitMs: 1 }), /does not answer after the deploy/);
+  const halfGone = async (url) => (url.includes("/api/health") ? reply(200, "application/json") : reply(404, "text/html"));
+  await assert.rejects(checkApi({ site: "s", fetchImpl: halfGone, tries: 1 }), /not JSON/);
+  let n = 0;
+  const slow = async (url) => (++n > 2 ? up(url) : gone());
+  assert.match(await checkApi({ site: "s", fetchImpl: slow, tries: 3, waitMs: 1 }), /config API 200/);
 });

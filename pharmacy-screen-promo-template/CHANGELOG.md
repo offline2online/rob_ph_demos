@@ -10,6 +10,16 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Fixed
 
+- **The Firebase deploy can no longer leave the site without its API.** On 23 Nov 2026 the move to Sydney deleted
+  the functions in `us-central1`, creating one of them in `australia-southeast1` failed, and a re-run then stopped
+  on a missing image cleanup policy before Hosting was published, so every `/api` route answered "Page not found"
+  while the workflow had reported success. The deploy now sets the cleanup policy in CI too, deploys the functions
+  and then Hosting as separate steps (an error from the first no longer stops the second), and ends by checking
+  that the site's config API and PH API proxy answer; if they do not, the deploy fails
+  (`scripts/deploy.mjs` → `checkApi`).
+
+### Fixed
+
 - **Copy experience URL works when the editor is shown in Personalisation Hub.** PH's content frame is not given
   clipboard access, so the button always said "Copy failed, select it from the tooltip" there (in both
   orientations), and the hover tooltip could not be selected from. It now falls back to the browser's copy command,
