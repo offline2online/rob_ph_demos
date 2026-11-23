@@ -792,6 +792,21 @@ function kanbanTools(h) {
     }
     return top + 10;
   }
+  // A new ticket goes to the top of Backlog (the lowest rank there minus 10), so
+  // it is among the first cards the board draws (Backlog draws its first 25 by
+  // rank, KB §13) instead of behind "Show more". Same one-query shape as nextRank.
+  async function firstRank(status) {
+    let low = null;
+    try {
+      const snap = await tasks().where("status", "==", status).orderBy("rank", "asc").limit(1).get();
+      low = snap.docs.length ? snap.docs[0].data().rank || 0 : null;
+    } catch (err) {
+      if (!indexMissing(err)) throw err;
+      const col = await tasks().where("status", "==", status).get();
+      for (const d of col.docs) { const r = d.data().rank || 0; if (low === null || r < low) low = r; }
+    }
+    return low === null ? 10 : low - 10;
+  }
   // What a list may read in one call, by document id; the answer carries a cursor for the rest.
   const LIST_PAGE = 500;
   const DONE_RECENT = 300;
@@ -1266,7 +1281,7 @@ function kanbanTools(h) {
         v.description = tag.html;
         const s = await settings();
         const counterRef = db().collection("kanbanCounters").doc("main");
-        const rank = await nextRank("backlog");
+        const rank = await firstRank("backlog");
         const key = await db().runTransaction(async (tx) => {
           const c = await tx.get(counterRef);
           const n = c.exists && typeof c.data().nextNumber === "number" ? c.data().nextNumber : 1;
@@ -1364,7 +1379,7 @@ function kanbanTools(h) {
         if (problems.length) return toolError(`Nothing was created. ${problems.length} problem${problems.length === 1 ? "" : "s"}: ${problems.join("; ")}`);
 
         const counterRef = db().collection("kanbanCounters").doc("main");
-        const rank = await nextRank("backlog");
+        const rank = await firstRank("backlog");
         const ifaceRef = db().collection("interfaces").doc();
         const key = await db().runTransaction(async (tx) => {
           const cnt = await tx.get(counterRef);
@@ -1510,8 +1525,9 @@ function kanbanTools(h) {
         }
         const slots = await takeSlots("kanbanBulkLimits", session.email, good.length, BULK_PER_HOUR);
         if (!slots.ok) return toolError(`Limit reached: ${BULK_PER_HOUR} tickets an hour per member; ${slots.left} left in this hour, and this call has ${good.length}. Nothing was written.`);
-        // Keys: one counter transaction for the whole batch. Ranks: the top of Backlog once, then consecutive.
-        const rank0 = await nextRank("backlog");
+        // Keys: one counter transaction for the whole batch. Ranks: above the top of Backlog,
+        // consecutive, so the batch keeps its own order and its last row sits just above the old top.
+        const rank0 = (await firstRank("backlog")) - (good.length - 1) * 10;
         const first = await db().runTransaction(async (tx) => {
           const c = await tx.get(counterRef);
           const n = c.exists && typeof c.data().nextNumber === "number" ? c.data().nextNumber : 1;

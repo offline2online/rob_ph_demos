@@ -450,6 +450,34 @@ T("TC-11", "new task: required fields, type-specific button, starts in Backlog w
   await p.done();
 });
 
+// A new ticket goes to the top of Backlog (YTQ9JcaL8lIq5MbHtT3J): Backlog draws its first 25 cards by rank
+// (KB §13), so a ticket ranked at the bottom of a long Backlog was behind "Show more" and looked missing.
+T("KB-NEW-TOP", "a new ticket is drawn at the top of a long Backlog, with no filter, as soon as it is created", { on: on.desktop }, async (prof) => {
+  const seed = kanbanSeed();
+  const base = Object.values(KB.kanbanTasks).find((t) => t.open && t.type === "task");
+  const extraTasks = {}, extraCards = {};
+  for (let i = 0; i < 40; i++) {
+    const key = `PH-${1000 + i}`;
+    const t = { ...base, key, number: 1000 + i, title: `Long backlog ${i}`, status: "backlog", open: true, rank: 1000 + i * 10, resolution: null, labels: [], epic: "", links: [], attachments: [], flagged: false };
+    delete t.closedAt;
+    extraTasks[key] = t; extraCards[key] = cardOfTask(t);
+  }
+  seed.docs.kanbanTasks = { ...seed.docs.kanbanTasks, ...extraTasks };
+  seed.docs.kanbanCards = { ...seed.docs.kanbanCards, ...extraCards };
+  const p = await open(prof, "#staff-kanban", { seed });
+  const drawn = () => p.$$eval('.kb-col[data-status="backlog"] .kb-card', (e) => e.map((x) => x.dataset.key));
+  assert.equal((await drawn()).length, 25, "Backlog draws its first 25");
+  await press(p, "#kb-new-btn");
+  await p.fill("#f-title", "Raised on a long backlog");
+  await press(p, "#f-save");
+  await until(async () => /PH-40 created in Backlog/.test(await p.textContent("#kb-toast")), "the created toast");
+  await eventually(async () => assert.equal((await drawn())[0], "PH-40", "the new ticket is the first card in Backlog"));
+  const ranks = await p.evaluate(() => [...globalThis.__fbStub.col("kanbanTasks").values()].filter((t) => t.status === "backlog").map((t) => [t.key, t.rank]));
+  const low = Math.min(...ranks.filter(([k]) => k !== "PH-40").map(([, r]) => r));
+  assert.equal(ranks.find(([k]) => k === "PH-40")[1], low - 10, "ranked above every Backlog ticket");
+  await p.done();
+});
+
 T("TC-12", "voice: Record task fills title, description and details, marked Agent", async (prof) => {
   const p = await open(prof, "#staff-kanban", { init: speechStub("so there's a bug where the menu board preview shows the wrong price for Welsh stores. it's urgent. assign it to Huy. it should take about four hours for the current release") });
   await press(p, "#kb-new-btn");

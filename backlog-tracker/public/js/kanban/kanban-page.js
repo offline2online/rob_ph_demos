@@ -2959,6 +2959,8 @@ export function mountStaffKanban(ctx) {
     }
     const [newStatus, newRes] = (val("f-status") || draft.status).split(":");
     const endOf = (status) => { const inCol = state.tasks.filter((t) => t.status === status); return inCol.length ? Math.max(...inCol.map((t) => t.rank)) + 10 : 10; };
+    // A new ticket goes to the top of Backlog, so it is among the 25 cards Backlog draws first (KB §13).
+    const startOf = (status) => { const inCol = state.tasks.filter((t) => t.status === status); return inCol.length ? Math.min(...inCol.map((t) => t.rank)) - 10 : 10; };
     saving = true;
     const saveBtn = $("#f-save"); if (saveBtn) saveBtn.disabled = true;
     try {
@@ -2990,7 +2992,7 @@ export function mountStaffKanban(ctx) {
         }
         if (!ch) toast(`<b>${esc(existing.key)}</b> saved`);
       } else {
-        const fields = { ...next, status: "backlog", resolution: null, rank: endOf("backlog") };
+        const fields = { ...next, status: "backlog", resolution: null, rank: startOf("backlog") };
         delete fields.key; delete fields.comments; delete fields.activity;
         if (!opts.then && !returnTo) {
           // A new ticket's number comes from the server (two round trips). The form closes

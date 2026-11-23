@@ -1487,6 +1487,7 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     const has = (coll, fields) => idx.some((x) => x.collectionGroup === coll && JSON.stringify(x.fields.map((f) => [f.fieldPath, f.order])) === JSON.stringify(fields));
     assert.ok(has("kanbanNotifications", [["to", "ASCENDING"], ["read", "ASCENDING"], ["at", "ASCENDING"]]), "(to, read, at)");
     assert.ok(has("kanbanTasks", [["status", "ASCENDING"], ["rank", "DESCENDING"]]), "kanbanTasks status+rank desc");
+    assert.ok(has("kanbanTasks", [["status", "ASCENDING"], ["rank", "ASCENDING"]]), "kanbanTasks status+rank asc (a new ticket's place at the top of Backlog)");
   });
 
   // ── Bounded reads (10,000 closed + 2,000 open tickets) ──────────────────
@@ -1516,8 +1517,9 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     // 2. create
     m = await measure(() => tool1(sam, "kanban_create_task", { title: "Fresh ticket" }));
     assert.ok(!m.out.isError, m.out.text); assert.ok(m.reads <= 5, `create read ${m.reads} documents`); assert.ok(m.ms < 500, `${m.ms} ms`);
-    const topBacklog = Math.max(...[...tasks.entries()].filter(([k, t]) => t.status === "backlog" && k !== m.out.json.key).map(([, t]) => t.rank));
-    assert.strictEqual(task(m.out.json.key).rank, topBacklog + 10);
+    // A new ticket goes to the top of Backlog (lowest rank minus 10), so it is among the 25 cards the board draws first.
+    const lowBacklog = Math.min(...[...tasks.entries()].filter(([k, t]) => t.status === "backlog" && k !== m.out.json.key).map(([, t]) => t.rank));
+    assert.strictEqual(task(m.out.json.key).rank, lowBacklog - 10, "a new ticket goes to the top of Backlog");
     // 3. list: me reads only Sam's open tickets
     const samOpen = [...tasks.values()].filter((t) => t.open && t.assignee === SAM).length;
     m = await measure(() => tool1(sam, "kanban_list_tasks", { assignee: "me" }));
@@ -1560,7 +1562,7 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     try {
       const c = await tool1(sam, "kanban_create_task", { title: "While the index builds" });
       assert.ok(!c.isError, c.text);
-      assert.strictEqual(task(c.json.key).rank, Math.max(...[...tasks.entries()].filter(([k, t]) => t.status === "backlog" && k !== c.json.key).map(([, t]) => t.rank)) + 10);
+      assert.strictEqual(task(c.json.key).rank, Math.min(...[...tasks.entries()].filter(([k, t]) => t.status === "backlog" && k !== c.json.key).map(([, t]) => t.rank)) - 10);
       const mv = await tool1(sam, "kanban_move_task", { key: c.json.key, status: "in-progress" });
       assert.ok(!mv.isError, mv.text);
     } finally { env.store.failOrder = null; }
@@ -1620,6 +1622,10 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.strictEqual(task(r.json.tickets[11].key).epic, "");
     const ranks = r.json.tickets.map((t) => task(t.key).rank);
     ranks.forEach((x, n) => n && assert.strictEqual(x, ranks[n - 1] + 10));
+    // The batch sits above every Backlog ticket that was there before it, in its own order.
+    const made = new Set(r.json.tickets.map((t) => t.key));
+    const older = [...env.store.col("kanbanTasks").entries()].filter(([k, t]) => t.status === "backlog" && !made.has(k)).map(([, t]) => t.rank);
+    if (older.length) assert.strictEqual(ranks[ranks.length - 1], Math.min(...older) - 10, "the batch goes to the top of Backlog");
     assert.deepStrictEqual(activity(r.json.tickets[3].key), ["created this ticket over MCP (bulk upload, row 4 of 50)"]);
     assert.ok(r.json.board.includes("staff-kanban"));
     const row = [...env.store.col("mcpAuditLog").values()].filter((a) => a.tool === "kanban_create_tasks").pop();

@@ -497,7 +497,13 @@ comment's `mentions` (the notification trigger's input). KB-C37,
 `kanban-mcp.test.js` ("/mcp/kanban/voice-mentions"), `kanban-core.test.mjs`.
 
 **KB-MOD-1 New task.** Always starts in Backlog (no Status field, no
-Comments). The heading and primary button follow the type: **Create task**,
+Comments), **at the top of Backlog** (23 Nov 2026: its rank is the lowest in
+Backlog minus 10), so it is among the 25 cards Backlog draws first (§13) and
+shows on the unfiltered board as soon as it is created; a ticket ranked at the
+bottom of a long Backlog was behind "Show more" and looked missing. Every
+create path does the same: the board's form and `kanban_create_task`,
+`kanban_create_tasks` (the batch above the old top, in its own order) and
+`kanban_create_contract_ticket`. A move into a column still goes to its end. The heading and primary button follow the type: **Create task**,
 **Raise bug**, **Create epic**. Right-hand details column order: Priority,
 Type, Parent epic, Assignee, Reporter, Release, Estimate, Time logged (then
 any other shown optional fields; Status last when editing).
@@ -743,7 +749,8 @@ is not logged.
 Reads stay bounded as the board grows (every tool answers in well under a
 second whatever its size). The next rank in a column is one query
 (`status` == column, `rank` desc, `limit 1`; no counter document, which would
-take about one write a second); if its index is still building the tool reads
+take about one write a second), and a new ticket's place at the top of Backlog
+the same with `rank` asc (KB-MOD-1); if its index is still building the tool reads
 the column as before. `kanban_list_tasks` and `kanban_release_report` push the
 filters into the query (assignee, status, release, project, type, priority,
 sprint, flagged, label; equality and `array-contains` merge single-field
