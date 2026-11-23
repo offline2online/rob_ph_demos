@@ -655,7 +655,7 @@ export function mountStaffKanban(ctx) {
     const relOpts = opt("", "All releases", board.release) + activeReleases(board.release).map((r) => opt(r.id, r.label + (r.id === state.settings.currentRelease ? " (current)" : r.released ? " (released)" : ""), board.release)).join("");
     store.watchRelease(board.release);
     headSig = ""; // (the view is drawn afresh below)
-    // Primary filters: staff, My tasks, Release. Secondary (in Filters): flagged, type, priority, sprint, label.
+    // Primary filters: staff, My tasks, search, Release. Secondary (in Filters): flagged, type, priority, sprint, label.
     const moreCount = [board.flagged, board.type, board.priority, board.sprint, board.project, board.label].filter(Boolean).length;
     const filtersActive = moreCount || board.mine || board.assignees.size || board.release || board.q;
     view.innerHTML = `
@@ -663,7 +663,6 @@ export function mountStaffKanban(ctx) {
         <h2>Staff Kanban</h2>
         ${tip("Staff Kanban is for staff tasks only: work a human staff member does. Work for agents (product, docs, prototype and tooling changes, including for this project) goes in the project backlog on the Agent Board. Agents can still create and assign tasks for staff here.")}
         <span class="page-header-count" id="kb-count"></span>
-        <label class="kb-search kb-header-search"><span class="material-symbols-outlined" aria-hidden="true">search</span><input type="search" id="kb-q" placeholder="Search tasks" value="${esc(board.q)}" aria-label="Search tasks"></label>
         <div class="kb-header-actions">
           <button type="button" class="btn-ghost kb-icon-label" id="kb-report-btn"><span class="material-symbols-outlined" aria-hidden="true">monitoring</span>Release report</button>
           ${canWrite() ? '<button type="button" class="btn-primary" id="kb-new-btn">+ New task</button>' : ""}
@@ -678,6 +677,7 @@ export function mountStaffKanban(ctx) {
             <button type="button" class="kb-person-chip${board.assignees.has("none") ? " on" : ""}" data-person="none" aria-pressed="${board.assignees.has("none")}" title="Unassigned">${avatar("")}<span>Unassigned</span></button>
           </div>
           <button type="button" class="kb-mine${board.mine ? " on" : ""}" id="kb-mine" aria-pressed="${board.mine}"><span class="material-symbols-outlined" aria-hidden="true">person</span>My tasks</button>
+          <label class="kb-search kb-filter-search"><span class="material-symbols-outlined" aria-hidden="true">search</span><input type="search" id="kb-q" placeholder="Search tasks" value="${esc(board.q)}" aria-label="Search tasks"></label>
           <select id="kb-release" class="kb-release-select" aria-label="Release">${relOpts}</select>
           <button type="button" class="kb-mine kb-filter-toggle${filtersOpen || moreCount ? " on" : ""}" id="kb-filter-toggle" aria-expanded="${filtersOpen}" aria-controls="kb-filter-panel"><span class="material-symbols-outlined" aria-hidden="true">tune</span>Filters${moreCount ? `<span class="kb-filter-count">${moreCount}</span>` : ""}</button>
           ${filtersActive ? '<button type="button" class="link-btn kb-clear" id="kb-clear">Clear filters</button>' : ""}
@@ -1310,13 +1310,14 @@ export function mountStaffKanban(ctx) {
 
   // returnTo: the epic to reopen when a child ticket opened from it closes.
   let returnTo = null;
-  // An existing ticket opens for reading (KB-VIEW-1): its title, description, acceptance criteria, linked
-  // tickets and details column are read-only until their edit icon is pressed. `unlocked` holds what has
-  // been opened for editing on the ticket that is open; drawing the same ticket again keeps it, and
-  // closing the ticket clears it. A new ticket is a form from the start.
+  // An existing ticket opens for reading (KB-VIEW-1): its title, description, acceptance criteria and linked
+  // tickets are read-only until their edit icon is pressed. `unlocked` holds what has been opened for editing
+  // on the ticket that is open; drawing the same ticket again keeps it, and closing the ticket clears it. A new
+  // ticket is a form from the start. The details column (status, assignee, priority…) changes too often to sit
+  // behind an edit icon: for anyone who can edit it is always its form (KB-VIEW-3); a viewer reads it as text.
   let unlocked = new Set(), lockKey = "", threadTab = "comments";
   const lockable = () => !draftIsNew;
-  const isLocked = (k) => lockable() && !unlocked.has(k);
+  const isLocked = (k) => lockable() && !unlocked.has(k) && !(k === "details" && canWrite());
   const editBtn = (k, what) => (canWrite() ? `<button type="button" class="icon-btn kb-ro-edit" data-kb-edit="${k}" title="Edit ${what}" aria-label="Edit ${what}"><span class="material-symbols-outlined" aria-hidden="true">edit</span></button>` : "");
   // A field with a reading view and its form: the form is there from the start (Save compares it with what
   // was loaded) and shows once the field is opened for editing.
@@ -1526,6 +1527,13 @@ export function mountStaffKanban(ctx) {
     if (!q) return null;
     if (!edHtml[which] || edHtml[which].q !== q) edHtml[which] = { q, html: KBEditor.getHtml(q) };
     return edHtml[which].html;
+  }
+  // The open dialog differs from how it was drawn. A dialog still drawing (no baseline yet) counts
+  // as changed, so an outside click never discards anything before the check can be made.
+  function taskHasUnsavedChanges() {
+    if (!draft) return false;
+    if (saving) return true;
+    return changeBase == null || formState() !== changeBase;
   }
   function syncSaveState() {
     const b = $("#f-save");
@@ -2053,7 +2061,7 @@ export function mountStaffKanban(ctx) {
     if (threadTab === "history") { const hw = $("#f-history-wrap"); if (hw) hw.innerHTML = historyHTML(); }
   }
 
-  // The details column as it reads before it is opened for editing: one line per field.
+  // The details column as a viewer reads it (an editor always has its form, KB-VIEW-3): one line per field.
   function roDetail(k) {
     const d = draft, none = (t) => `<span class="kb-none">${esc(t)}</span>`;
     const who = (id) => (id ? `${avatar(id)}<span>${esc(fullName(id))}</span>` : none(k === "assignee" ? "Unassigned" : "—"));
@@ -2078,7 +2086,7 @@ export function mountStaffKanban(ctx) {
   }
   function sideHTML(fields) {
     const inner = fields.map(fieldHTML).join("");
-    if (!lockable()) return `<div class="kb-task-side" id="kb-task-side">${inner}</div>`;
+    if (!isLocked("details")) return `<div class="kb-task-side" id="kb-task-side">${inner}</div>`;
     return `<div class="kb-task-side kb-lockable${isLocked("details") ? " kb-locked" : ""}" id="kb-task-side">
       <div class="kb-ro"><div class="kb-ro-head"><span class="field-label">Details</span>${editBtn("details", "details")}</div><dl class="kb-ro-details" id="f-details-ro">${fields.map(roDetail).join("")}</dl></div>
       <div class="kb-edit-body">${inner}</div></div>`;
@@ -2951,6 +2959,8 @@ export function mountStaffKanban(ctx) {
     }
     const [newStatus, newRes] = (val("f-status") || draft.status).split(":");
     const endOf = (status) => { const inCol = state.tasks.filter((t) => t.status === status); return inCol.length ? Math.max(...inCol.map((t) => t.rank)) + 10 : 10; };
+    // A new ticket goes to the top of Backlog, so it is among the 25 cards Backlog draws first (KB §13).
+    const startOf = (status) => { const inCol = state.tasks.filter((t) => t.status === status); return inCol.length ? Math.min(...inCol.map((t) => t.rank)) - 10 : 10; };
     saving = true;
     const saveBtn = $("#f-save"); if (saveBtn) saveBtn.disabled = true;
     try {
@@ -2982,7 +2992,7 @@ export function mountStaffKanban(ctx) {
         }
         if (!ch) toast(`<b>${esc(existing.key)}</b> saved`);
       } else {
-        const fields = { ...next, status: "backlog", resolution: null, rank: endOf("backlog") };
+        const fields = { ...next, status: "backlog", resolution: null, rank: startOf("backlog") };
         delete fields.key; delete fields.comments; delete fields.activity;
         if (!opts.then && !returnTo) {
           // A new ticket's number comes from the server (two round trips). The form closes
@@ -3049,7 +3059,20 @@ export function mountStaffKanban(ctx) {
     }
     $("#task-share").addEventListener("click", copyTicketLink);
     $("#task-close").addEventListener("click", () => closeTask());
-    $("#task-backdrop").addEventListener("click", (e) => { if (e.target.id === "task-backdrop") closeTask(); });
+    // A click outside the dialog never throws away what was typed (KB-TASK: keep the draft on an
+    // outside click). It closes the dialog only when the press also started outside, so a text
+    // selection dragged past the panel's edge doesn't count. It also has to be a ticket with nothing
+    // changed. With changes (a new ticket typed into, an edit not saved) the dialog stays open and the
+    // toast says how to leave: Save, Cancel or ×.
+    let pressedOutside = false;
+    $("#task-backdrop").addEventListener("pointerdown", (e) => { pressedOutside = e.target.id === "task-backdrop"; });
+    $("#task-backdrop").addEventListener("click", (e) => {
+      const outside = e.target.id === "task-backdrop" && pressedOutside;
+      pressedOutside = false;
+      if (!outside) return;
+      if (taskHasUnsavedChanges()) { toast(draftIsNew ? "This ticket isn't created yet. Create it, or use Cancel or × to discard it." : "You have unsaved changes. Save them, or use Cancel or × to discard them."); return; }
+      closeTask();
+    });
     document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#task-backdrop").hidden) closeTask(); });
   }
 

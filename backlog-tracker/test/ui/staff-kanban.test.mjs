@@ -382,7 +382,7 @@ T("TC-08", "secondary filters live in the Filters menu; a filter change keeps th
   await p.done();
 });
 
-T("TC-09", "filter bar and column headers stay pinned; filter bar fits one line from 1024px", { on: on.wide }, async (prof) => {
+T("TC-09", "filter bar (with search) and column headers stay pinned; filter bar fits one line from 1024px", { on: on.wide }, async (prof) => {
   const p = await open(prof);
   await press(p, "#kb-mine");
   const ids = await p.$$eval(".kb-person-chip", (e) => e.map((x) => x.dataset.person));
@@ -393,6 +393,12 @@ T("TC-09", "filter bar and column headers stay pinned; filter bar fits one line 
   await p.evaluate(() => scrollTo(0, 800));
   await p.waitForTimeout(150);
   assert.equal(await p.$eval("#kb-sticky", (e) => Math.round(e.getBoundingClientRect().top)), 0);
+  // Search is in the pinned bar, between My tasks and Release, and still usable after scrolling.
+  const order = await p.$$eval(".kb-filters > *", (e) => e.map((x) => x.id || x.querySelector("input")?.id || x.className.split(" ")[0]));
+  assert.deepEqual(order.slice(order.indexOf("kb-mine"), order.indexOf("kb-mine") + 3), ["kb-mine", "kb-q", "kb-release"], "search sits between My tasks and Release");
+  assert.equal(await p.$eval("#kb-q", (e) => !!e.closest("#kb-sticky") && !e.closest(".page-header")), true, "search is in the pinned bar, not the page header");
+  const q = await p.$eval("#kb-q", (e) => { const r = e.getBoundingClientRect(); return { top: Math.round(r.top), w: Math.round(r.width) }; });
+  assert.ok(q.top >= 0 && q.top < 80 && q.w > 60, `search visible in the pinned bar after scrolling (${JSON.stringify(q)})`);
   const head = await p.$$eval("#kb-lanes-head .kb-lanes-head", (e) => e.map((x) => Math.round(x.getBoundingClientRect().left)));
   const cells = await p.$$eval(`.kb-lane-cell[data-lane="${ROB}"]`, (e) => e.map((x) => Math.round(x.getBoundingClientRect().left)));
   assert.deepEqual(head, cells, "pinned headers line up with the columns");
@@ -441,6 +447,34 @@ T("TC-11", "new task: required fields, type-specific button, starts in Backlog w
   assert.equal(t.number, 40); assert.equal(t.estimate, 12); assert.equal(t.createdBy, ROB); assert.equal(t.release, "4-12");
   assert.ok(t.searchTokens.includes("ph-40") && t.searchTokens.includes("created"));
   assert.equal((await p.evaluate(() => globalThis.__fbStub.col("kanbanCounters").get("main"))).nextNumber, 41);
+  await p.done();
+});
+
+// A new ticket goes to the top of Backlog (YTQ9JcaL8lIq5MbHtT3J): Backlog draws its first 25 cards by rank
+// (KB §13), so a ticket ranked at the bottom of a long Backlog was behind "Show more" and looked missing.
+T("KB-NEW-TOP", "a new ticket is drawn at the top of a long Backlog, with no filter, as soon as it is created", { on: on.desktop }, async (prof) => {
+  const seed = kanbanSeed();
+  const base = Object.values(KB.kanbanTasks).find((t) => t.open && t.type === "task");
+  const extraTasks = {}, extraCards = {};
+  for (let i = 0; i < 40; i++) {
+    const key = `PH-${1000 + i}`;
+    const t = { ...base, key, number: 1000 + i, title: `Long backlog ${i}`, status: "backlog", open: true, rank: 1000 + i * 10, resolution: null, labels: [], epic: "", links: [], attachments: [], flagged: false };
+    delete t.closedAt;
+    extraTasks[key] = t; extraCards[key] = cardOfTask(t);
+  }
+  seed.docs.kanbanTasks = { ...seed.docs.kanbanTasks, ...extraTasks };
+  seed.docs.kanbanCards = { ...seed.docs.kanbanCards, ...extraCards };
+  const p = await open(prof, "#staff-kanban", { seed });
+  const drawn = () => p.$$eval('.kb-col[data-status="backlog"] .kb-card', (e) => e.map((x) => x.dataset.key));
+  assert.equal((await drawn()).length, 25, "Backlog draws its first 25");
+  await press(p, "#kb-new-btn");
+  await p.fill("#f-title", "Raised on a long backlog");
+  await press(p, "#f-save");
+  await until(async () => /PH-40 created in Backlog/.test(await p.textContent("#kb-toast")), "the created toast");
+  await eventually(async () => assert.equal((await drawn())[0], "PH-40", "the new ticket is the first card in Backlog"));
+  const ranks = await p.evaluate(() => [...globalThis.__fbStub.col("kanbanTasks").values()].filter((t) => t.status === "backlog").map((t) => [t.key, t.rank]));
+  const low = Math.min(...ranks.filter(([k]) => k !== "PH-40").map(([, r]) => r));
+  assert.equal(ranks.find(([k]) => k === "PH-40")[1], low - 10, "ranked above every Backlog ticket");
   await p.done();
 });
 
@@ -2240,7 +2274,7 @@ const lockedFields = (p) => p.$$eval("#task-form .kb-lockable", (els) => els.map
 const shown = (p, sel) => p.$eval(sel, (e) => !!e.getClientRects().length && getComputedStyle(e).visibility !== "hidden").catch(() => false);
 const commentWrites = async (p, key) => (await writes(p, new RegExp(`^kanbanTasks/${key}/comments/`))).filter((w) => w.data);
 
-T("KB-C35", "an existing ticket opens for reading: details read-only with an edit icon each, Comments first with the box to add one; a new task is the form it always was", { timeout: 120000 }, async (prof) => {
+T("KB-C35", "an existing ticket opens for reading: title, description, criteria and links read-only with an edit icon each, the details column always its form (KB-VIEW-3), Comments first with the box to add one; a new task is the form it always was", { timeout: 120000 }, async (prof) => {
   const p = await open(prof, "#staff-kanban", { ...REVIEW, seed: kanbanSeed({ extra: { kanbanTasks: { "PH-20": { ...KB.kanbanTasks["PH-20"], acceptanceCriteria: ["aaaaaaaa\t0\tPreview shows the offer price", "bbbbbbbb\t1\tLive board unchanged"], acTotal: 2, acDone: 1 } } } }) });
   // New task: a form from the start, nothing to unlock.
   await openNewTask(p);
@@ -2250,12 +2284,16 @@ T("KB-C35", "an existing ticket opens for reading: details read-only with an edi
   // An existing ticket.
   await press(p, '.kb-card[data-key="PH-20"]');
   await p.waitForSelector("#f-title-ro");
-  assert.equal((await lockedFields(p)).split(" ").sort().join(" "), "criteria:locked description:locked details:locked links:locked title:locked");
+  assert.equal((await lockedFields(p)).split(" ").sort().join(" "), "criteria:locked description:locked links:locked title:locked");
   assert.equal(await p.textContent("#f-title-ro"), "Menu board preview shows RRP instead of local offer price");
   assert.match(await p.textContent("#f-description-ro"), /products with an active local offer still show HQ RRP/);
-  for (const sel of ["#f-title", "#f-description", "#f-status", "#f-assignee", "#f-ac-input", "#f-link-type"]) assert.equal(await shown(p, sel), false, `${sel} is not on show while the ticket is read`);
-  assert.match(await p.textContent('#f-details-ro [data-ro="assignee"] dd'), new RegExp(`${FULL.huy}$`)); assert.match(await p.textContent('#f-details-ro [data-ro="status"]'), /In Progress/i); assert.match(await p.textContent('#f-details-ro [data-ro="priority"]'), /Highest/);
-  assert.deepEqual((await p.$$eval("#task-form .kb-locked [data-kb-edit]", (b) => b.map((x) => x.getAttribute("aria-label")))).sort(), ["Edit acceptance criteria", "Edit description", "Edit details", "Edit linked tickets", "Edit title"]);
+  for (const sel of ["#f-title", "#f-description", "#f-ac-input", "#f-link-type"]) assert.equal(await shown(p, sel), false, `${sel} is not on show while the ticket is read`);
+  // The details column is its form from the start (KB-VIEW-3): status, assignee and the rest change without an edit icon.
+  for (const sel of ["#f-status", "#f-assignee", "#f-priority"]) assert.ok(await shown(p, sel), `${sel} is ready to change`);
+  assert.equal(await p.$("#f-details-ro"), null, "no reading view of the details for an editor");
+  assert.equal(await p.$eval("#f-assignee", (e) => e.value), HUY); assert.equal(await p.$eval("#f-status", (e) => e.value), "in-progress"); assert.equal(await p.$eval("#f-priority", (e) => e.value), "highest");
+  assert.deepEqual((await p.$$eval("#task-form .kb-locked [data-kb-edit]", (b) => b.map((x) => x.getAttribute("aria-label")))).sort(), ["Edit acceptance criteria", "Edit description", "Edit linked tickets", "Edit title"]);
+  assert.equal(await p.$('[data-kb-edit="details"]'), null, "the details column has no edit icon");
   // Comments is the tab that is open, with the box and its mic ready; History is one press away.
   assert.equal(await p.getAttribute("#f-tab-comments", "aria-selected"), "true"); assert.equal(await p.getAttribute("#f-tab-history", "aria-selected"), "false");
   await p.waitForSelector('[data-field="comments"] .ql-editor');
@@ -2284,17 +2322,17 @@ T("KB-C35", "an existing ticket opens for reading: details read-only with an edi
   await p.click('[data-field="description"] .ql-editor'); await p.keyboard.press("Control+End"); await p.keyboard.type(" Checked on staging.");
   await press(p, '[data-kb-edit="criteria"]');
   assert.ok(await shown(p, "#f-ac-input"), "criteria can be added and reworded once opened");
-  await press(p, '[data-kb-edit="details"]');
-  assert.ok(await shown(p, "#f-status") && await shown(p, "#f-assignee"), "the details column becomes its form");
+  await p.selectOption("#f-priority", "high");
   await eventually(async () => assert.equal(await p.$eval("#f-save", (e) => e.disabled), false));
   await press(p, "#f-save");
-  await eventually(async () => { const t = await stored(p, "PH-20"); assert.equal(t.title, "Menu board preview shows the offer price"); assert.match(t.description, /Checked on staging\./); });
+  await eventually(async () => { const t = await stored(p, "PH-20"); assert.equal(t.title, "Menu board preview shows the offer price"); assert.match(t.description, /Checked on staging\./); assert.equal(t.priority, "high"); });
   // Opened again it is back to reading, with what was saved.
   await p.waitForFunction(() => document.getElementById("task-backdrop").hidden);
   await press(p, '.kb-card[data-key="PH-20"]');
   await p.waitForSelector("#f-title-ro");
   assert.equal(await p.textContent("#f-title-ro"), "Menu board preview shows the offer price");
   assert.match(await lockedFields(p), /^title:locked description:locked criteria:locked/);
+  assert.equal(await p.$eval("#f-priority", (e) => e.value), "high", "and the details column is still its form, with what was saved");
   await p.done();
 });
 
@@ -2305,6 +2343,8 @@ T("KB-C35", "a viewer reads the same view with no edit icons, and a long descrip
   await press(p, '.kb-card[data-key="PH-20"]');
   await p.waitForSelector("#f-title-ro");
   assert.equal(await p.$$eval("#task-form [data-kb-edit]", (e) => e.length), 0, "a viewer has nothing to open for editing");
+  assert.match(await p.textContent('#f-details-ro [data-ro="assignee"] dd'), new RegExp(`${FULL.huy}$`)); assert.match(await p.textContent('#f-details-ro [data-ro="status"]'), /In Progress/i);
+  assert.equal(await shown(p, "#f-status"), false, "a viewer reads the details as text");
   assert.equal(await p.$("#f-save"), null);
   const h = () => p.$eval("#f-description-ro", (e) => e.clientHeight);
   const cut = await h();
@@ -2344,8 +2384,7 @@ T("KB-C36", "History: who opened it, every move and hand-off newest first with l
   const stat = (id) => p.textContent(`#f-history-stats [data-hist-stat="${id}"] dd`);
   assert.equal(await stat("open"), "10d"); assert.equal(await stat("handoffs"), "1"); assert.equal(await stat("moves"), "2"); assert.equal(await stat("edits"), "1");
   assert.deepEqual(await p.$$eval("#f-history-cols [data-hist-col]", (e) => e.map((x) => `${x.dataset.histCol}=${x.querySelector("b").textContent}`)), ["backlog=2d", "ready-for-dev=2d", "in-progress=6d"]);
-  // Reassign it and move it, from the details column.
-  await press(p, '[data-kb-edit="details"]');
+  // Reassign it and move it, from the details column (its form from the start, KB-VIEW-3).
   await p.selectOption("#f-assignee", LINH); await p.selectOption("#f-status", "approved");
   await press(p, "#f-save");
   await p.waitForFunction(() => document.getElementById("task-backdrop").hidden);
@@ -2478,6 +2517,58 @@ T("KB-C38", "a comment the owner's agent added under his first address can be ed
   await p.done();
 });
 
+
+// A click outside the dialog never throws away what was typed (Backlog item A9gzWrnFX9AZGrtiuCen): a new ticket typed
+// into, or an edit not saved, stays open with a toast saying to use Cancel or ×. A ticket with nothing changed still
+// closes, and a press that starts inside the panel (a text selection dragged out) never counts as outside.
+T("KB-C39", "a click outside the dialog keeps a new ticket or unsaved edit open; Cancel or × still closes; an unchanged ticket closes", { timeout: 60000 }, async (prof) => {
+  const p = await open(prof);
+  const closed = () => p.evaluate(() => document.querySelector("#task-backdrop").hidden);
+  const outsidePoint = () => p.evaluate(() => {
+    const bd = document.querySelector("#task-backdrop");
+    for (const [x, y] of [[6, 6], [innerWidth - 6, 6], [6, innerHeight / 2], [innerWidth - 6, innerHeight / 2]]) if (document.elementFromPoint(x, y) === bd) return { x, y };
+    return null;
+  });
+  const clickOutside = async () => { const at = await outsidePoint(); assert.ok(at, "a spot on the backdrop outside the panel"); await p.mouse.click(at.x, at.y); await p.waitForTimeout(120); };
+  const setTitle = (v) => p.evaluate((v) => { const f = document.querySelector("#f-title"); f.value = v; f.dispatchEvent(new Event("input", { bubbles: true })); }, v);
+  const openCard = async (k) => { await p.evaluate((k) => document.querySelector(`.kb-card[data-key="${k}"]`).click(), k); await until(() => p.$("#task-backdrop:not([hidden]) #f-title"), "the ticket's form"); await until(() => p.$("#f-description .ql-editor"), "the editor"); await p.waitForTimeout(150); };
+
+  // 1. a new ticket with a title typed: the outside click keeps it, with what was typed, and says how to leave
+  await openNewTask(p);
+  await until(() => p.$("#f-description .ql-editor"), "the editor");
+  await setTitle("Typed before clicking away");
+  await clickOutside();
+  assert.equal(await closed(), false, "the New task form is still open");
+  assert.equal(await p.inputValue("#f-title"), "Typed before clicking away", "what was typed is still there");
+  await until(async () => /Cancel or ×/.test(await toastText(p)), "the toast saying how to close it");
+  // 2. Cancel still closes it
+  await press(p, "#f-cancel");
+  await eventually(async () => assert.equal(await closed(), true, "Cancel closes the form"));
+
+  // 3. an existing ticket with nothing changed closes on an outside click, as before
+  await openCard("PH-34");
+  await clickOutside();
+  await eventually(async () => assert.equal(await closed(), true, "an unchanged ticket closes on an outside click"));
+
+  // 4. a press inside the panel released outside (a selection dragged past the edge) doesn't close it
+  await openCard("PH-34");
+  const box = await p.locator("#f-title").boundingBox();
+  const at = await outsidePoint();
+  await p.mouse.move(box.x + 4, box.y + box.height / 2); await p.mouse.down(); await p.mouse.move(at.x, at.y, { steps: 4 }); await p.mouse.up();
+  await p.waitForTimeout(120);
+  assert.equal(await closed(), false, "a press that started inside the panel is not an outside click");
+
+  // 5. an unsaved edit: the outside click keeps it; × closes without saving
+  await setTitle("Edited, not saved");
+  await clickOutside();
+  assert.equal(await closed(), false, "the edited ticket is still open");
+  assert.equal(await p.inputValue("#f-title"), "Edited, not saved");
+  await until(async () => /unsaved changes/.test(await toastText(p)), "the unsaved-changes toast");
+  await press(p, "#task-close");
+  await eventually(async () => assert.equal(await closed(), true, "× closes it"));
+  assert.notEqual((await stored(p, "PH-34")).title, "Edited, not saved", "nothing was saved by clicking away");
+  await p.done();
+});
 // ── run ──────────────────────────────────────────────────────────────────────
 for (const [name, fn] of queue) await test(name, fn);
 await h.close();
