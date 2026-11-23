@@ -103,18 +103,16 @@ export const TEMPLATE_TOKENS = {
 export const DATA_TOKENS = ['Suburb', 'StoreName', 'Phone', 'State', 'StoreCode', 'CloseTime', 'OpenTime'];
 
 /** The tokens the editor's "+ Add token" menu offers above every headline field, in the order shown: the store's
- *  data first, then the ones a pharmacy sets in Settings → Tokens (they show nothing until a value is set there).
- *  `source` is an optional sub-line under the label; the store's data has none (every user's data is from
- *  Personalisation Hub, so saying so tells them nothing). Brand name and Website are not offered: a value set for
- *  them in Settings → Tokens still fills ${BrandName} / ${Website} where copy already uses them. */
+ *  data only. `source` is an optional sub-line under the label; the store's data has none (every user's data is from
+ *  Personalisation Hub, so saying so tells them nothing). Brand name, Website, Languages spoken and Localised copy
+ *  are not offered: a value set for them in Settings → Tokens still fills ${BrandName} / ${Website} /
+ *  ${LanguagesSpoken} / ${LocalisedCopy} where copy already uses them. */
 export const ADD_TOKENS = [
   { name: 'StoreName', label: 'Store name', source: 'Pharmacy name' },
   { name: 'Suburb', label: 'Suburb' },
   { name: 'StoreCode', label: 'Store code' },
   { name: 'State', label: 'State' },
   { name: 'Phone', label: 'Phone number' },
-  { name: 'LanguagesSpoken', label: 'Languages spoken by store staff', source: 'Set in Settings → Tokens' },
-  { name: 'LocalisedCopy', label: 'Localised copy', source: 'Set in Settings → Tokens' },
 ];
 
 /** Data tokens never set by hand: ${StoreName} is the pharmacy name (Settings → Pharmacy details), and today's
