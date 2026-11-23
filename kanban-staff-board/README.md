@@ -89,8 +89,9 @@ heading (KB-MCP-1; `backlog-tracker/MCP.md` → Staff Kanban).
   bottom of the screen. (The console build, 29 Oct 2026: on a tablet they cover that column only, clipped to what is on screen; on a phone they are a slim bar above the tab bar that grows only when the card nears it; a drag drops nothing until the finger has moved, a drop on a target counts only if the finger entered it after the drag began, and Esc cancels a drag. See REQUIREMENTS.md → KB-BOARD-3/4.) You can drag cards
   with a mouse, or press and hold them on touch. Moving a card to Ready for
   Testing reassigns it to the tester (Rob by default). Moving it back to In
-  Progress or Ready for Dev returns it to the developer. Search sits in the page header, beside the task count. The primary filters, staff avatars,
-  **My tasks** and **Release**, sit in a bar pinned to the top while you scroll, with the column headers under it. Flagged,
+  Progress or Ready for Dev returns it to the developer. The primary filters, staff avatars,
+  **My tasks**, the search box and **Release**, sit in a bar pinned to the top while you scroll, with the column headers under it.
+  Search sits in that bar between My tasks and Release, so it stays on screen while the board scrolls. Flagged,
   type, priority, sprint and label are in the **Filters** menu, whose button shows how many are on. The bar stays on
   one line from 1024px wide. Changing a filter keeps your place on the page. **On a phone** the columns are a
   sideways carousel: swipe left or right, or tap a column tab in the pinned strip. With swimlanes, every
