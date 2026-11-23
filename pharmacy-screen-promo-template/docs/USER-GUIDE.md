@@ -55,7 +55,8 @@ greeting, the promotion slots, the walk-in close, the Open today bar, the openin
 toggle, and the seasonal copy. Edit it like a pharmacy's content; the preview uses the default colours and shows the tokens as written, so
 `${Suburb}`, `${StoreName}` and `${Phone}` appear in the copy exactly as typed ("Good morning, ${Suburb}",
 "Phone ${Phone}"); `${CloseTime}` / `${OpenTime}` show the sample hours' times. A pharmacy's preview fills them in. Every pharmacy uses it, including each one you add, so a change here reaches every
-screen that inherits it. A promotion with no master saved yet starts from a pharmacy's content (pick which one)
+screen that inherits it. Seasonal is the exception: the master's seasonal copy, dates and season are only where a
+new pharmacy starts and what **Copy from master** copies; a change to them reaches no live store ([Seasonal](#seasonal)). A promotion with no master saved yet starts from a pharmacy's content (pick which one)
 until you edit it or click **Save as master**.
 
 On a pharmacy, each section of a promotion says where it comes from:
@@ -161,14 +162,19 @@ Day, Valentine's Day, Easter, Anzac Day. It picks the season you are editing and
 screens play outside every season's dates. Each line shows the season's start and end dates in brackets after its
 name, for example **Christmas (15 Dec – 27 Dec)** (one date for a one-day season: **Australia Day (26 Jan)**;
 Easter shows this year's Good Friday to Easter Monday). They are the dates in the season's **Dates** card, and
-change as soon as you change them there. It applies to all pharmacies. Each season is its own full-screen animation (Christmas: a lit tree; New Year's: fireworks;
+change as soon as you change them there. The Season drop-down and the **Dates** card save to the pharmacy on
+screen: only that pharmacy's screens follow. With **Master template** on screen they change only the master, which
+is where a new pharmacy starts and reaches no live store. Each season is its own full-screen animation (Christmas: a lit tree; New Year's: fireworks;
 Australia Day: the flag; Valentine's Day: rising hearts; Easter: bouncing eggs; Anzac Day: a dawn glow and a
 poppy), with no logo, brand colours or Open today bar. Its copy plays as beats (Christmas has two, the others
 three), each for its own seconds on screen. As installed every season's loop is 7 seconds (the editor shows
 **Loop 7s**): for each beat each pharmacy edits its seconds on screen (1–60), the **Main
 line** and, where the design has one, the small label line. Set the campaign's playback duration to the one the
 editor shows beside Copy experience URL (**8 seconds** with the installed timings). Every season keeps its own copy and dates, so
-switching back and forth loses nothing. Use `${Suburb}` in any line, and `${StoreName}` in Christmas and New
+switching back and forth loses nothing. On a pharmacy the seasonal section reads **This pharmacy's own**: its season and every
+season's copy, dates and timings belong to that pharmacy, and nothing done to the master template reaches them.
+**Copy from master** (click twice) replaces the copy, dates and timings of the season on screen with the master's
+as they are now. **Restore to default** leaves seasonal content alone. Use `${Suburb}` in any line, and `${StoreName}` in Christmas and New
 Year's. A line that is too long is made smaller to fit. Anzac Day is commemorative: fades only.
 
 ## Templates
@@ -203,7 +209,8 @@ In the pharmacy view:
   that section again. Edits save as you type and reach that pharmacy's screens as usual.
 - **Restore to default**, at the top of the page in place of "shared by all pharmacies", puts every section of
   every promotion back to the master template ("Inherited from master") in one go. Click it twice: the second
-  click discards the pharmacy's own changes. It is greyed out while every section already inherits.
+  click discards the pharmacy's own changes. It is greyed out while every section already inherits. It leaves
+  Seasonal alone: the season, its copy and its dates stay this pharmacy's own.
 - **Timings are set by an administrator only.** No scene shows its seconds on screen (greeting, promotion slots,
   walk-in close, opening-hours headlines, season beats); the screens play the timings set in the full editor.
 - **At most 3 promotion slots.** Add promotion is hidden once a promotion has 3 slots; delete one to add another.

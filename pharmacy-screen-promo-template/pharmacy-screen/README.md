@@ -98,11 +98,12 @@ A fourth default promotion for every pharmacy, named Seasonal (it was Occasions;
 so existing campaign URLs keep working, and the code still calls a season an "occasion"). It plays one of six
 read-only built-in templates, Christmas, New Year's, Australia Day, Valentine's Day, Easter and Anzac Day: the one
 whose dates hold the store's date (`activeOccasion()` in `js/render.js`, the date from `storeDate()` in
-`js/hours.js`, in `store_timezone`), else the promotion's template, which an admin picks in the editor's **Season**
-drop-down (seeded: Christmas). Dates are inclusive and the same every year: by default Christmas 15–27 Dec, New
+`js/hours.js`, in `store_timezone`), else the pharmacy's own season, picked in the editor's **Season** drop-down
+(seeded: Christmas) and published by the config API as that store's template for the promotion
+(`config-api/src/seasonal.js`, `src/publish.js`). Dates are inclusive and the same every year: by default Christmas 15–27 Dec, New
 Year's 28 Dec–5 Jan, Australia Day 26 Jan, Valentine's Day 14 Feb, Easter Good Friday to Easter Monday (worked out
-for each year) and Anzac Day 25 Apr (`OCCASIONS[].season`); an admin can change them in the editor
-(`content.occasions.<season>.from` / `.to`, `MM-DD`). Where two seasons' dates overlap, the one that started most
+for each year) and Anzac Day 25 Apr (`OCCASIONS[].season`); each pharmacy can change its own in the editor
+(`content.occasions.<season>.from` / `.to`, `MM-DD`; never inherited from the master). Where two seasons' dates overlap, the one that started most
 recently plays. A playing screen checks at the turn of every minute and starts the new season by itself when the
 date moves into another season's dates (or out of all of them). `date=YYYY-MM-DD` pretends the store's date, for
 testing.
