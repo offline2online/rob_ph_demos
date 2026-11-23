@@ -603,6 +603,44 @@ const scenarios = [
     },
   },
   {
+    // Tkc6HIzQ2aWeaNIBq7sB: approving from a header scrolled just under the
+    // sticky top bar put Deploy to Main behind the top bar, and the pinned bar
+    // did not show because it measured from 0. Now the bar measures from the
+    // top bar's bottom edge, the page does not move, and the new Deploy to
+    // Main is outlined where it is.
+    name: "approve with the header under the top bar: page stays put, Deploy to Main shows outlined in the pinned bar",
+    seed: () => {
+      const s = only("b1", "r1");
+      for (let n = 2; n <= 6; n++) s.docs.backlogItems[`b${n}`] = { ...s.docs.backlogItems.b1, title: `Backlog card ${n}`, createdAt: t(T0 + n), updatedAt: t(T0 + n) };
+      s.docs.projects.p2 = { name: "Second Project", createdAt: t(T0 + 1) };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.click(".card-deploy-select-cb", "tick the Ready for Testing card");
+      await c.waitText(`.project[data-project-id="${PID}"] .project-header-actions .deploy-to-feature-btn`, "Approved for Deployment");
+      c.at("scroll the header's CTAs just under the top bar");
+      await c.page.evaluate((pid) => {
+        const edge = document.querySelector(".topbar").getBoundingClientRect().bottom;
+        const a = document.querySelector(`.project[data-project-id="${pid}"] .project-header-actions`).getBoundingClientRect();
+        window.scrollTo(0, window.scrollY + a.bottom - edge + 4);
+      }, PID);
+      await c.visible("#mobile-action-bar .deploy-to-feature-btn", "the hidden CTAs show in the pinned bar");
+      const y0 = await c.page.evaluate(() => window.scrollY);
+      await c.click("#mobile-action-bar .deploy-to-feature-btn", "approve from the pinned bar");
+      await until(async () => { const w = await c.writes(); return w.some((x) => x.path === `projects/${PID}`) ? w : null; }, "the approval writes");
+      await c.visible("#mobile-action-bar .deploy-notify-btn.cta-next-flash", "Deploy to Main is outlined in the pinned bar");
+      const y1 = await c.page.evaluate(() => window.scrollY);
+      assert.ok(Math.abs(y1 - y0) <= 2, `the page did not move (scrollY ${y0} -> ${y1})`);
+      const r = await c.page.evaluate(() => {
+        const b = document.querySelector("#mobile-action-bar .deploy-notify-btn").getBoundingClientRect();
+        const edge = document.querySelector(".topbar").getBoundingClientRect().bottom;
+        return { top: b.top, edge, right: b.right };
+      });
+      assert.ok(r.top >= r.edge - 1 && r.right <= c.width, `Deploy to Main is on screen below the top bar (${JSON.stringify(r)})`);
+    },
+  },
+  {
     name: "project header: big collapse control left of the name, star at the right; pinned bar collapses too",
     seed: () => {
       const s = seed();
@@ -3255,9 +3293,9 @@ const scenarios = [
     },
   },
   {
-    // Release 1.5.381 drew the popover inside the column's scroll box (.col-list, overflow: auto),
-    // which cut off everything past the column's edge. It is position: fixed now (placeCardDescPop).
-    name: "Board cards: title only in every column, the whole description pops up on hover/focus, unclipped",
+    // Cards show the title only (10 Nov 2026), and the hover popover with the description is gone
+    // (23 Nov 2026, ticket 8lQQ5RyxMnj1AnwXKIjN): nothing about the description appears on hover or focus.
+    name: "Board cards: title only in every column, no description popover on hover or focus",
     seed: () => {
       const s = seed();
       s.docs.backlogItems.b1.desc = "## Outcome\n" + "A long ticket description that runs on. ".repeat(25) + "\nLAST LINE";
@@ -3266,40 +3304,21 @@ const scenarios = [
     },
     async run(c) {
       await c.boardReady();
-      const title = '.card[data-id="b1"] .card-title-hover', pop = '.card[data-id="b1"] .card-desc-pop';
-      c.at("the Backlog card shows no description", title);
-      assert.ok(!(await c.page.locator('.card[data-id="b1"]').innerText()).includes("A long ticket description"), "no description text on the card");
-      assert.ok(await c.page.locator(pop).isHidden(), "the popover is hidden until hover");
-      // Every column, not just Backlog (release 1.5.381 left the other three showing descriptions).
-      for (const [id, words] of [["r1", ["Settings page fixed", "Fix the thing on the settings page"]], ["d1", ["Already approved"]], ["l1", ["Already live"]]]) {
-        const cardText = await c.page.locator(`.card[data-id="${id}"]`).innerText();
-        for (const w of words) assert.ok(!cardText.includes(w), `${id} shows "${w}" on the card; only the title should show`);
-        assert.strictEqual(await c.page.locator(`.card[data-id="${id}"] .card-desc, .card[data-id="${id}"] .card-desc-toggle-btn`).count(), 0, `${id} has no description block`);
-        const popText = await c.page.locator(`.card[data-id="${id}"] .card-desc-pop`).textContent();
-        for (const w of words) assert.ok(popText.includes(w), `${id}'s popover holds "${w}" (got "${popText}")`);
+      c.at("the Backlog card shows its title and no description", '.card[data-id="b1"] .card-title');
+      for (const [id, words] of [["b1", ["A long ticket description", "LAST LINE"]], ["r1", ["Settings page fixed", "Fix the thing on the settings page"]], ["d1", ["Already approved"]], ["l1", ["Already live"]]]) {
+        const card = c.page.locator(`.card[data-id="${id}"]`);
+        const html = await card.evaluate((el) => el.outerHTML);
+        for (const w of words) assert.ok(!html.includes(w), `${id} carries "${w}" in its markup; only the title should be there, with no popover`);
+        assert.strictEqual(await card.locator(".card-desc, .card-desc-toggle-btn, .card-desc-pop, .card-title-hover, [role=tooltip]").count(), 0, `${id} has no description block or popover`);
+        const t = card.locator(".card-title");
+        assert.strictEqual(await t.count(), 1, `${id} shows its title`);
+        assert.strictEqual(await t.getAttribute("title"), null, `${id}'s title has no native tooltip either`);
       }
-      assert.ok((await c.page.locator('.card[data-id="r1"] .card-desc-pop').textContent()).includes("Original request:"), "the test summary comes first, then the original request");
-      const unclipped = () => c.page.evaluate((sel) => {
-        const p = document.querySelector(sel), r = p.getBoundingClientRect();
-        const hit = (x, y) => { const e = document.elementFromPoint(x, y); return !!e && (e === p || p.contains(e)); };
-        return { inView: r.left >= 0 && r.right <= document.documentElement.clientWidth && r.top >= 0 && r.bottom <= innerHeight,
-          corners: hit(r.left + 6, r.top + 6) && hit(r.right - 6, r.top + 6) && hit(r.left + 6, r.bottom - 6) && hit(r.right - 6, r.bottom - 6), w: r.width };
-      }, pop);
       if (c.width >= 1024) {
-        c.at("hover shows the whole popover, unclipped", title);
-        await c.page.hover(title);
-        await until(async () => c.page.locator(pop).isVisible(), "the popover on hover", 3000);
-        const u = await unclipped();
-        assert.ok(u.inView && u.corners && u.w > 300, `the popover is inside the viewport and nothing covers or clips it: ${JSON.stringify(u)}`);
-        assert.ok((await c.page.locator(pop).innerText()).includes("LAST LINE"), "the full description is in it");
-        await c.page.mouse.move(2, 2);
-        await until(async () => c.page.locator(pop).isHidden(), "the popover hides when the pointer leaves", 3000);
+        await c.page.hover('.card[data-id="b1"] .card-title');
+        c.at("hovering the title shows nothing extra", '.card[data-id="b1"] .card-title');
+        assert.strictEqual(await c.page.locator('[role=tooltip]:visible').count(), 0, "no tooltip appears on hover");
       }
-      c.at("keyboard focus shows it too", title);
-      await c.page.focus(title);
-      await until(async () => c.page.locator(pop).isVisible(), "the popover on focus", 3000);
-      const u = await unclipped();
-      assert.ok(u.inView && u.corners, `focused popover is inside the viewport and unclipped at ${c.width}px: ${JSON.stringify(u)}`);
     },
   },
   {

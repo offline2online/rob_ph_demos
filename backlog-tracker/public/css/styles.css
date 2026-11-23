@@ -351,10 +351,6 @@ body {
 .revert-btn:hover { background: var(--danger-tint); color: var(--danger); }
 .card-title { margin: 0 0 4px; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
 /* Board cards show the title only, in every column; the description appears on hover/focus. */
-.card-title-hover { position: relative; cursor: help; }
-/* position: fixed and placed by placeCardDescPop() in app.js, so the column's scroll box can't clip it. */
-.card-title-hover .card-desc-pop { display: none; position: fixed; left: 8px; top: 0; z-index: 60; width: min(360px, calc(100vw - 16px)); max-height: 320px; overflow: auto; padding: 8px 10px; background: var(--surface, #fff); color: var(--text-muted); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,.15); font-size: 12.5px; font-weight: 400; white-space: pre-wrap; }
-.card-title-hover:hover .card-desc-pop, .card-title-hover:focus .card-desc-pop { display: block; }
 .card-desc { margin: 0; font-size: 12.5px; color: var(--text-muted); overflow-wrap: anywhere; }
 .card-desc-wrap .card-desc-original { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border); }
 .card-desc-toggle-btn {
@@ -3054,6 +3050,13 @@ html[data-console-role="viewer"] .lead-prio-tools { display: none; }
 .card-state-decision, .card-state-tester, .card-state-approver { color: var(--primary-text); }
 .card-state-warn { color: var(--warning); font-weight: 600; }
 .card-flash { box-shadow: 0 0 0 2px var(--primary); transition: box-shadow .3s; }
+/* Tkc6HIzQ2aWeaNIBq7sB: after Approved for Deployment, the Deploy to Main
+   that replaces it is outlined for a moment wherever it is (pinned bar or
+   header) so it can be found without the page moving. See
+   flashPendingNextActions in app.js. */
+.cta-next-flash { box-shadow: 0 0 0 3px var(--primary); animation: cta-next-pulse 0.8s ease-in-out 3; }
+@keyframes cta-next-pulse { 50% { box-shadow: 0 0 0 6px var(--primary-tint, rgba(0, 0, 0, .12)); } }
+@media (prefers-reduced-motion: reduce) { .cta-next-flash { animation: none; } }
 
 .project.collapsed .deploy-gate-hint { display: none; }
 .deploy-gate-hint {
