@@ -207,6 +207,18 @@ export async function visibilityFor(ctx: Context, c: Caller): Promise<(p: Positi
   const me = c.partner.id
   /* Read once, and only if a deal asks for it. */
   let partners: Awaitable<PartnerRecord[]> | undefined
+  /* Each buyers list once per request, not twice per position: every
+     position of a deal slot read its list (a row, its deals and its
+     acceptances) for its invited DSPs and again for its invited seats, which
+     was half the CPU of an inventory page on shape T's 70 deal positions
+     (bench, 23 Nov 2026). The function lives for one request, so a list
+     changed by another request is read fresh by the next. */
+  const lists = new Map<string, ReturnType<Context['buyersLists']['get']>>()
+  const listOf = (id: string) => {
+    let l = lists.get(id)
+    if (l === undefined) lists.set(id, (l = ctx.buyersLists.get(id)))
+    return l
+  }
   const allows = (p: PositionRef, allowed: string[] | null): Awaitable<boolean> => {
     if (allowed !== null && !allowed.includes(me)) return false
     const a = assignmentOf(p.def)
@@ -216,13 +228,13 @@ export async function visibilityFor(ctx: Context, c: Caller): Promise<(p: Positi
     /* The Open auction tier below the deals is open to its DSPs (none chosen = All DSPs) whatever the deals invite. */
     const open = assignedCached(p.def)
     if (open.openAuction && (!open.partnerIds.length || open.partnerIds.includes(me)) && seats.length > 0) return true
-    return andThen(allOf(open.buyersListIds.map((id) => ctx.buyersLists.get(id))), (lists) =>
-      lists.some((list) => !!list && isActiveAt(list, ctx.clock().toISOString()) && seats.some((s) => isInvitedBuyer(list, c.partner, s.id))))
+    return andThen(allOf(open.buyersListIds.map(listOf)), (deals) =>
+      deals.some((list) => !!list && isActiveAt(list, ctx.clock().toISOString()) && seats.some((s) => isInvitedBuyer(list, c.partner, s.id))))
   }
   /* Sync-first (db.ts andThen): once per position on every inventory read. */
   return (p) =>
     andThen(isSellable(ctx, p), (sellable) =>
-      sellable && andThen(effectivePartnerIds(ctx, p.def, assignedCached(p.def).buyersListIds.length ? (partners ??= ctx.partners.list()) : undefined), (allowed) => allows(p, allowed)))
+      sellable && andThen(effectivePartnerIds(ctx, p.def, assignedCached(p.def).buyersListIds.length ? (partners ??= ctx.partners.list()) : undefined, listOf), (allowed) => allows(p, allowed)))
 }
 
 /* Keeps the items the (possibly async) predicate accepts, in order. One at a

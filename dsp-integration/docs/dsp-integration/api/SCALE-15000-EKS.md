@@ -32,7 +32,11 @@ shapes of the same 15,000 displays:
 The numbers below are now thresholds: `npm run bench -- --assert` runs
 shapes A, B, C and T (`bench/thresholds.json`, seeded from the "after"
 column with a 25% tolerance) and exits non-zero naming the shape and the
-endpoint that moved. Because they were measured on one sandbox, a
+endpoint that moved. A shape that breaches is run once more, and a metric
+fails only if it breaches both runs (the better value is reported; 23 Nov
+2026, ticket YLWwUhbyeGDuQxJYQPeZ): identical runs on one machine differed
+by about 30% on `?status=available (1 yr)`, as wide as the tolerance, so a
+single run filed tickets for noise. Because they were measured on one sandbox, a
 different machine first runs `npm run bench -- --calibrate`, which writes
 `bench/baseline.local.json` (not committed); `--assert` then compares
 against that. A deliberate change updates `thresholds.json` in the same
@@ -42,6 +46,13 @@ PR. The thresholds were re-baselined on 19 Oct 2026 for the 8 Oct workload
 `thresholds.json` changes, because the nightly's cache key is a hash of that
 file. Shape T is the 7-Eleven Thailand estate as an assumption (shape C's
 mix) until CP Group confirms its display-type formats.
+
+Every read endpoint is driven untimed for `--warmup-seconds` (default 0.5)
+before its timed window (23 Nov 2026). Without that, the first endpoint
+driven — the inventory page of 50, then `?status=available` — carried the
+process's JIT and cold caches, and in November those two were the only
+metrics the nightly kept failing, in every shape, with no code change
+behind them. The bid driver has a fixed amount of work and is not warmed.
 
 ## How it was measured
 
@@ -284,3 +295,25 @@ the gate on a new machine. Shape T has not been confirmed with CP Group.
 1.9 million plays still bills in about 0.6 s and the idle tick in under
 60 ms.
 
+
+## Addendum — 23 Nov 2026: each buyers list read once per inventory request
+
+The nightly bench filed shape T's inventory page below its calibrated
+baseline (210 → 152 req/s, p50 141 → 178 ms; ticket gFfDdZyiXqhyU2JGIJS0).
+A CPU profile of that one endpoint on shape T put **half the request's
+time in `BuyersListRepo.get`**: since 8 Oct every synthetic slot is a
+private-auction deal, and `visibilityFor` read a position's buyers list
+(its row, its per-DSP deals and its acceptances, each parsed from JSON)
+twice per position — once for the DSPs it invites, once for the seats —
+on every request. It now reads each list once per request
+(`domain/positions.ts`, a memo that lives as long as the request's
+visibility check, so a list changed by another request is read fresh by
+the next). Same output in the same order; `test/scale.test.ts` →
+"buyers lists on an inventory read" pins both the answer and the single
+read.
+
+Shape T, same sandbox, before → after: page of 50 **226 → 545 req/s**
+(p50 121 → 52 ms); `?status=available` (1 yr) **107 → 173 req/s** (p50
+299 → 177 ms); `GET /v1/inventory/{id}` 3,872 → 5,451 req/s. The other
+paths were unchanged within noise. `thresholds.json` is not changed: the
+gate's limits are floors, and the faster numbers pass them.
