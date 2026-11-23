@@ -115,12 +115,17 @@ are 1–40 lower-case letters, digits and hyphens, unique across promotions.
 | `morning` | Morning | Promotion scenes (`builtin-promotion-scenes`) | Greeting, service chips, one scene per service, "Walk in today" close; "Open today" bar |
 | `afternoon` | Afternoon | Promotion scenes | The same, with afternoon copy |
 | `closed` | Closed | Opening hours (`builtin-opening-hours`) | Rotating headlines, the full week's hours, "Public Holidays: Please call to confirm", phone |
-| `occasions` | Seasonal | One of the six seasonal templates (seeded Christmas) | The season whose dates hold the store's date (else the pharmacy's own season, `content[<promotion id>].season`): its standalone animation, its copy as beats, each for its own seconds (seeded: a 7 s loop, playback duration 8 s; with no seconds set, a 12 s loop and 13 s); no "Open today" bar |
+| `occasions` | Seasonal | One of the six seasonal templates (seeded Christmas) | The season whose dates hold the store's date (else the pharmacy's own season, `content[<promotion id>].season`): its standalone animation, its copy as beats, each for its own seconds (seeded: 7 s of beats, playback duration 8 s; with no seconds set, 12 s and 13 s), played once with the last beat held; no "Open today" bar |
 
 Admins can add more (Admin → New promotion). Which promotion plays when is scheduled in Personalisation Hub
 Core, not here. A promotion can carry a **Schedule**: No schedule (the default, nothing stored) or Annual, a start
 and an end date (`"MM-DD"`, inclusive) that repeat every year. The dates are saved with the promotion and published
 in its screen config (`schedule`) for scheduling; the screen itself still plays whatever promotion `promo=` names.
+
+The screen plays the promotion once through and then holds its last scene (a Seasonal promotion: its last beat)
+until the player loads its next campaign, so the campaign's playback duration only needs to cover one play-through
+(the editor's Playback duration). It plays from the start again each time the page is loaded or shown again.
+`loop=1` on the URL loops it forever instead ([CONFIGURATION.md](CONFIGURATION.md) → "Query parameters").
 
 ## 3. Template tokens
 

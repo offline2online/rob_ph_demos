@@ -121,12 +121,14 @@ orientations (1080×1920 and 1920×1080); the layout switches by a container que
 | Easter | A pastel meadow with bouncing painted eggs | "Happy Easter, ${Suburb}" · "Wishing you a restful long weekend" · "Take time to recharge" |
 | Anzac Day | Solemn: a dawn glow, a single poppy, fades only | "25 April / Anzac Day" · "Lest we forget" · "Remembering together, ${Suburb}" |
 
-The copy plays as **beats on a 12 s loop** by default (Christmas 2 beats of 6 s, the others 3 of 4 s), driven by
-the designs' CSS: the player draws the occasion once and sets no timers. The playback duration to set in PH is
+The copy plays as **beats sharing 12 s** by default (Christmas 2 beats of 6 s, the others 3 of 4 s), driven by
+the designs' CSS: the player draws the occasion once and sets no timers. On the player the beats play once through
+and the last beat then stays on screen, fully drawn, while the decorations keep moving ("Playback" below); the
+editor's preview and `loop=1` loop them. The playback duration to set in PH is
 **13 s** at the defaults. Each beat's seconds on screen can be changed in the editor (`beats[i].dur`, 1–60 s); the
-loop is then their sum, played on keyframes `renderOccasion()` writes for those timings (`occasionTiming()`, same
+total is then their sum, played on keyframes `renderOccasion()` writes for those timings (`occasionTiming()`, same
 fades as the designs), and the editor's Playback duration follows. At the defaults the designs' own CSS plays.
-The seeded and mock data set every beat's seconds so that each season's loop is **7 s** (Christmas 3 + 4, New
+The seeded and mock data set every beat's seconds so that each season's beats total **7 s** (Christmas 3 + 4, New
 Year's and Australia Day 2 + 2 + 3, Valentine's Day and Anzac Day 3 + 2 + 2, Easter 2 + 3 + 2; playback duration
 **8 s**), as set on the live master: see `seed/README.md` → "Season timings".
 `scene=<n>` (and the editor's paused preview, and the copy-fit audit) hold beat n still. Under reduced motion the
@@ -185,6 +187,25 @@ against `fixtures/config.json`, so the two cannot drift apart silently.
 | `fixtures/campaign-data.json` | Mock Location API `campaign_data` responses keyed by device ID, in the real shape (`store_location`, `store_info.opening_hours[]`, `store_info.address_info`). Devices: `TEST` (Beaumaris), `DEVICE-VIC-MP-001` … `DEVICE-VIC-MP-005` (the five launch pharmacies), `TEST-NO-SUBURB` (no suburb, for the `${Suburb}` blanking rule), `TEST-LATE-NIGHT` (a session crossing midnight). |
 | `fixtures/config.json` | Config: promotions (`morning`, `afternoon`, `closed`, `occasions` on Christmas, plus a fixture-only `custom-demo` that uses a custom template), custom templates (HTML with `${…}` tokens, scoped CSS, portrait/landscape backgrounds) and per-pharmacy branding, logo and content, keyed by store code. |
 
+## Playback
+
+On a player a promotion plays inside a rotation of campaigns, so it plays **once through and then stays on its last
+scene**, fully drawn, until the player loads the next campaign:
+
+- Scene promotions (Morning, Afternoon, Closed, custom templates): after the last scene's seconds there is no
+  leaving fade and no return to the first scene. The held scene still follows the store's clock (the Open today
+  bar, "Closed now") and new data, redrawn in place without restarting playback.
+- Seasonal: the beats play once and the last beat stays visible, at the designs' default timings (the `.once`
+  class in `js/occasions.js`: each beat runs once, the last on keyframes that end visible) and at custom ones
+  (`occasionTiming(beats, {once: true})` in `js/render.js`). The decorations keep moving. A redraw on new data
+  carries on from the seconds already played, so the beats don't start again.
+- Playback starts from the first scene again when the page is loaded again, when it becomes visible again after
+  being hidden (`visibilitychange`, `pageshow` from the back-forward cache), and when a season changes at midnight.
+- `loop=1` keeps the earlier behaviour, looping forever, for a screen that shows one campaign only.
+
+The admin editor's preview is unchanged: it keeps looping. `scene=<n>` still holds one scene still. Tested by
+`test/ui/playback.test.mjs` and `test/playback.test.mjs`.
+
 ## Query parameters
 
 | Parameter | Meaning |
@@ -192,7 +213,8 @@ against `fixtures/config.json`, so the two cannot drift apart silently.
 | `device` | Required. The screen's device ID. Without it the screen shows "Invalid screen URL". An unknown device, or a store with no config, shows "Screen not set up" with the device ID. |
 | `promo` | The promo ID to play (`morning`, `afternoon`, `closed`, `occasions`, …). Defaults to the first promotion. An unknown ID shows "Promotion not found". |
 | `orientation` | `portrait` (default, 1080x1920) or `landscape` (1920x1080). |
-| `scene` | Testing only: hold on scene *n* (0-based) instead of playing the loop (an occasion: beat *n*, held still). |
+| `loop` | `loop=1` loops the promotion forever, for a screen that shows this one campaign only. Without it the promotion plays once and holds its last scene ("Playback" below). |
+| `scene` | Testing only: hold on scene *n* (0-based) instead of playing the promotion (an occasion: beat *n*, held still). |
 | `now` | Testing only: the store's local time, e.g. `now=fri-18:45`, to see each "Open today" bar message. |
 | `mockapi` | Testing only: `mockapi=1` uses the fixtures instead of the proxy and the config read. |
 | `debug` | Testing only: `debug=1` shows the debug panel (device, store code, source, last fetch of store data and config, server used, store time, bar state) with a test time override (day and time, Apply / Real time). |
@@ -210,7 +232,7 @@ Split so the admin editor's live preview can reuse the same code:
 | `render.js` | Render engine: store model from `campaign_data` + config, promotion and template resolution (built-ins "Promotion scenes", "Opening hours" and the six occasion templates, `OCCASIONS`; custom templates with scoped CSS and backgrounds), scene sequence and durations, brand colours, `renderScene()`, and `renderOccasion()` (an occasion drawn whole, its copy as beats; `occasionCopy()` reads any saved shape). |
 | `occasions.js` | The six approved Occasions designs: shared base CSS, each template's CSS and decoration markup (seeded scatter), unchanged from the design documents except that the copy comes from `render.js`. |
 | `live-data.js` | The one shared Location API client (requirement 8): proxy and config calls, server failover, polling with one request in flight, change detection, the `localStorage` cache, the screen states, and the published-config mapping; `?mockapi=1` swaps in the fixture client. No DOM. |
-| `player.js` | The page: reads the URL, gets live data through `live-data.js`, scales the screen to the viewport, plays the scenes, re-renders on a data change and when the store's bar state changes (an occasion loops in CSS, with no timers), shows the error states, and exposes `window.pharmacyScreen` for the audit and the tests. |
+| `player.js` | The page: reads the URL, gets live data through `live-data.js`, scales the screen to the viewport, plays the scenes once and holds the last (`loop=1`: loops them), restarts playback when the page is shown again or the season changes, re-renders on a data change and when the store's bar state changes (an occasion plays in CSS, with no timers), shows the error states, and exposes `window.pharmacyScreen` for the audit and the tests (`info.playback`, `info.held`). |
 | `debug-panel.js` | The `?debug=1` panel (styles in `css/debug.css`, loaded only then). |
 
 `css/screen.css` is the prototype's screen stylesheet, unchanged: scene animations matched to the Beaumaris

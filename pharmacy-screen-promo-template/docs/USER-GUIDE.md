@@ -100,6 +100,10 @@ Closed (`closed`) and Seasonal (`occasions`). Each pharmacy fills in its own cop
 
 Which promotion plays when is set in Personalisation Hub's scheduling, not here.
 
+On a screen, a promotion plays once through and then stays on its last scene until the screen moves on to its
+next campaign; the next time it comes round, it plays from the start. A screen that shows only this one campaign
+can loop it instead: add `&loop=1` to the end of its campaign URL. The preview here always loops.
+
 ## Promotion scenes (Morning, Afternoon and similar)
 
 The scenes play in order:
@@ -167,7 +171,8 @@ screen: only that pharmacy's screens follow. With **Master template** on screen 
 is where a new pharmacy starts and reaches no live store. Each season is its own full-screen animation (Christmas: a lit tree; New Year's: fireworks;
 Australia Day: the flag; Valentine's Day: rising hearts; Easter: bouncing eggs; Anzac Day: a dawn glow and a
 poppy), with no logo, brand colours or Open today bar. Its copy plays as beats (Christmas has two, the others
-three), each for its own seconds on screen. As installed every season's loop is 7 seconds (the editor shows
+three), each for its own seconds on screen; on the screen they play once and the last one stays. As installed
+every season's beats take 7 seconds (the editor shows
 **Loop 7s**): for each beat each pharmacy edits its seconds on screen (1–60), the **Main
 line** and, where the design has one, the small label line. Set the campaign's playback duration to the one the
 editor shows beside Copy experience URL (**8 seconds** with the installed timings). Every season keeps its own copy and dates, so

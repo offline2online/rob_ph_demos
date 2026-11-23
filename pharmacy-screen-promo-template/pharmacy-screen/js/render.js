@@ -20,7 +20,8 @@ import { OCCASION_DESIGNS, OCCASION_CSS } from './occasions.js';
 // the season picked in the admin editor's Season drop-down (the pharmacy's own; the config API publishes it as the
 // promotion's template for that store, config-api/src/seasonal.js). Each is a
 // standalone, full-screen animation (js/occasions.js, the approved designs): no brand panel, logo, brand colours,
-// icon tiles or Open today bar. Its copy plays as beats on a 12 s loop (Christmas 2 beats, the others 3); a beat is
+// icon tiles or Open today bar. Its copy plays as beats over 12 s (Christmas 2 beats, the others 3: on the player once
+// through, the last beat then staying on screen, js/player.js; in the editor's preview and with loop=1 on a loop); a beat is
 // a main line and, where the design has one, a small label line (above it, or for Australia Day's last beat a pill
 // below it). Each beat's seconds on screen can be set (beat.dur, 1-60; the loop is then their sum): left at the
 // defaults, the design's own CSS loop plays unchanged (occasionTiming()).
@@ -410,9 +411,11 @@ function writeTemplate(el, markup) {
 
 /**
  * Render one scene into `el` (the 1080x1920 / 1920x1080 .screen element, id "screen").
- * opts: { store, play, orientation, scene, now: {day, min} | undefined, enter: boolean, loop: boolean }
- * An occasion promotion draws its whole animation (renderOccasion): with opts.loop its beats play on their CSS loop,
- * otherwise beat `scene` is held still.
+ * opts: { store, play, orientation, scene, now: {day, min} | undefined, enter: boolean, loop: boolean, once: boolean,
+ *   at: number }
+ * An occasion promotion draws its whole animation (renderOccasion): with opts.loop its beats play on their CSS loop
+ * (with opts.once too: one time through, the last beat staying on screen; opts.at: seconds already played, for a
+ * redraw), otherwise beat `scene` is held still.
  * Returns { G, fit, state, ready } (ready: a promise, settled once an occasion's fonts are in and its copy refitted).
  */
 export function renderScene(el, opts) {
@@ -541,17 +544,21 @@ function occasionStyles(doc) {
  * plays unchanged: { custom: false }. Otherwise { custom: true, total, css, style(i) }: keyframes for each beat over
  * a loop of `total` seconds, fading in and out like the designs (in 0.6 s, out 0.5 s, shorter for a 1 s beat), and
  * the inline style that puts beat i on them (inline, so it wins over each design's own animation-name).
+ * opts.once (the player, playing once through): the last beat's keyframes end visible instead of fading out (the
+ * designs' own loop does the same with the .once class, js/occasions.js).
  */
-export function occasionTiming(beats) {
+export function occasionTiming(beats, opts = {}) {
   const n = beats.length, t = beats.map((b) => beatSeconds(b, n));
   if (t.every((x) => x === OCCASION_LOOP / n)) return { custom: false, total: OCCASION_LOOP };
+  const once = !!opts.once;
   const total = t.reduce((a, b) => a + b, 0), pc = (s) => +((s / total) * 100).toFixed(3) + '%';
-  const id = 'occT' + t.map((x) => String(x).replace('.', 'p')).join('_');
+  const id = 'occT' + (once ? 'o' : '') + t.map((x) => String(x).replace('.', 'p')).join('_');
   let start = 0, css = '';
   t.forEach((d, i) => {
     const a = start, end = start + d, fin = Math.min(0.6, d / 4), fout = Math.min(0.5, d / 4);
     const hide = 'opacity:0;transform:var(--from,translateY(5cqmin))', gone = 'opacity:0;transform:var(--to,translateY(-3cqmin))';
-    css += `@keyframes ${id}B${i + 1}{${a ? `0%,${pc(a)}` : '0%'}{${hide}}${pc(a + fin)},${pc(end - fout)}{opacity:1;transform:none}${end < total ? `${pc(end)},100%` : '100%'}{${gone}}}`;
+    const out = once && i === n - 1 ? `${pc(a + fin)},100%{opacity:1;transform:none}` : `${pc(a + fin)},${pc(end - fout)}{opacity:1;transform:none}${end < total ? `${pc(end)},100%` : '100%'}{${gone}}`;
+    css += `@keyframes ${id}B${i + 1}{${a ? `0%,${pc(a)}` : '0%'}{${hide}}${out}}`;
     start = end;
   });
   return { custom: true, total, css, style: (i) => `animation-name:${id}B${i + 1};animation-duration:${total}s` };
@@ -588,9 +595,14 @@ export function renderOccasion(el, opts) {
   el.removeAttribute('style');
   el.className = 'screen occasion' + (land ? ' land' : '');
   // Beat timings set in the editor: the loop's own keyframes (only while it plays; a held beat has no animation).
-  const timing = opts.loop ? occasionTiming(occ.beats.map((_, i) => beats[i] || {})) : { custom: false };
-  const copy = occ.beats.map((layout, i) => beatHtml(layout, beats[i] || {}, i, !opts.loop && i === scene, R, P, timing.custom ? timing.style(i) : '')).join('');
-  el.innerHTML = `${timing.custom ? `<style>${timing.css}</style>` : ''}<div class="occ occ-${occ.design}${opts.loop ? '' : ' hold'}">${design.fx}<div class="txt">${copy}</div></div>`;
+  // Played once (opts.once): the beats run one time and the last stays; opts.at (seconds) carries on from where a
+  // redraw caught it (new data, late fonts) instead of starting the beats again.
+  const once = !!(opts.loop && opts.once);
+  const timing = opts.loop ? occasionTiming(occ.beats.map((_, i) => beats[i] || {}), { once }) : { custom: false };
+  const at = once && opts.at > 0 ? `animation-delay:-${(+opts.at).toFixed(3)}s` : '';
+  const style = (i) => [timing.custom ? timing.style(i) : '', at].filter(Boolean).join(';');
+  const copy = occ.beats.map((layout, i) => beatHtml(layout, beats[i] || {}, i, !opts.loop && i === scene, R, P, style(i))).join('');
+  el.innerHTML = `${timing.custom ? `<style>${timing.css}</style>` : ''}<div class="occ occ-${occ.design}${opts.loop ? (once ? ' once' : '') : ' hold'}">${design.fx}<div class="txt">${copy}</div></div>`;
   const G = { W: land ? 1920 : 1080, H: land ? 1080 : 1920, inside: () => true };
   const fit = fitOccasion(el, G);
   const root = el.querySelector('.occ');
