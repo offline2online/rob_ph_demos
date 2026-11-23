@@ -100,7 +100,9 @@ and 1920px windows, toggling the menu back and forth with six extra promotions, 
 gets (`js/model.js` → `renderConfig()` maps the admin records). Portrait/Landscape tabs, the scene timeline
 with total time, Play/Pause, click a scene to jump to its editor and focus an editor to show its scene, and
 Copy experience URL (`pharmacy-screen.html?device=${UniqueDeviceID}&promo=<id>&orientation=<o>`, the full URL
-in a wrapping tooltip on hover). Beside it, "Playback duration: Ns" is the number to enter in the campaign: the
+in a wrapping tooltip on hover). In PH's content frame the Clipboard API is refused, so the button falls back
+to the copy command on a selected text field (`copyText()` in `js/editor.js`); if that is refused too, the URL is
+shown selected in a read-only field under the button (`#cpField`) for Ctrl+C / Cmd+C. Beside it, "Playback duration: Ns" is the number to enter in the campaign: the
 promotion's total length plus one second, rounded up (`playbackSeconds()` in `js/model.js`), so the last scene
 finishes. It updates live as scenes are added, removed or retimed, and its info icon's tooltip gives the campaign
 setup steps (Creative tab → Experience URL → paste the URL, set the playback duration, save and activate). The

@@ -8,6 +8,15 @@ release handed to miPharmacy is tagged and packaged with this file and the `docs
 Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 ([docs/RELEASING.md](docs/RELEASING.md)).
 
+### Fixed
+
+- **Copy experience URL works when the editor is shown in Personalisation Hub.** PH's content frame is not given
+  clipboard access, so the button always said "Copy failed, select it from the tooltip" there (in both
+  orientations), and the hover tooltip could not be selected from. It now falls back to the browser's copy command,
+  which works in the frame; if the browser refuses that too, the URL is shown selected in a read-only field under the
+  button ("Press Ctrl+C to copy the URL below"). A test copies every promotion (Morning, Afternoon, Closed, and
+  Seasonal in each of its seasons) in both orientations from the framed editor and checks the URL.
+
 ### Security
 
 - **Content-Security-Policy on the screen and the editor, report-only first.** Both deployments send

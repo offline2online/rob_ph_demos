@@ -259,7 +259,7 @@ function changed() {
   renderJson();
 }
 
-function renderUrl() { $('cpTip').textContent = urlText(); }
+function renderUrl() { const t = urlText(); $('cpTip').textContent = t; $('cpField').value = t; }
 /** "Playback duration: Ns" beside Copy experience URL, and its setup tooltip (runs every frame; writes on change). */
 let pbLast = -1;
 function renderPlayback(tot) {
@@ -1232,11 +1232,34 @@ $('apiRm').onclick = async () => {
   try { S.phApi = await Save.queue('phapi', () => api.removePhApiToken()); renderApi({ clearToken: true }); apiErr(''); } catch (e) { apiErr(e.message); }
 };
 
+/**
+ * Copy text to the clipboard. The Clipboard API first; where it is refused (Personalisation Hub shows the editor in
+ * a content frame that is not given clipboard access, so the API rejects every write there), the copy command on a
+ * selected, off-screen text field, which a click in a frame may still use. True when either copied.
+ */
+async function copyText(t) {
+  try { await navigator.clipboard.writeText(t); return true; } catch (e) { /* refused: try the copy command */ }
+  const ta = document.createElement('textarea');
+  ta.value = t; ta.setAttribute('readonly', ''); ta.setAttribute('aria-hidden', 'true');
+  ta.style.cssText = 'position:absolute;left:-9999px;top:0;width:1px;height:1px;opacity:0';
+  document.body.appendChild(ta); ta.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+  ta.remove();
+  return ok;
+}
+/** Copy experience URL: the URL of the promotion and orientation on the preview. If the browser refuses to copy,
+ *  the URL is shown selected in a read-only field under the button, for the keyboard shortcut. */
+let cpTimer = 0;
 $('cpUrl').onclick = async () => {
-  const t = urlText(); let ok = false;
-  try { await navigator.clipboard.writeText(t); ok = true; } catch (e) {}
-  $('cpTx').textContent = ok ? 'Copied' : 'Copy failed, select it from the tooltip';
-  setTimeout(() => { $('cpTx').textContent = 'Copy experience URL'; }, 1600);
+  const t = urlText(), ok = await copyText(t), f = $('cpField');
+  f.value = t; f.hidden = ok;
+  if (!ok) { f.focus(); f.select(); }
+  else $('cpUrl').focus();
+  const key = /Mac|iP(hone|ad|od)/.test(navigator.platform || navigator.userAgent) ? '\u2318C' : 'Ctrl+C';
+  $('cpTx').textContent = ok ? 'Copied' : `Press ${key} to copy the URL below`;
+  clearTimeout(cpTimer);
+  cpTimer = setTimeout(() => { $('cpTx').textContent = 'Copy experience URL'; }, ok ? 1600 : 4000);
 };
 
 // ───────────────────────── start ─────────────────────────

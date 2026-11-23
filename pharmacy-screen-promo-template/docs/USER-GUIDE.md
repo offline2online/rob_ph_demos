@@ -95,7 +95,8 @@ Closed (`closed`) and Seasonal (`occasions`). Each pharmacy fills in its own cop
 - Rename it or change its promo ID in **Promotion name** / **Promo ID**. Changing a promo ID means changing
   the campaign URL in PH too.
 - **Delete promotion** (click again to delete for all pharmacies).
-- **Copy experience URL** beside the preview gives the exact campaign URL for this promotion and orientation;
+- **Copy experience URL** beside the preview gives the exact campaign URL for this promotion and orientation (if
+  your browser does not allow copying, the URL appears selected under the button: press Ctrl+C, or Cmd+C on a Mac);
   **Playback duration** is the number of seconds to enter in the campaign.
 
 Which promotion plays when is set in Personalisation Hub's scheduling, not here.
