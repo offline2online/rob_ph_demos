@@ -396,10 +396,10 @@ export function editsSince(sent, ph) {
 
 /** What each data token shows when it is not set by hand (the Tokens card's placeholders). */
 export const TOKEN_SOURCES = {
-  Suburb: 'Suburb from Personalisation Hub',
-  Phone: 'Phone number from Personalisation Hub',
-  State: 'State from Personalisation Hub',
-  StoreCode: 'Store code from Personalisation Hub',
+  Suburb: 'Suburb from store details',
+  Phone: 'Phone number from store details',
+  State: 'State from store details',
+  StoreCode: 'Store code from store details',
 };
 
 // The Open today bar's messages, unless the bar is hidden.

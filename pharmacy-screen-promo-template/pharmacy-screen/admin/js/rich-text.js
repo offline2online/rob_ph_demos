@@ -8,7 +8,7 @@ const $ = (id) => document.getElementById(id);
 
 /** The field's markup: a toolbar and a contenteditable box holding `val` (`aria`: its accessible name, else `label`). */
 export function rt(id, label, val, aria = label) {
-  const menu = ADD_TOKENS.map((t) => `<button type="button" role="menuitem" data-t="${t.name}" title="Insert \${${t.name}}"><span class="tok-l">${esc(t.label)}</span><code>\${${t.name}}</code><span class="tok-s">${esc(t.source)}</span></button>`).join('');
+  const menu = ADD_TOKENS.map((t) => `<button type="button" role="menuitem" data-t="${t.name}" title="Insert \${${t.name}}"><span class="tok-l">${esc(t.label)}</span><code>\${${t.name}}</code>${t.source ? `<span class="tok-s">${esc(t.source)}</span>` : ''}</button>`).join('');
   return `<div class="f rtf"><div class="rt-lab"><span>${label}</span><button type="button" class="text tok-add" data-tok-for="${id}" aria-haspopup="menu" aria-expanded="false"><span class="ms">add</span>Add token</button>
   <div class="tok-menu" role="menu" aria-label="Add token" data-tok-menu="${id}" hidden>${menu}</div></div><div class="rt-box"><div class="rt-bar" data-for="${id}">
   <button type="button" data-cmd="bold" title="Bold"><b>B</b></button><button type="button" data-cmd="reg" title="Regular weight">Regular</button>

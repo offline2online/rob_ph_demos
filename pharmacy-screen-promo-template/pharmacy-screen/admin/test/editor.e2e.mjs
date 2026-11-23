@@ -235,7 +235,7 @@ test('Settings → Tokens: lists the tokens the pharmacy uses (master included);
   assert.equal((await page.textContent('#detailsCard label:has(#sName) > span')).trim(), 'Pharmacy name * ${StoreName}');
   assert.equal(await page.textContent('#sNameTok'), '${StoreName}');
   assert.ok(!names.some((n) => ['Headline', 'Logo', 'Content', 'Footer'].includes(n)), 'layout slots are not listed');
-  assert.equal(await page.getAttribute('#tokList input[data-token="Suburb"]', 'placeholder'), 'Suburb from Personalisation Hub');
+  assert.equal(await page.getAttribute('#tokList input[data-token="Suburb"]', 'placeholder'), 'Suburb from store details');
   assert.match(await page.textContent('#tokList'), /Used in Morning/);
   // The preview has no store data, so ${Suburb} is blank until a value is set by hand.
   assert.doesNotMatch(await headline(page), /Testville/);
@@ -1288,9 +1288,13 @@ test('+ Add token above every headline field lists the available tokens and inse
   await page.click(add);
   assert.equal(await page.getAttribute(add, 'aria-expanded'), 'true');
   assert.deepEqual(await page.$$eval(`${menu} button .tok-l`, (l) => l.map((e) => e.textContent)),
-    ['Store name', 'Suburb', 'Brand name', 'Store code', 'State', 'Phone number', 'Website', 'Languages spoken by store staff', 'Localised copy']);
+    ['Store name', 'Suburb', 'Store code', 'State', 'Phone number', 'Languages spoken by store staff', 'Localised copy']);
   assert.deepEqual(await page.$$eval(`${menu} button code`, (l) => l.map((e) => e.textContent)),
-    ['${StoreName}', '${Suburb}', '${BrandName}', '${StoreCode}', '${State}', '${Phone}', '${Website}', '${LanguagesSpoken}', '${LocalisedCopy}']);
+    ['${StoreName}', '${Suburb}', '${StoreCode}', '${State}', '${Phone}', '${LanguagesSpoken}', '${LocalisedCopy}']);
+  // Brand name and Website are gone, and nothing in the menu says "From Personalisation Hub".
+  assert.doesNotMatch(await page.textContent(menu), /Brand name|Website|Personalisation Hub/);
+  assert.deepEqual(await page.$$eval(`${menu} button .tok-s`, (l) => l.map((e) => e.textContent)),
+    ['Pharmacy name', 'Set in Settings → Tokens', 'Set in Settings → Tokens']);
   // Escape and a click elsewhere close it without inserting anything.
   await page.keyboard.press('Escape');
   assert.equal(await page.isVisible(menu), false);

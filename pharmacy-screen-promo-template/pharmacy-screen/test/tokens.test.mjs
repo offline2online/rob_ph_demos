@@ -100,8 +100,11 @@ test('${StoreName} is the Location API store name for the device; the pharmacy n
 
 test('"+ Add token" lists the ticketed tokens; ${State} and ${StoreCode} come from the store unless set by hand', async () => {
   const { ADD_TOKENS, isSettableToken, TEMPLATE_TOKENS } = await import('../js/tokens.js');
-  assert.deepEqual(ADD_TOKENS.map((t) => t.label), ['Store name', 'Suburb', 'Brand name', 'Store code', 'State', 'Phone number', 'Website', 'Languages spoken by store staff', 'Localised copy']);
-  assert.deepEqual(ADD_TOKENS.map((t) => t.name), ['StoreName', 'Suburb', 'BrandName', 'StoreCode', 'State', 'Phone', 'Website', 'LanguagesSpoken', 'LocalisedCopy']);
+  assert.deepEqual(ADD_TOKENS.map((t) => t.label), ['Store name', 'Suburb', 'Store code', 'State', 'Phone number', 'Languages spoken by store staff', 'Localised copy']);
+  assert.deepEqual(ADD_TOKENS.map((t) => t.name), ['StoreName', 'Suburb', 'StoreCode', 'State', 'Phone', 'LanguagesSpoken', 'LocalisedCopy']);
+  // no "From Personalisation Hub" sub-line: all of a user's store data comes from Personalisation Hub
+  assert.ok(ADD_TOKENS.every((t) => !/Personalisation Hub/.test(t.source || '')), 'no Personalisation Hub source line');
+  assert.deepEqual(ADD_TOKENS.filter((t) => t.source).map((t) => t.name), ['StoreName', 'LanguagesSpoken', 'LocalisedCopy']);
   // every one but the pharmacy name can be given a value in Settings → Tokens
   for (const t of ADD_TOKENS) assert.equal(isSettableToken(t.name), t.name !== 'StoreName', t.name);
   for (const k of Object.keys(TEMPLATE_TOKENS)) for (const t of ['State', 'StoreCode']) assert.ok(TEMPLATE_TOKENS[k].includes(t), `${k} offers ${t}`);

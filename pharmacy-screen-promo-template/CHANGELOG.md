@@ -24,6 +24,15 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
   `content.season` is kept but no longer published). Which pharmacies show promotions at all is the campaign's
   store segment targeting in Personalisation Hub ([docs/DATA-CONTRACT.md](docs/DATA-CONTRACT.md)).
 
+### Changed
+
+- **+ Add token: Brand name and Website removed, and no "From Personalisation Hub" line.** The menu above every
+  headline field now lists Store name, Suburb, Store code, State, Phone number, Languages spoken by store staff and
+  Localised copy. The store-data entries no longer carry the "From Personalisation Hub" sub-line (all of a user's
+  data comes from there). A value already set for `${BrandName}` or `${Website}` in Settings → Tokens still fills
+  copy that uses it. Settings → Tokens' placeholders for the store's data now read "… from store details" (e.g.
+  "Suburb from store details") instead of "… from Personalisation Hub".
+
 ### Fixed
 
 - **Seasonal: Currently active promotion is readable, and Activate on display reaches every screen.** In Retail

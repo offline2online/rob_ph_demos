@@ -144,11 +144,12 @@ Copy and template HTML use Personalisation Hub's token format, `${TokenName}`.
 | `${StoreCode}` | `store_location.store_code`, e.g. `VIC-MP-001` |
 
 Every headline field in the editor (each scene's headline, the hours headlines, the seasonal beats' main lines and
-the bar messages) has **+ Add token** on its label row: a menu of Store name (`${StoreName}`), Suburb, Brand name
-(`${BrandName}`), Store code, State, Phone number, Website (`${Website}`), Languages spoken by store staff
-(`${LanguagesSpoken}`) and Localised copy (`${LocalisedCopy}`) that inserts the token at the caret
-(`ADD_TOKENS` in `pharmacy-screen/js/tokens.js`). Brand name, Website, Languages spoken and Localised copy have no
-store data behind them: each shows the value the pharmacy sets in Settings → Tokens, and nothing until it does.
+the bar messages) has **+ Add token** on its label row: a menu of Store name (`${StoreName}`), Suburb, Store code,
+State, Phone number, Languages spoken by store staff (`${LanguagesSpoken}`) and Localised copy (`${LocalisedCopy}`)
+that inserts the token at the caret (`ADD_TOKENS` in `pharmacy-screen/js/tokens.js`). The store-data entries have no
+"From Personalisation Hub" sub-line. Languages spoken and Localised copy have no store data behind them: each shows
+the value the pharmacy sets in Settings → Tokens, and nothing until it does. Brand name and Website are not in the
+menu; copy that already uses `${BrandName}` or `${Website}` still shows a value set for it in Settings → Tokens.
 
 **In a custom template's HTML** (Admin → Edit HTML shows these as chips; `TEMPLATE_TOKENS` in
 `pharmacy-screen/js/tokens.js`):
