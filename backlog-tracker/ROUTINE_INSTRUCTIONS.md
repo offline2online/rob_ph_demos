@@ -594,6 +594,45 @@ append a note naming what is missing, and report `buildSession.status:
 button; the automation does not retry it on the same Routine. Never set
 `waiting-on-input` for a missing tool.
 
+## The advisor model (Fable) (23 Nov 2026)
+
+When a ticket raises a question, or needs analysis or support before it can
+be built — a choice it leaves open, a blocker, something to clarify or to
+investigate — the session does not stop on it and does not ask a person. It
+consults **Fable (`claude-fable-5-2`) as the advisor**, and the build carries
+on with its advice. Every default build fire carries the rule as an
+`=== ADVISOR: Fable (claude-fable-5-2) ===` block
+(`advisorBlock` in `functions/model-requirement.js`, Standard and Advanced
+tickets alike):
+
+1. **Ask the advisor**: the `Agent` tool with `model: "fable"`. Brief it with
+   the ticket, its comments and notes, what you found in the code, and the
+   exact question or analysis needed. Ask it to say first which model id it
+   runs as, then to give one recommendation and its reasoning.
+2. **Post its advice on the card**: append a note (Setup → "Append a note")
+   whose text starts `[advisor · claude-fable-5-2]`, with the question and
+   the advice. That note is how a tester sees the advisor was used.
+3. **Carry on with the build** on its recommendation, and record what you
+   took under "Assumed:", as "A choice between ways to build it" says.
+4. **Fable only advises.** It writes no code, tests or `patchFiles` and never
+   does the build or the review: those run on the ticket's model ("Per-ticket
+   model requirement" above). An Advanced ticket is built and reviewed on
+   Claude Opus, never on `claude-fable-5-2` — the automation refuses an
+   Advanced patch whose `builtByModel` is not an Opus, which is how Advanced
+   builds that came back from `claude-fable-5-2` were flagged
+   `model-unavailable`. `builtByModel` / `reviewedByModel` name the model
+   that did the work, never the advisor.
+5. **Still a question for a person?** Only for something a person alone can
+   supply (a file, a credential, access): flag `waiting-on-input` as below,
+   with the advisor's recommendation in `blocked.recommendation`, so the
+   automatic answer (`sweepAutoAnswers`) takes it.
+6. **Advisor unavailable** (no `Agent` tool, it fails to start, or it reports
+   another model): decide as the Outcome, the spec and the code best fit, and
+   say in the note that the advisor was unavailable. Never block for it.
+
+A Review Batch may consult the advisor the same way for a judgement call; the
+verdict and `reviewedByModel` stay the reviewing model's.
+
 ## Owner scoping and upstream contract changes (16 Nov 2026)
 
 - **Build only the ticket you were fired for, and never edit another ticket.**
@@ -1041,8 +1080,9 @@ path:
   backlog flow"). A question on a card stops that ticket until a person
   reads it, and nobody is watching. So when the ticket leaves a choice open
   (A or B, a wording, a default, a scope edge):
-  1. Put it to a higher-ranking agent (e.g. an `Agent` subagent briefed as
-     the senior reviewer) if the choice is not obvious.
+  1. Put it to the advisor, Fable, if the choice is not obvious — the
+     `Agent` tool with `model: "fable"`, posting its advice on the card (see
+     "The advisor model (Fable)" above).
   2. Take the option that fits the ticket's Outcome, the spec and the code as
      it stands; when two fit equally, the smaller and more reversible one.
   3. **Build it**, and say on the card in one line what you assumed and what

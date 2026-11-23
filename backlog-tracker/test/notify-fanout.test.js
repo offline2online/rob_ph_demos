@@ -404,6 +404,7 @@ async function click(db, mod, extra = {}) {
     assert.ok(a.includes("Per-ticket model requirement"), "points at the instructions section");
     assert.ok(!b.includes("MODEL REQUIREMENT: ADVANCED"), "no Advanced block on a Standard ticket");
     assert.ok(b.includes("Model requirement: Standard") && b.includes("builtByModel"));
+    assert.ok(a.includes("=== ADVISOR: Fable (claude-fable-5-2) ===") && b.includes("=== ADVISOR: Fable (claude-fable-5-2) ==="), "every build fire names the advisor");
   });
 
   await test("the review fire tags each ticket's model and asks for reviewedByModel", async () => {
