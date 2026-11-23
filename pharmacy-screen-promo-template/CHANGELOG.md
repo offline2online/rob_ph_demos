@@ -87,6 +87,11 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Changed
 
+- **`${StoreName}` comes from the Location API.** The screen fills `${StoreName}` (Christmas and New Year's
+  sign-offs, the logo's alt text, custom templates) with `store_location.store_name` that Personalisation Hub's
+  Location API returns for the screen's device, instead of the Pharmacy name typed in the editor, which may not be
+  the store's name or may be a placeholder. The Pharmacy name is used only when the API has no store name
+  (`storeModel()` in `pharmacy-screen/js/render.js`).
 - **The Firebase functions run in Sydney (`australia-southeast1`)**, next to the stores, instead of `us-central1`;
   the deploy removes the old copies. No instance is kept warm yet (`PS_MIN_INSTANCES` / `PH_MIN_INSTANCES`, default
   0): that is a monthly cost and the owner's call ([docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) → "Regions and warm

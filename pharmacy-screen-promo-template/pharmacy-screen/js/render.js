@@ -310,11 +310,12 @@ export function storeModel(campaignData, config) {
   const ph = ((config && config.pharmacies) || []).find((x) => String(x.storeCode || '').trim().toUpperCase() === code.toUpperCase());
   if (!code || !ph) throw new ScreenError('not-set-up', 'Screen not set up', code ? `Store ${code} has no screen content yet.` : 'No store is linked to this screen.');
   // Token values set by hand on the pharmacy (Admin → Settings → Tokens) win over the store's data. ${StoreName}
-  // is always the pharmacy name (cleanTokens drops LIVE_TOKENS).
+  // cannot be set by hand (cleanTokens drops LIVE_TOKENS): it is the store name the Location API returns for this
+  // screen's device, and the pharmacy name in the editor only when the API has none.
   const tokens = cleanTokens(ph.tokens);
   return {
     code,
-    name: ph.name || loc.store_name || '',
+    name: String(loc.store_name || '').trim() || String(ph.name || '').trim(),
     suburb: tokens.Suburb || String(addr.suburb || '').trim(),
     tz: loc.store_timezone || 'Australia/Melbourne',
     phone: tokens.Phone || addr.phone_number || '',

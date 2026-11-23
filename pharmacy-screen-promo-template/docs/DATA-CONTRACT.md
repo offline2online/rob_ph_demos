@@ -35,7 +35,7 @@ Only these are kept; the proxy drops everything else before answering the screen
 | Field (under `data`) | Type | Used for |
 |---|---|---|
 | `store_location.store_code` | string | Which pharmacy's config to load (`/api/screens/{store_code}`) |
-| `store_location.store_name` | string | Fallback store name (the config's pharmacy name wins) |
+| `store_location.store_name` | string | The store name, `${StoreName}`: the Location API's value for this device wins; the config's pharmacy name is used only when it is blank |
 | `store_location.store_timezone` | IANA zone, e.g. `Australia/Melbourne` | Store time for the "Open today" bar and today's hours (default `Australia/Melbourne` if empty) |
 | `store_info.opening_hours[]` | array | Weekly hours and the bar state |
 | `…opening_hours[].open_day` / `close_day` | `MONDAY` … `SUNDAY` | A session may close the next day (crossing midnight) |
@@ -136,7 +136,7 @@ Copy and template HTML use Personalisation Hub's token format, `${TokenName}`.
 | Token | Value |
 |---|---|
 | `${Suburb}` | `store_info.address_info.suburb`. With no suburb it is removed together with its leading comma and/or line break ("Good morning,<br>${Suburb}" → "Good morning") |
-| `${StoreName}` | The pharmacy's name from the editor (Christmas and New Year's sign-offs) |
+| `${StoreName}` | `store_location.store_name` from the Location API for this device (Christmas and New Year's sign-offs); the pharmacy's name from the editor only when the API has none |
 | `${CloseTime}` | Close time of today's current or next session, e.g. `7PM` ("Open today" bar) |
 | `${OpenTime}` | Open time of today's next session, e.g. `8.30AM` ("Open today" bar) |
 | `${Phone}` | `store_info.address_info.phone_number` |
@@ -183,8 +183,8 @@ store data behind them: each shows the value the pharmacy sets in Settings → T
 the pharmacy's `tokens`). A value set there wins over the store's data: `${Suburb}`, `${Phone}`, `${State}` and `${StoreCode}` show it
 instead of the Location API's value, and any other token name (letters, digits and underscores, starting with a letter,
 e.g. `${Website}`) used in copy or template HTML shows it instead of nothing. With a value set, `${Phone}` also
-resolves in promotion copy. `${StoreName}` is always the Pharmacy name (Settings → Pharmacy details shows the token
-beside that field), and `${CloseTime}` / `${OpenTime}` are always today's times, so none of the three can be set
+resolves in promotion copy. `${StoreName}` is always the store name from the Location API, falling back to the
+Pharmacy name (Settings → Pharmacy details shows the token beside that field) when the API has none, and `${CloseTime}` / `${OpenTime}` are always today's times, so none of the three can be set
 by hand (`LIVE_TOKENS` in `pharmacy-screen/js/tokens.js`); a value stored for one earlier is ignored by the screen
 and dropped the next time the pharmacy is saved. The layout slots (`${Headline}`, `${Logo}`, `${Content}` and the
 rest of the table above, other than `${Suburb}`, `${StoreName}`, `${Phone}`, `${State}` and `${StoreCode}`) cannot be set. Values are plain text, at most 200 characters, and at most 50 per
@@ -204,7 +204,7 @@ record also has `version`, `createdAt`, `createdBy`, `updatedAt`, `updatedBy`. F
 // pharmacy
 {
   "storeCode": "VIC-MP-001",              // 2-32 letters, digits, hyphens; stored upper-case; unique; must equal PH's store_code
-  "name": "Beaumaris Pharmacy",           // ${StoreName}
+  "name": "Beaumaris Pharmacy",           // admin label; ${StoreName} only when the Location API has no store_name
   "colours": { "primary": "#0f1050", "accent": "#5ee6b0" },
   "logo": { "path": "…", "url": "https://…", "contentType": "image/webp" },   // or null; set by the upload endpoint
   "content": {                            // keyed by promotion record id

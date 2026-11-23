@@ -70,19 +70,32 @@ test('tokens set by hand: settable names, cleaning and applying', async () => {
   assert.deepEqual([...validate.LIVE_TOKENS], LIVE_TOKENS);
 });
 
-test('tokens set by hand win over the store data on the screen; the pharmacy name and today\'s hours are always live', async () => {
+test('tokens set by hand win over the store data on the screen; the store name and today\'s hours are always live', async () => {
   const { storeModel, footerMessage } = await import('../js/render.js');
   const campaign = { data: { store_location: { store_code: 'VIC-MP-001', store_name: 'PH name' }, store_info: { address_info: { suburb: 'Wrong', phone_number: '03 0000 0000' } } } };
   const cfg = (tokens) => ({ pharmacies: [{ storeCode: 'VIC-MP-001', name: 'Beaumaris Pharmacy', content: {}, tokens }] });
   let s = storeModel(campaign, cfg(undefined));
-  assert.deepEqual([s.suburb, s.name, s.phone], ['Wrong', 'Beaumaris Pharmacy', '03 0000 0000']);
+  assert.deepEqual([s.suburb, s.name, s.phone], ['Wrong', 'PH name', '03 0000 0000']);
   s = storeModel(campaign, cfg({ Suburb: 'Beaumaris', StoreName: 'MiPharmacy Beaumaris', Phone: '03 9589 0000', CloseTime: '9PM', Website: 'x.example' }));
-  assert.deepEqual([s.suburb, s.name, s.phone], ['Beaumaris', 'Beaumaris Pharmacy', '03 9589 0000'], 'a stored ${StoreName} is ignored');
+  assert.deepEqual([s.suburb, s.name, s.phone], ['Beaumaris', 'PH name', '03 9589 0000'], 'a stored ${StoreName} is ignored');
   assert.equal(s.tokens.Website, 'x.example');
   assert.equal(s.tokens.CloseTime, undefined);
   const bar = footerMessage(s, {}, { state: 'open', closeTime: '19:00' });
   assert.match(bar, /7PM/, 'today\'s closing time, not a stored ${CloseTime}');
   assert.doesNotMatch(bar, /9PM/);
+});
+
+test('${StoreName} is the Location API store name for the device; the pharmacy name in the editor is only the fallback', async () => {
+  const { storeModel } = await import('../js/render.js');
+  const { applyStoreName } = await import('../js/tokens.js');
+  const campaign = (storeName) => ({ data: { store_location: { store_code: 'VIC-MP-001', store_name: storeName }, store_info: { address_info: { suburb: 'Beaumaris' } } } });
+  const cfg = (name) => ({ pharmacies: [{ storeCode: 'VIC-MP-001', name, content: {} }] });
+  assert.equal(storeModel(campaign(' Beaumaris Pharmacy '), cfg('Template Name')).name, 'Beaumaris Pharmacy', 'the Location API wins over the template');
+  assert.equal(storeModel(campaign('Beaumaris Pharmacy'), cfg('')).name, 'Beaumaris Pharmacy', 'no name in the template: the Location API name');
+  assert.equal(storeModel(campaign(undefined), cfg('Template Name')).name, 'Template Name', 'no store name from the API: the template name');
+  assert.equal(storeModel(campaign('   '), cfg('Template Name')).name, 'Template Name', 'a blank API store name falls back');
+  assert.equal(storeModel(campaign(''), cfg(undefined)).name, '', 'neither: blank, never "undefined"');
+  assert.equal(applyStoreName('from the whole ${StoreName} team', storeModel(campaign('Beaumaris Pharmacy'), cfg('Template Name')).name), 'from the whole Beaumaris Pharmacy team');
 });
 
 test('"+ Add token" lists the ticketed tokens; ${State} and ${StoreCode} come from the store unless set by hand', async () => {

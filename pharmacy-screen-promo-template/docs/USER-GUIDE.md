@@ -36,7 +36,8 @@ Personalisation Hub API. **Back to promotions** returns.
 ## Add a pharmacy
 
 1. Open **Settings** and click **Add pharmacy** in the *Pharmacies* section.
-2. Enter the **Pharmacy name** (shown on screens as `${StoreName}`) and the **Store code**. The store code
+2. Enter the **Pharmacy name** and the **Store code**. Screens show the store name from Personalisation Hub's
+   Location API as `${StoreName}`; the Pharmacy name is shown only when Personalisation Hub has no store name. The store code
    must be exactly the store's `store_code` in Personalisation Hub (e.g. `VIC-MP-006`): that is how a screen
    finds its pharmacy. It is checked as you type and must be unique.
 3. The pharmacy is created as soon as both are valid. Carry on editing; nothing is lost.
@@ -258,13 +259,14 @@ in the link that is not their store shows "Access denied" ([PH-EMBED.md](PH-EMBE
 **Settings** (the cog beside Promo preview) shows:
 
 - **Pharmacies**: the pharmacy picker, **Add pharmacy**, **Reset** and **Delete** ("Add a pharmacy" above).
-- **Pharmacy details**: name and store code. The name is the `${StoreName}` token, shown beside the
-  **Pharmacy name** label: change the name here to change it on screens.
+- **Pharmacy details**: name and store code. On screens `${StoreName}` is the store name from Personalisation
+  Hub's Location API for the screen's device; the **Pharmacy name** (the token is shown beside its label) is used
+  only when Personalisation Hub has no store name for the store.
 - **Tokens**: every `${…}` token this pharmacy's promotions and templates use, including the master template's
   sections it inherits, with the promotions that use each. Leave a token blank to show the store's own data
   (the placeholder says where it comes from: the suburb, phone number, state and store code from Personalisation
   Hub). `${StoreName}`
-  (the Pharmacy name above) and `${CloseTime}` / `${OpenTime}` (today's hours, which change through the day) are
+  (the store name from Personalisation Hub, else the Pharmacy name above) and `${CloseTime}` / `${OpenTime}` (today's hours, which change through the day) are
   filled in live and are not listed. Type a value to show it on this pharmacy's screens instead, for
   example when Personalisation Hub has the wrong suburb. A token only a custom template or your own copy uses
   (e.g. `${Website}`) shows nothing until it has a value here. Changes save as you type and show in the
