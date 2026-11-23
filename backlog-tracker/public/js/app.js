@@ -371,6 +371,9 @@ let items = [];
 // The Dashboard page (dashboard-page.js), once mounted. Declared up here because
 // renderNow() and recomputeAccess() redraw it and may run before its section below.
 let dashboardUi = null;
+// Projects whose next header CTA should be outlined on the next render
+// (flashPendingNextActions). Declared up here for the same reason.
+const pendingNextActionFlash = {};
 let dashboardUiLoading = null;
 let projects = [];
 let projectsLoaded = false;
@@ -1179,21 +1182,10 @@ function cardHTML(item) {
   // gone.
   const testLinkHTML = isTesting && item.previewUrl ? testLinkRowHTML(item) : "";
 
-  // Once a ticket reaches Ready for Testing, the raw typed/dictated
-  // description that started it is no longer the most useful thing to
-  // read first — testSummary (set by whoever actually implemented and
-  // opened a PR for it, e.g. the Notify Claude Routine) is a clear,
-  // standalone description of what changed plus concrete steps to test it.
-  // The original request is still one click away, not deleted.
-  //
-  // Every card on the board shows its title only (10 Nov 2026: release 1.5.381
-  // did this for the Backlog column alone, and the request was for the whole
-  // board). What the card used to show is in the hover/focus popover instead:
-  // testSummary first when there is one, then the original request.
-  const hasTestSummary = isTesting && (item.testSummary || "").trim();
-  const popText = hasTestSummary
-    ? `${item.testSummary.trim()}${(item.desc || "").trim() ? `\n\nOriginal request:\n${item.desc.trim()}` : ""}`
-    : (item.desc || "").trim();
+  // Every card on the board shows its title only (10 Nov 2026), and since
+  // 23 Nov 2026 (ticket 8lQQ5RyxMnj1AnwXKIjN) there is no hover popover with
+  // the description either: the title is enough on the card, and the full
+  // text is in the ticket itself.
 
   // A file (image, video, PDF, document…) attached via uploadItemAttachment.
   // Always rendered now, even at zero — it used to only appear once a card
@@ -1237,9 +1229,7 @@ function cardHTML(item) {
         </div>
         <div class="card-move">${editBtn}${leftBtn}${rightBtn}</div>
       </div>
-      ${popText
-        ? `<h3 class="card-title card-title-hover" tabindex="0" aria-describedby="desc-pop-${escapeHTML(item.id)}">${escapeHTML(item.title)}<span class="card-desc-pop" id="desc-pop-${escapeHTML(item.id)}" role="tooltip">${escapeHTML(popText)}</span></h3>`
-        : `<h3 class="card-title">${escapeHTML(item.title)}</h3>`}
+      <h3 class="card-title">${escapeHTML(item.title)}</h3>
       ${cardStateLineHTML(cardSt)}
       ${sentBackLastTimeHTML(item)}
       ${roundChipHTML(item, { expanded: expandedRoundChips.has(item.id) })}${noDeployBadge}${carriedBadge}${ownerBadge}${contractReviewChip}${modelBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${blockedFlag}${isBacklog ? buildOrderChipHTML(item) : ""}${reviewFlag}${e2eFixBadge}${trainTestChipHTML(item)}${sharedWithChipsHTML(item)}${foreignPathsChipsHTML(item)}${approvedByHTML}${testVersionBadge}${prBadge}${deployBadge}
@@ -1254,40 +1244,6 @@ function cardHTML(item) {
       ${approveBtn}${failBtn}${ejectBtn}${inDevelopmentHint}
     </article>`;
 }
-
-// Backlog cards show the title only; the description pops up on hover/focus.
-// The popover is position: fixed and placed here from the title's position,
-// so the column's scrolling list (.col-list, overflow: auto) can't clip it,
-// and it is kept inside the viewport: below the title, or above it when there
-// is more room there (release 1.5.381 drew it inside the column, which cut off
-// everything past the column's edge).
-function placeCardDescPop(title) {
-  const pop = title && title.querySelector(".card-desc-pop");
-  if (!pop) return;
-  const r = title.getBoundingClientRect();
-  const gutter = 8, gap = 4;
-  const vw = document.documentElement.clientWidth, vh = window.innerHeight;
-  const width = Math.min(360, vw - gutter * 2);
-  const below = vh - r.bottom - gap - gutter, above = r.top - gap - gutter;
-  const useAbove = below < 160 && above > below;
-  const maxH = Math.max(80, Math.min(320, useAbove ? above : below));
-  pop.style.width = `${width}px`;
-  pop.style.maxHeight = `${maxH}px`;
-  pop.style.left = `${Math.max(gutter, Math.min(r.left, vw - gutter - width))}px`;
-  pop.style.top = useAbove ? "" : `${r.bottom + gap}px`;
-  pop.style.bottom = useAbove ? `${vh - r.top + gap}px` : "";
-}
-document.addEventListener("mouseover", (e) => {
-  const title = e.target.closest && e.target.closest(".card-title-hover");
-  if (title && !title.contains(e.relatedTarget)) placeCardDescPop(title);
-});
-document.addEventListener("focusin", (e) => {
-  if (e.target.classList && e.target.classList.contains("card-title-hover")) placeCardDescPop(e.target);
-});
-// A scroll moves the title out from under a fixed popover: re-place it.
-document.addEventListener("scroll", () => {
-  document.querySelectorAll(".card-title-hover:hover, .card-title-hover:focus").forEach(placeCardDescPop);
-}, { capture: true, passive: true });
 
 function archivedCountForProject(pid) {
   if (archivedLoaded) return allItems.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "archived").length;
@@ -3338,6 +3294,36 @@ function renderNow() {
 
   ensureGeneralProjectDoc(renderedProjects);
   syncMobileActionBar();
+  flashPendingNextActions();
+}
+
+// ── Point at the next step after a header CTA (Tkc6HIzQ2aWeaNIBq7sB) ──────
+// Approving cards moves them out of Ready for Testing, so the content under
+// you shifts and the button you pressed turns into Deploy to Main — which
+// was easy to lose. The page is deliberately NOT scrolled to it (that would
+// be one more jump); instead the new button is briefly outlined where it
+// actually is: in the pinned bar when the project's header is scrolled away,
+// otherwise in the header itself. The click sets a pending flag that the
+// next render consumes, because the snapshot-driven rebuild would wipe a
+// class added at click time; a flag nobody consumes expires on its own, so
+// a later, unrelated Deploy to Main never flashes.
+const NEXT_ACTION_FLASH_MS = 2400;
+const NEXT_ACTION_PENDING_MS = 15000;
+function queueNextActionFlash(pid) {
+  pendingNextActionFlash[pid] = Date.now();
+  render();
+}
+function flashPendingNextActions() {
+  Object.keys(pendingNextActionFlash).forEach((pid) => {
+    if (Date.now() - pendingNextActionFlash[pid] > NEXT_ACTION_PENDING_MS) { delete pendingNextActionFlash[pid]; return; }
+    const sel = `.deploy-notify-btn[data-project-id="${CSS.escape(pid)}"]:not([disabled])`;
+    const inBar = mobileActionBar && !mobileActionBar.hidden ? mobileActionBar.querySelector(sel) : null;
+    const target = inBar || document.querySelector(`.project[data-project-id="${CSS.escape(pid)}"] .project-header-actions ${sel}`);
+    if (!target) return; // not offered yet (a ticket still testing) — wait for a later render
+    delete pendingNextActionFlash[pid];
+    target.classList.add("cta-next-flash");
+    setTimeout(() => target.classList.remove("cta-next-flash"), NEXT_ACTION_FLASH_MS);
+  });
 }
 
 // ── The current project's actions, held on screen while scrolling ────────
@@ -3373,16 +3359,29 @@ let mobileBarProjectId = null;
 let mobileBarQueued = false;
 
 // Which project is under the top of the screen right now: the last one
-// whose section has started, ignoring any whose own header is still
+// whose section has started, ignoring any whose own header actions are still
 // visible (no point repeating buttons that are already on screen).
+//
+// "The top of the screen" is the bottom edge of the sticky .topbar, not 0
+// (Tkc6HIzQ2aWeaNIBq7sB): the topbar covers the first ~70px of the page, so
+// a header scrolled just under it had its buttons hidden behind the topbar
+// while the bar still counted them as on screen. Approving from the header
+// put the new Deploy to Main exactly there — invisible, and not in this bar
+// either. What matters is the CTA row, so that is what is measured.
+function stickyTopbarBottom() {
+  const bar = document.querySelector(".topbar");
+  return bar ? Math.max(0, bar.getBoundingClientRect().bottom) : 0;
+}
 function projectAtTopOfScreen() {
+  const edge = stickyTopbarBottom();
   let current = null;
   document.querySelectorAll(".project").forEach((section) => {
     const header = section.querySelector(".project-header");
     if (!header) return;
     const box = section.getBoundingClientRect();
-    const headerBox = header.getBoundingClientRect();
-    if (box.top <= 0 && box.bottom > 80 && headerBox.bottom <= 0) current = section;
+    const actions = header.querySelector(".project-header-actions") || header;
+    const actionsBox = actions.getBoundingClientRect();
+    if (box.top <= edge && box.bottom > edge + 80 && actionsBox.bottom <= edge) current = section;
   });
   return current;
 }
@@ -4709,6 +4708,8 @@ async function deployToFeatureNow(pid) {
   }
 
   getDeploySelectedSet(pid).clear();
+  // Deploy to Main is the next step: outline it where it appears.
+  queueNextActionFlash(pid);
 }
 
 // Same idea as requestNotify() above, but for the "Approved for Deployment"

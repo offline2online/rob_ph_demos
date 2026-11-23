@@ -1869,12 +1869,13 @@ ticket — is what a Backlog card shows, but it stops being the most useful
 thing to read once the ticket is actually implemented. Whoever opens the
 PR for a ticket (in practice, the Notify Claude Routine) is expected to
 also set `testSummary`: a clear, standalone description of what changed,
-plus concrete steps to test it. Once a card reaches Ready for Testing, the
-card's hover popover shows `testSummary` (when set) first, then the
-original `desc` under "Original request:" rather than discarding it (cards
-show their title only — see "Board cards show the title only"). A card with no `testSummary` set (an older ticket, or one
-worked outside this flow) just keeps showing `desc` as before — this is a
-progressive enhancement, not a required field.
+plus concrete steps to test it. It is read where a ticket is presented for
+testing (the Ready for Testing presentation); the board card itself shows its
+title only and, since 23 Nov 2026, has no hover popover, so `testSummary` is
+not shown on the card (see "Board cards show the title only, with no hover
+popover"). A ticket with no `testSummary` set (an older ticket, or one worked
+outside this flow) is presented from its `desc` — this is a progressive
+enhancement, not a required field.
 
 ### `programs/{programId}`
 ```
@@ -2948,25 +2949,24 @@ combined content" convention (`ROUTINE_INSTRUCTIONS.md` → "Group
 multi-item fixes into one deployment") is a separate, code-level mechanism
 in `run-backlog-automation.js` that never depended on this page either.
 
-### Board cards show the title only; the description is on hover
+### Board cards show the title only, with no hover popover (23 Nov 2026)
 
 Every card on the Agent Board, in every column, shows its title and badges
-but not the description text. The text appears in a popover when the
-pointer is over (or keyboard focus is on) the title (`.card-title-hover` /
-`.card-desc-pop` in `public/css/styles.css`). On a touch screen a tap on
-the title opens the ticket detail, which shows the full description.
+but not the description text. Hovering over or focusing the title shows
+nothing extra: the description popover is gone (ticket 8lQQ5RyxMnj1AnwXKIjN,
+"we don't need the hover over message anymore … we can see enough just on
+the copy itself"), and the title carries no native `title=` tooltip either.
+The full description is in the ticket itself (Edit item).
 
-- What the popover holds: the description; for a Ready for Testing or
-  Approved card with a `testSummary`, the summary first and then
-  "Original request:" with the description.
-- The popover is `position: fixed`, placed by `placeCardDescPop()` in
-  `app.js` and kept inside the viewport, because the column's scrolling
-  list (`.col-list`, `overflow: auto`) clips anything positioned inside it.
-- Release 1.5.381 did this for the Backlog column only and drew the popover
-  inside the column. Both were fixed on 10 Nov 2026 (1.5.383 and the
-  release after it): the request was for every ticket on the board.
-  `test/ui/console-click.test.mjs` → "Board cards: title only in every
-  column" checks every column and that the popover is unclipped.
+- Release 1.5.381 made Backlog cards title-only with the description in a
+  hover popover; 10 Nov 2026 extended that to every column and moved the
+  popover to `position: fixed` (`placeCardDescPop()`). Both the popover and
+  `placeCardDescPop()` were removed on 23 Nov 2026, along with the
+  `.card-title-hover` / `.card-desc-pop` styles.
+- A Ready for Testing card's `testSummary` was shown only in that popover,
+  so it no longer appears on the board card.
+- `test/ui/console-click.test.mjs` → "Board cards: title only in every
+  column, no description popover on hover or focus" checks every column.
 
 ### Tickets never scroll left or right on a board (15 Nov 2026)
 
@@ -2990,6 +2990,28 @@ down under a finger, never sideways (ticket jcQCHLGeLP50iOeh1ZnJ).
   `test:ui:console`) at 390, 820, 1024, 1180 and 1440 px: no column of
   tickets scrolls sideways, no ticket is wider than its column, and every
   Staff Kanban ticket is `pan-y`.
+
+### After a header CTA, the page stays put and the next step is easy to find (23 Nov 2026)
+
+Approving cards (Approved for Deployment) moves them out of Ready for Testing
+and turns the button into Deploy to Main. The board never scrolls the page
+for this; instead:
+
+- **The pinned project bar measures from the sticky top bar.** A project's
+  header counts as scrolled away once its CTA row is under the bottom edge of
+  `.topbar`, not under the top of the window (`projectAtTopOfScreen` in
+  `app.js`). Before this, a header scrolled just under the top bar had its
+  buttons hidden behind it while the pinned bar stayed hidden, so the new
+  Deploy to Main was nowhere on screen.
+- **Deploy to Main is outlined where it appears.** After Approved for
+  Deployment, the project's Deploy to Main is briefly outlined
+  (`.cta-next-flash`, three pulses; a static outline with reduced motion) in
+  the pinned bar when the header is scrolled away, otherwise in the header.
+  If the button is not offered yet (a ticket still in Ready for Testing),
+  nothing flashes, and the request expires after 15 seconds.
+
+`test/ui/console-click.test.mjs` → "approve with the header under the top
+bar" covers it at every width.
 
 ### A Backlog card locks while a fix is in flight
 
@@ -7117,8 +7139,10 @@ page is filed as a ticket (SUP-AID-49 and 50).
   second round sees at most 6,000 characters of each earlier read.
 - **SUP-AID-17** An answer written from console data is short and in the
   body when it fits roughly a page (3,000 characters, 45 lines); a longer one
-  is attached as a Markdown file with a summary of at most two lines in the
-  body and a line naming the file. Tickets, projects and concepts are named
+  is printed and attached as a PDF (`<name>.pdf`, never a Markdown file,
+  SUP-AID-68) with a summary of at most two lines in the body and a line
+  naming the file. When the PDF can't be made, the answer is sent in full in
+  the body with no attachment. Tickets, projects and concepts are named
   by their titles: an id in the reply (or the attachment) is replaced by its
   title, or dropped when unknown, unless the instruction asks for ids.
   The same holds for a write that used console data: the reply text and the
@@ -8120,7 +8144,8 @@ that was written to hello@ or aidan@ before then stays in Support Inbox.
 Every reply goes out from the connected mailbox's address, whichever alias
 the customer wrote to. Aidan's reply waits for the next scheduled sync (five
 minutes, or longer when GitHub's schedule is busy). Aidan's document is a
-Markdown file, not Word or PDF. Files Aidan can't read (Word, PowerPoint,
+PDF, never a Markdown file (SUP-AID-68); a request for Word or PowerPoint
+gets a PDF, with a cover note saying so. Files Aidan can't read (Word, PowerPoint,
 spreadsheets) are named to the model, not read. Kept reference material has
 no page of its own yet. The sender check trusts Gmail's own
 `Authentication-Results` (authserv-id `mx.google.com`); if mail ever
