@@ -8,7 +8,31 @@ release handed to miPharmacy is tagged and packaged with this file and the `docs
 Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 ([docs/RELEASING.md](docs/RELEASING.md)).
 
+### Security
+
+- **Content-Security-Policy on the screen and the editor, report-only first.** Both deployments send
+  `Content-Security-Policy-Report-Only` (`aws/infra/csp.js`; the same in `firebase.json`): the screen may load
+  scripts, styles and fonts from its own origin only and connect only to it; the editor also Google Fonts and its
+  sign-in (Firebase Auth, or the OIDC token endpoint on AWS). Violations go to the new `POST /api/csp-report`, which
+  logs one short line each. Enforce it after a week without reports ([docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) →
+  "Content-Security-Policy").
+- **Public endpoints are harder to abuse.** The screen read (`/api/screens/**`) has a per-client limit (600 a minute,
+  about 150 screens behind one shared address; `429` past it). The Location API proxy keeps "not registered" answers in their own small cache, so made-up device
+  ids no longer push real devices' fallbacks out, and an address past 30 "not found" answers a minute gets `429` for
+  unknown devices while real ones keep refreshing; the slot is taken when the lookup starts, so ids sent all at once
+  are held to the same limit.
+- **AWS: the API answers only through CloudFront, and the origin secret is read by reference.** Both functions
+  refuse a request without CloudFront's `x-origin-verify` value (`403`). They get the secret's ARN
+  (`PS_ORIGIN_VERIFY_SECRET_ARN`) and read it at run time; the value is no longer in a function's environment. With
+  `--vpc-endpoints` a Secrets Manager endpoint is added. The screen read sees the viewer's address (not CloudFront's)
+  for its limit.
+
 ### Changed
+
+- **The Firebase functions run in Sydney (`australia-southeast1`)**, next to the stores, instead of `us-central1`;
+  the deploy removes the old copies. No instance is kept warm yet (`PS_MIN_INSTANCES` / `PH_MIN_INSTANCES`, default
+  0): that is a monthly cost and the owner's call ([docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) → "Regions and warm
+  instances").
 
 - **Players download only what changed after a deploy, and the first load is lighter.** The deploy now publishes
   every script and stylesheet under a name made from its content (`assets/`, kept by the browser and the CDN for a

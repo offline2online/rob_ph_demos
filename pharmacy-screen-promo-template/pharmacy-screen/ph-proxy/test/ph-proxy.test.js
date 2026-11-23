@@ -527,3 +527,82 @@ test("base URLs: only hosts the deployment allows can be saved, so the token can
   assert.equal((await save(listed, "https://demo.personalisationhub.com")).status, 200);
   assert.equal((await save(listed, "https://personalisationhub.com.evil.example")).status, 400);
 });
+
+test("unknown device ids: 100 guesses a minute from one address get 429 after the limit; real devices keep their data", async () => {
+  const servers = {
+    "https://ph.mipharmacy.net": (udid, key) => (key !== TOKEN_A ? { status: 401, json: {} } : /^GUESS-/.test(udid) ? { status: 404, json: { message: "not found" } } : { status: 200, json: SAMPLE }),
+  };
+  const ctx = setup({ servers, env: { PH_RATE_LIMIT_UNKNOWN_PER_IP_PER_MIN: "30" } });
+  await ctx.call("PUT", "/api/settings/ph-api", { as: "admin-token", body: { token: TOKEN_A } });
+  // A real screen behind the same address has data already.
+  assert.equal((await ctx.call("GET", "/api/device/DEV-REAL/campaign_data", { ip: "203.0.113.50" })).status, 200);
+  const codes = [];
+  for (let i = 0; i < 100; i++) codes.push((await ctx.call("GET", `/api/device/GUESS-${i}/campaign_data`, { ip: "203.0.113.50" })).status);
+  assert.deepEqual(codes.slice(0, 30), Array(30).fill(404));
+  assert.deepEqual(codes.slice(30), Array(70).fill(429));
+  const refused = await ctx.call("GET", "/api/device/GUESS-999/campaign_data", { ip: "203.0.113.50" });
+  assert.equal(refused.body.error.code, "RATE_LIMITED");
+  assert.equal(refused.headers["Cache-Control"], "no-store");
+  assert.equal(ctx.fetchImpl.calls.filter((c) => /^GUESS-/.test(c.udid)).length, 30, "only the allowed guesses reached PH");
+  // The real device, from that address, after its cache window: refreshed upstream, not refused.
+  ctx.clock.advance(15001);
+  const real = await ctx.call("GET", "/api/device/DEV-REAL/campaign_data", { ip: "203.0.113.50" });
+  assert.equal(real.status, 200);
+  assert.ok(!real.body.meta.stale, "a fresh answer, not the fallback");
+  // Another address is not affected, and the guesser's window resets after a minute.
+  assert.equal((await ctx.call("GET", "/api/device/DEV-OTHER/campaign_data", { ip: "198.51.100.1" })).status, 200);
+  assert.equal((await ctx.call("GET", "/api/device/GUESS-0/campaign_data", { ip: "198.51.100.1" })).status, 404, "a cached not-found answer");
+  ctx.clock.advance(60000);
+  assert.equal((await ctx.call("GET", "/api/device/GUESS-500/campaign_data", { ip: "203.0.113.50" })).status, 404);
+});
+
+test("unknown device ids sent in parallel: the limit holds for a burst, and real devices give their slot back", async () => {
+  const servers = {
+    "https://ph.mipharmacy.net": (udid, key) => (key !== TOKEN_A ? { status: 401, json: {} } : /^GUESS-/.test(udid) ? { status: 404, json: { message: "not found" } } : { status: 200, json: SAMPLE }),
+  };
+  const ctx = setup({ servers, env: { PH_RATE_LIMIT_UNKNOWN_PER_IP_PER_MIN: "30" } });
+  await ctx.call("PUT", "/api/settings/ph-api", { as: "admin-token", body: { token: TOKEN_A } });
+  // 40 real screens behind one address start at once on an instance that has never seen them: a device not yet
+  // known holds a slot while its lookup is in flight, so 30 go through and 10 are told to retry (the screen keeps
+  // its last data and asks again on its next poll). Every real answer gives its slot back, so the retry succeeds
+  // and none of them uses up the unknown-device allowance.
+  const cold = await Promise.all(Array.from({ length: 40 }, (_, i) => ctx.call("GET", `/api/device/DEV-${i}/campaign_data`, { ip: "203.0.113.60" })));
+  assert.equal(cold.filter((r) => r.status === 200).length, 30);
+  const retry = cold.map((r, i) => (r.status === 200 ? null : i)).filter((i) => i !== null);
+  const again0 = await Promise.all(retry.map((i) => ctx.call("GET", `/api/device/DEV-${i}/campaign_data`, { ip: "203.0.113.60" })));
+  assert.deepEqual(again0.map((r) => r.status), Array(10).fill(200));
+  // 100 made-up ids fired concurrently from that address: 30 reach PH, the rest are refused before any call.
+  const burst = await Promise.all(Array.from({ length: 100 }, (_, i) => ctx.call("GET", `/api/device/GUESS-${i}/campaign_data`, { ip: "203.0.113.60" })));
+  const codes = burst.map((r) => r.status);
+  assert.equal(codes.filter((c) => c === 404).length, 30);
+  assert.equal(codes.filter((c) => c === 429).length, 70);
+  assert.ok(burst.filter((r) => r.status === 429).every((r) => r.headers["Retry-After"] && r.headers["Cache-Control"] === "no-store"));
+  assert.equal(ctx.fetchImpl.calls.filter((c) => /^GUESS-/.test(c.udid)).length, 30, "only the allowed guesses reached PH");
+  // A real screen from that address still gets fresh data after its cache window.
+  ctx.clock.advance(15001);
+  const again = await ctx.call("GET", "/api/device/DEV-3/campaign_data", { ip: "203.0.113.60" });
+  assert.equal(again.status, 200);
+  assert.ok(!again.body.meta.stale, "a fresh answer, not the fallback");
+});
+
+test("not-found answers have their own small cache and never evict a real device's fallback", async () => {
+  const { CACHE_SIZE, NEGATIVE_CACHE_SIZE } = require("../src/location-proxy");
+  assert.ok(NEGATIVE_CACHE_SIZE < CACHE_SIZE);
+  const servers = {
+    "https://ph.mipharmacy.net": (udid) => (udid === "DEV-REAL" ? { status: 200, json: SAMPLE } : { status: 404, json: {} }),
+  };
+  const ctx = setup({ servers, env: { PH_RATE_LIMIT_UNKNOWN_PER_IP_PER_MIN: "0", PH_RATE_LIMIT_PER_IP_PER_MIN: "0", PH_RATE_LIMIT_PER_DEVICE_PER_MIN: "1", PH_UPSTREAM_CALLS_PER_MIN: "0", PH_PROXY_STALE_SECONDS: "600" } });
+  await ctx.call("PUT", "/api/settings/ph-api", { as: "admin-token", body: { token: TOKEN_A } });
+  assert.equal((await ctx.call("GET", "/api/device/DEV-REAL/campaign_data")).status, 200);
+  // More unknown ids than the main cache holds, each from its own address.
+  for (let i = 0; i < CACHE_SIZE + 10; i++) await ctx.call("GET", `/api/device/X${i}/campaign_data`, { ip: `10.${(i >> 16) & 255}.${(i >> 8) & 255}.${i & 255}` });
+  // Repeats of a recent unknown id are answered from the negative cache.
+  const before = ctx.fetchImpl.calls.length;
+  assert.equal((await ctx.call("GET", `/api/device/X${CACHE_SIZE + 9}/campaign_data`)).status, 404);
+  assert.equal(ctx.fetchImpl.calls.length, before);
+  // The real device's per-device limit trips: its last good answer is still there to serve.
+  ctx.clock.advance(16000);
+  const r = await ctx.call("GET", "/api/device/DEV-REAL/campaign_data", { ip: "10.99.0.1" });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.meta.stale, true);
+});

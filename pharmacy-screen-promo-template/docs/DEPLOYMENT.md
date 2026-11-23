@@ -19,7 +19,8 @@ this guide is about AWS. Every setting named here is in [CONFIGURATION.md](CONFI
                            │        │ /api/*  (+ origin header)                                            │
                            │        ▼                                                                      │
                            │  API Gateway (HTTP API)                                                       │
-                           │    ├─ /api/health, /api/screens/**, /api/admin/**  ─▶ Lambda ConfigApi ─┐     │
+                           │    ├─ /api/health, /api/screens/**, /api/admin/**,                      │     │
+                           │    │  /api/csp-report                              ─▶ Lambda ConfigApi ─┐     │
                            │    └─ /api/settings/ph-api[/**], /api/device/**    ─▶ Lambda PhApi ─────┤     │
                            │                     (both optionally in your VPC)                        │     │
                            │                                                                          ▼     │
@@ -186,10 +187,46 @@ By AWS design the KMS key is only scheduled for deletion (7 days), and the share
 (`CDKToolkit`) stays; delete it in CloudFormation if the account was only for this. Remove the campaigns in PH
 too.
 
+## Content-Security-Policy
+
+The screen page and the editor are sent `Content-Security-Policy-Report-Only` (both deployments; the policies are in
+`aws/infra/csp.js`, and `firebase.json` carries the same strings). Nothing is blocked yet: each violation a browser
+sees is POSTed to `/api/csp-report`, and the config API logs one line per report, `[csp] report <directive> blocked
+<origin> on <path>` (CloudWatch Logs for `ConfigApi` on AWS; Cloud Logging for `pharmacyScreenConfigApi` on Firebase).
+
+1. Leave it in report-only for a week of real players and editor use, and search the logs for `[csp]`.
+2. With no reports (or only ones explained and fixed), enforce it: change `CSP_HEADER` in `aws/infra/csp.js` to
+   `Content-Security-Policy`, and the two `Content-Security-Policy-Report-Only` keys in `firebase.json` with it
+   (on Firebase merge the editor's into its existing `frame-ancestors` header), then deploy.
+3. Check it holds: in DevTools on the screen page, inject `<script>alert(1)</script>` with
+   `document.body.insertAdjacentHTML` or a `<script src>` from another site; it is blocked and a report is logged.
+
+The screen may only connect to its own origin. If its `pharmacy-screen-api` setting names other servers, add them
+to the screen's `connect-src` (`screenCsp({ connect: [...] })`) before enforcing.
+
+## Regions and warm instances (Firebase test environment)
+
+Both functions run in `australia-southeast1` (Sydney), next to the stores. `firebase.json`'s rewrites and
+`PS_REGION` / `PH_REGION` must name the same region (`npm run check` fails otherwise). The deploy first removes the
+functions' old copies from `us-central1` if they are still there: a few minutes without the API on the test site,
+once. Firestore and the media bucket stay where they were created; if Firestore is not in Australia, each config
+read still crosses to it.
+
+No instance is kept warm (`PS_MIN_INSTANCES` / `PH_MIN_INSTANCES` default `0`), so the first request after a quiet
+spell has a cold start of a second or two. Keeping one instance of each warm (`1`) removes that, for a monthly cost
+whether or not screens call it: set it only with the owner's yes, and run that deploy by hand, since the Firebase
+CLI asks to confirm the cost.
+
 ## Limits
 
 - Uploads up to 4 MB on AWS (API Gateway → Lambda payload limit); the API's own limits are 2 MB for logos and
   5 MB for backgrounds.
+- Public endpoints are rate limited per instance (Lambda container or Cloud Functions instance): the screen read,
+  600 a minute per client address (`PS_RATE_LIMIT_SCREENS_PER_IP_PER_MIN`; a screen asks 4 times a minute, so
+  about 150 screens behind one shared address such as a head-office firewall: raise it for a larger estate); the
+  Location API proxy as in [CONFIGURATION.md](CONFIGURATION.md), with unknown device ids limited to 30 a minute per
+  address, counted when the lookup starts, so a burst sent all at once is held to the same 30. API Gateway's
+  own throttling (200 requests a second, bursts of 400) bounds the whole API on AWS.
 - About 90 pharmacies per promotion or template edit (one DynamoDB transaction republishes every pharmacy's
   screen; beyond that the edit is refused with `too-many-writes` before anything is written).
 
