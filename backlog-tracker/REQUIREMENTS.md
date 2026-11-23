@@ -6590,7 +6590,13 @@ extends Code Mode and the per-source searches; it replaces none of them.
 - **CTX-7** `scripts/context-backfill.js` indexes existing data and removes
   entries whose record has gone. It is safe to run again (an unchanged
   record is not written), is a dry run unless `--apply` is given, and
-  prints counts only. It runs after every successful console deploy.
+  prints counts only. It runs after every successful console deploy: a
+  deploy from a push starts it through `workflow_run`, and for a deploy the
+  pipeline started (with its own `GITHUB_TOKEN`, which GitHub gives no
+  `workflow_run` event) the backlog automation dispatches it with
+  `apply=true`, once per deploy run (`sweepContextBackfill`, marker
+  `systemStatus/contextBackfill`). Before 23 Nov 2026 only the push route
+  existed, so the documentation library shipped with nothing indexed.
 - **CTX-8** Aidan's lookup of a project's open tickets is an indexed query
   on `searchIndex` (source, project, open), not a read of every ticket the
   project ever had. Until the first full backfill has finished it uses the

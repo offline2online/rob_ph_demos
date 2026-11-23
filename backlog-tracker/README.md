@@ -3286,7 +3286,13 @@ key of the audit's query hash, closed to every client).
 
 **Deploying it.** It ships with the console: `deploy-backlog-tracker.yml`
 deploys the functions, rules and indexes, and "PH Agent Context backfill"
-then runs by itself and indexes existing data. Until that first backfill
+then runs by itself and indexes existing data. A deploy from a push starts
+it through `workflow_run`. A deploy the pipeline started gets no
+`workflow_run` event, because GitHub sends none for a run started with the
+pipeline's own `GITHUB_TOKEN`, so the backlog automation dispatches the
+backfill itself once that deploy succeeds (`sweepContextBackfill` in
+`run-backlog-automation.js`, once per deploy run, marker
+`systemStatus/contextBackfill`). Until that first backfill
 finishes, searches return only records written since the deploy, and
 Aidan's open-ticket lookup keeps using its old read. Semantic vectors need
 the Vertex AI API enabled on `backlog-tracker-e4ed2` and the functions'

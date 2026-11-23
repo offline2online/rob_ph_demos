@@ -1357,8 +1357,11 @@ and is never replaced by one made from an earlier read. A search never reads a s
 reads the index once, then only the entries indexed since, at most every 10
 seconds. Existing data is indexed by `scripts/context-backfill.js`
 (`.github/workflows/context-backfill.yml`: a dry run by hand, or `apply`;
-it also runs after every successful console deploy). It is safe to run
-again: an unchanged record is one read and no write.
+it also runs after every successful console deploy: a pushed deploy starts
+it by itself, and for a deploy the pipeline started the backlog automation
+dispatches it, once per deploy run, because GitHub sends no follow-up event
+for a run started with the pipeline's own token). It is
+safe to run again: an unchanged record is one read and no write.
 
 **Who sees what.** Each source is guarded by the existing read tool in the
 table above. A caller gets a source only when `tools/call` would let them
