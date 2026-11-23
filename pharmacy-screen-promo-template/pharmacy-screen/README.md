@@ -45,20 +45,52 @@ The PH player swaps `${UniqueDeviceID}` for the screen's own ID. The URL never c
 it again only after a deploy has changed it. `js/player.js` registers it for `pharmacy-screen.html` only (the admin
 editor is never touched).
 
-- **The shell** (the page, `js/`, `css/`, about 700 KB with the self-hosted fonts and icons) is downloaded once into a
-  cache named after the build and then served from it with no request. The deploy stamps `BUILD` in the published
-  `sw.js` with a hash of exactly those files (`stampServiceWorker` in `../scripts/deploy.mjs`), so a deploy that
-  changes none of them leaves `sw.js` byte-identical and the players download nothing.
+- **The shell as published** (`buildShell` in `../scripts/deploy.mjs`, run by both deploys and the release
+  package): every file in `js/` and `css/` gets a fingerprinted copy in `assets/` (`assets/js/player.<hash>.js`,
+  named after its content; a module's copy imports its neighbours' copies), each base64 font and the Christmas
+  photo in the stylesheets is written out as its own file (`assets/fonts/<hash>.woff2`, `assets/media/<hash>.jpg`),
+  and `pharmacy-screen.html` names the copies. Everything in `assets/` is published `Cache-Control: public,
+  max-age=31536000, immutable`; `pharmacy-screen.html` and `sw.js` stay `no-cache`. So a player without the worker
+  (`nosw=1`, an old WebView) asks only for the page on a later load, never a script, stylesheet or font. The
+  originals in `js/` and `css/` stay published (no-cache) for the admin editor's preview.
+- **The worker** downloads the shell (the page and everything in `assets/`, the Seasonal fonts and photo included,
+  so a Seasonal promotion plays offline too) once into a cache named after the build and then serves it with no
+  request. The deploy stamps `FILES` in the published `sw.js` with every shell file and the hash of its content,
+  and `BUILD` with a hash of that list, so a deploy that changes none of them leaves `sw.js` byte-identical and the
+  players download nothing.
 - **Updates**: the browser checks `sw.js` on every page load and the player asks again every 30 minutes (one small
-  request, 304 while nothing changed). A new build is downloaded once, takes over, the old cache is deleted and the
-  page reloads itself onto it (the last good data comes straight back from localStorage).
+  request, 304 while nothing changed). A new build copies every file whose hash is unchanged from the old build's
+  cache and downloads only the rest (a one-line change to `js/player.js`: `sw.js`, the page and that one script),
+  checks each download against its hash, takes over, the old cache is deleted and the page reloads itself onto it
+  (the last good data comes straight back from localStorage). A download that does not match fails the install, so
+  the old build keeps playing until the next check.
 - **Images** (store logos, backgrounds) are kept after their first download (up to 100). **Data** (`/api/**`) is
   never cached by the worker: `live-data.js` polls it and keeps the last good copy in localStorage. The fixtures
   (`mockapi=1`) are network first with the last copy as a fallback.
 - Unstamped (a local server), the shell is network first, so an edit shows on the next reload.
 - Tested by `test/ui/offline-cache.test.mjs` (second start downloads none of the shell; an unchanged deploy downloads
-  nothing; a changed stylesheet is picked up by the update check and the page reloads onto it; the screen still plays
-  with the server stopped) and `../test/offline-cache.test.mjs` (staging, stamping, the shell list).
+  nothing; a changed `js/player.js` is picked up by the update check, which downloads `sw.js`, the page and that
+  script only, and the page reloads onto it; without the worker a second load asks for the page only; a Morning
+  promotion loads no Seasonal stylesheet; the screen, a Seasonal promotion included, still plays with the server
+  stopped) and `../test/offline-cache.test.mjs` (fingerprinting, the fonts as files, stamping, the shell list).
+
+## First load
+
+- **Render-blocking CSS is small**: the page links `css/fonts.css` (Figtree), `css/material-symbols.css` and
+  `css/screen.css` only, about 14 KB once the deploy has written the fonts out as files.
+- **The Seasonal stylesheets** (`css/occasion-fonts.css`, `css/occasion-media.css`: the eight display faces and the
+  Christmas photo) are loaded by `js/player.js` only when the promotion playing is a Seasonal one; a Morning,
+  Afternoon or Closed promotion never asks for them.
+- **Roboto**, the platform font, is used by the debug panel only, so it lives in `css/debug.css` (loaded with
+  `debug=1` only).
+- **Material Symbols** is cut down to the icons the editor's picker offers (`admin/js/icons.js`) and the screen's
+  own (`tv_off`): about 280 KB instead of 430 KB (`tools/subset-icons.py`). An icon name typed into a custom
+  template that the picker does not offer is not in the font.
+- **`modulepreload`** links for the whole static import graph of `js/player.js` let the browser fetch the modules
+  in parallel (`../test/offline-cache.test.mjs` checks the list matches the imports).
+- **Fitted copy is kept**: `renderScene()` keeps each scene's fitted sizes per content signature (the scene's whole
+  markup), so the loop's next pass over a scene, or a redraw with nothing changed, skips the fit loop
+  (`fitMemoStats` in `js/render.js`; `test/ui/first-load.test.mjs`).
 
 ## Seasonal (`promo=occasions`)
 
@@ -66,11 +98,12 @@ A fourth default promotion for every pharmacy, named Seasonal (it was Occasions;
 so existing campaign URLs keep working, and the code still calls a season an "occasion"). It plays one of six
 read-only built-in templates, Christmas, New Year's, Australia Day, Valentine's Day, Easter and Anzac Day: the one
 whose dates hold the store's date (`activeOccasion()` in `js/render.js`, the date from `storeDate()` in
-`js/hours.js`, in `store_timezone`), else the promotion's template, which an admin picks in the editor's **Season**
-drop-down (seeded: Christmas). Dates are inclusive and the same every year: by default Christmas 15–27 Dec, New
+`js/hours.js`, in `store_timezone`), else the pharmacy's own season, picked in the editor's **Season** drop-down
+(seeded: Christmas) and published by the config API as that store's template for the promotion
+(`config-api/src/seasonal.js`, `src/publish.js`). Dates are inclusive and the same every year: by default Christmas 15–27 Dec, New
 Year's 28 Dec–5 Jan, Australia Day 26 Jan, Valentine's Day 14 Feb, Easter Good Friday to Easter Monday (worked out
-for each year) and Anzac Day 25 Apr (`OCCASIONS[].season`); an admin can change them in the editor
-(`content.occasions.<season>.from` / `.to`, `MM-DD`). Where two seasons' dates overlap, the one that started most
+for each year) and Anzac Day 25 Apr (`OCCASIONS[].season`); each pharmacy can change its own in the editor
+(`content.occasions.<season>.from` / `.to`, `MM-DD`; never inherited from the master). Where two seasons' dates overlap, the one that started most
 recently plays. A playing screen checks at the turn of every minute and starts the new season by itself when the
 date moves into another season's dates (or out of all of them). `date=YYYY-MM-DD` pretends the store's date, for
 testing.
@@ -88,12 +121,14 @@ orientations (1080×1920 and 1920×1080); the layout switches by a container que
 | Easter | A pastel meadow with bouncing painted eggs | "Happy Easter, ${Suburb}" · "Wishing you a restful long weekend" · "Take time to recharge" |
 | Anzac Day | Solemn: a dawn glow, a single poppy, fades only | "25 April / Anzac Day" · "Lest we forget" · "Remembering together, ${Suburb}" |
 
-The copy plays as **beats on a 12 s loop** by default (Christmas 2 beats of 6 s, the others 3 of 4 s), driven by
-the designs' CSS: the player draws the occasion once and sets no timers. The playback duration to set in PH is
+The copy plays as **beats sharing 12 s** by default (Christmas 2 beats of 6 s, the others 3 of 4 s), driven by
+the designs' CSS: the player draws the occasion once and sets no timers. On the player the beats play once through
+and the last beat then stays on screen, fully drawn, while the decorations keep moving ("Playback" below); the
+editor's preview and `loop=1` loop them. The playback duration to set in PH is
 **13 s** at the defaults. Each beat's seconds on screen can be changed in the editor (`beats[i].dur`, 1–60 s); the
-loop is then their sum, played on keyframes `renderOccasion()` writes for those timings (`occasionTiming()`, same
+total is then their sum, played on keyframes `renderOccasion()` writes for those timings (`occasionTiming()`, same
 fades as the designs), and the editor's Playback duration follows. At the defaults the designs' own CSS plays.
-The seeded and mock data set every beat's seconds so that each season's loop is **7 s** (Christmas 3 + 4, New
+The seeded and mock data set every beat's seconds so that each season's beats total **7 s** (Christmas 3 + 4, New
 Year's and Australia Day 2 + 2 + 3, Valentine's Day and Anzac Day 3 + 2 + 2, Easter 2 + 3 + 2; playback duration
 **8 s**), as set on the live master: see `seed/README.md` → "Season timings".
 `scene=<n>` (and the editor's paused preview, and the copy-fit audit) hold beat n still. Under reduced motion the
@@ -110,7 +145,8 @@ label). No product or health claims.
 Fonts (all SIL OFL 1.1) are self-hosted in `css/occasion-fonts.css` like Figtree and Material Symbols: Playfair
 Display, Outfit, Big Shoulders Display, Archivo Black, Archivo, DM Serif Display, Fredoka and Cormorant Garamond
 (`node tools/fetch-fonts.mjs occasions`). The Christmas background ships with the screen in
-`css/occasion-media.css`, as a data: URL, so no screen calls out for it.
+`css/occasion-media.css`, as a data: URL, so no screen calls out for it (the deploy writes each out as its own file).
+The player loads both stylesheets only when a Seasonal promotion plays.
 
 **Credit:** the Christmas photo (a lit Christmas tree) is by Olena Bohovyk on Unsplash
 (`photo-1603561128963-5f4d971c4959`), used under the Unsplash Licence (free for commercial use).
@@ -151,6 +187,25 @@ against `fixtures/config.json`, so the two cannot drift apart silently.
 | `fixtures/campaign-data.json` | Mock Location API `campaign_data` responses keyed by device ID, in the real shape (`store_location`, `store_info.opening_hours[]`, `store_info.address_info`). Devices: `TEST` (Beaumaris), `DEVICE-VIC-MP-001` … `DEVICE-VIC-MP-005` (the five launch pharmacies), `TEST-NO-SUBURB` (no suburb, for the `${Suburb}` blanking rule), `TEST-LATE-NIGHT` (a session crossing midnight). |
 | `fixtures/config.json` | Config: promotions (`morning`, `afternoon`, `closed`, `occasions` on Christmas, plus a fixture-only `custom-demo` that uses a custom template), custom templates (HTML with `${…}` tokens, scoped CSS, portrait/landscape backgrounds) and per-pharmacy branding, logo and content, keyed by store code. |
 
+## Playback
+
+On a player a promotion plays inside a rotation of campaigns, so it plays **once through and then stays on its last
+scene**, fully drawn, until the player loads the next campaign:
+
+- Scene promotions (Morning, Afternoon, Closed, custom templates): after the last scene's seconds there is no
+  leaving fade and no return to the first scene. The held scene still follows the store's clock (the Open today
+  bar, "Closed now") and new data, redrawn in place without restarting playback.
+- Seasonal: the beats play once and the last beat stays visible, at the designs' default timings (the `.once`
+  class in `js/occasions.js`: each beat runs once, the last on keyframes that end visible) and at custom ones
+  (`occasionTiming(beats, {once: true})` in `js/render.js`). The decorations keep moving. A redraw on new data
+  carries on from the seconds already played, so the beats don't start again.
+- Playback starts from the first scene again when the page is loaded again, when it becomes visible again after
+  being hidden (`visibilitychange`, `pageshow` from the back-forward cache), and when a season changes at midnight.
+- `loop=1` keeps the earlier behaviour, looping forever, for a screen that shows one campaign only.
+
+The admin editor's preview is unchanged: it keeps looping. `scene=<n>` still holds one scene still. Tested by
+`test/ui/playback.test.mjs` and `test/playback.test.mjs`.
+
 ## Query parameters
 
 | Parameter | Meaning |
@@ -158,7 +213,8 @@ against `fixtures/config.json`, so the two cannot drift apart silently.
 | `device` | Required. The screen's device ID. Without it the screen shows "Invalid screen URL". An unknown device, or a store with no config, shows "Screen not set up" with the device ID. |
 | `promo` | The promo ID to play (`morning`, `afternoon`, `closed`, `occasions`, …). Defaults to the first promotion. An unknown ID shows "Promotion not found". |
 | `orientation` | `portrait` (default, 1080x1920) or `landscape` (1920x1080). |
-| `scene` | Testing only: hold on scene *n* (0-based) instead of playing the loop (an occasion: beat *n*, held still). |
+| `loop` | `loop=1` loops the promotion forever, for a screen that shows this one campaign only. Without it the promotion plays once and holds its last scene ("Playback" below). |
+| `scene` | Testing only: hold on scene *n* (0-based) instead of playing the promotion (an occasion: beat *n*, held still). |
 | `now` | Testing only: the store's local time, e.g. `now=fri-18:45`, to see each "Open today" bar message. |
 | `mockapi` | Testing only: `mockapi=1` uses the fixtures instead of the proxy and the config read. |
 | `debug` | Testing only: `debug=1` shows the debug panel (device, store code, source, last fetch of store data and config, server used, store time, bar state) with a test time override (day and time, Apply / Real time). |
@@ -176,14 +232,15 @@ Split so the admin editor's live preview can reuse the same code:
 | `render.js` | Render engine: store model from `campaign_data` + config, promotion and template resolution (built-ins "Promotion scenes", "Opening hours" and the six occasion templates, `OCCASIONS`; custom templates with scoped CSS and backgrounds), scene sequence and durations, brand colours, `renderScene()`, and `renderOccasion()` (an occasion drawn whole, its copy as beats; `occasionCopy()` reads any saved shape). |
 | `occasions.js` | The six approved Occasions designs: shared base CSS, each template's CSS and decoration markup (seeded scatter), unchanged from the design documents except that the copy comes from `render.js`. |
 | `live-data.js` | The one shared Location API client (requirement 8): proxy and config calls, server failover, polling with one request in flight, change detection, the `localStorage` cache, the screen states, and the published-config mapping; `?mockapi=1` swaps in the fixture client. No DOM. |
-| `player.js` | The page: reads the URL, gets live data through `live-data.js`, scales the screen to the viewport, plays the scenes, re-renders on a data change and when the store's bar state changes (an occasion loops in CSS, with no timers), shows the error states, and exposes `window.pharmacyScreen` for the audit and the tests. |
+| `player.js` | The page: reads the URL, gets live data through `live-data.js`, scales the screen to the viewport, plays the scenes once and holds the last (`loop=1`: loops them), restarts playback when the page is shown again or the season changes, re-renders on a data change and when the store's bar state changes (an occasion plays in CSS, with no timers), shows the error states, and exposes `window.pharmacyScreen` for the audit and the tests (`info.playback`, `info.held`). |
 | `debug-panel.js` | The `?debug=1` panel (styles in `css/debug.css`, loaded only then). |
 
 `css/screen.css` is the prototype's screen stylesheet, unchanged: scene animations matched to the Beaumaris
 videos (content fades out at scene end, headline fades in, icon tiles pop in one after another with labels
 after, copy fades up, icons float with the outer and middle tiles in opposite phase), all off under
 `prefers-reduced-motion` (except an occasion's beats, which keep changing). `css/occasion-fonts.css` and
-`css/occasion-media.css` hold the Occasions fonts and the Christmas photo as data: URLs (generated; don't edit).
+`css/occasion-media.css` hold the Occasions fonts and the Christmas photo as data: URLs (generated; don't edit),
+loaded by `js/player.js` only for a Seasonal promotion. `css/debug.css` carries Roboto for the debug panel.
 
 ## Deploy
 
@@ -194,10 +251,12 @@ that folder's README.
 ## Tools
 
 - `tools/serve.mjs`: a static server for local runs, the audit and the UI tests.
-- `tools/fetch-fonts.mjs`: writes `css/fonts.css` (Figtree for the screen, Roboto for the debug panel) and
-  `css/material-symbols.css` (Material Symbols Outlined, the filled weight-500 instance the screen draws, every
-  icon) as data: URLs, from Google Fonts at build time. Nothing is fetched from Google at runtime, so screens work
-  behind firewalls. Figtree and Roboto: SIL Open Font License 1.1; Material Symbols: Apache 2.0. It also writes
+- `tools/fetch-fonts.mjs`: writes `css/fonts.css` (Figtree for the screen), the Roboto block of `css/debug.css`
+  (the debug panel) and `css/material-symbols.css` (Material Symbols Outlined, the filled weight-500 instance the
+  screen draws, cut down to the editor's icons and the screen's own by `tools/subset-icons.py`, which needs Python 3
+  with `pip install fonttools brotli`) as data: URLs, from Google Fonts at build time. Nothing is fetched from Google
+  at runtime, so screens work behind firewalls; the deploy writes each font out as a `.woff2` file. Figtree and
+  Roboto: SIL Open Font License 1.1; Material Symbols: Apache 2.0. It also writes
   `css/occasion-fonts.css` (the eight Occasions faces, SIL OFL 1.1); `node tools/fetch-fonts.mjs occasions` (or
   `screen`) rewrites just that part.
 - `tools/overflow-audit.mjs`: renders every fixture store x promotion x scene x orientation at each bar
@@ -241,6 +300,10 @@ run holds the train's deploy; see "CI" below.
   occasion line leaves the occasion's text box, and each failure names the device, store, promo, orientation,
   scene and bar state. Self-tests make one headline far too long and check that exactly that scene is named, and
   show that a long occasion line is shrunk to fit while far too much copy fails, naming the beat.
+- `test/ui/first-load.test.mjs`: a scene shown again reuses its fitted sizes (no fit loop) and changed copy is
+  fitted afresh; the cut-down icon font still draws the editor's icons and `tv_off` as icons; a Morning promotion
+  loads neither the Seasonal stylesheets nor the debug panel's, and `debug=1` loads Roboto with the panel.
+- `test/ui/offline-cache.test.mjs`: see "Kept on the device" above.
 - `test/ui/landscape-hours.test.mjs`: the landscape opening hours screen: the hours card fills most of the screen
   right of the brand arrow, its rows are 56px or larger, a day with two sessions stays on one line inside its row,
   the holiday note sits under the card, and portrait is unchanged.

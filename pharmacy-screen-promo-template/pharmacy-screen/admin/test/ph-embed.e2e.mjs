@@ -123,3 +123,64 @@ test('the session renews from the parent before it runs out, and ends when PH si
     await ctx.close();
   } finally { dev.idTtlSeconds.value = 3600; }
 });
+
+// The PH content frame is not given clipboard access, so the Clipboard API rejects every write in it: Copy experience
+// URL falls back to the copy command. Every promotion (Morning, Afternoon, Closed and Seasonal in each season) and
+// both orientations copy the URL of what is on the preview.
+test('Copy experience URL copies the right URL in the PH frame: every promotion, season and orientation', async () => {
+  const { ctx, frame } = await host('as=hq');
+  const page = new URL('../pharmacy-screen.html', frame.url()).href;
+  await frame.evaluate(() => { document.addEventListener('copy', () => { window.__copied = String(getSelection()); }); });
+  // The Clipboard API is refused here, as it is in PH.
+  assert.equal(await frame.evaluate(() => navigator.clipboard.writeText('x').then(() => 'ok', () => 'refused')), 'refused');
+  const copy = async () => {
+    await frame.evaluate(() => { window.__copied = null; });
+    await frame.click('#cpUrl');
+    await frame.waitForFunction(() => document.getElementById('cpTx').textContent !== 'Copy experience URL');
+    return { label: await frame.textContent('#cpTx'), copied: await frame.evaluate(() => window.__copied), field: await frame.isVisible('#cpField') };
+  };
+  const check = async (promo, o, what) => {
+    await frame.click(`#orTabs button[data-or="${o}"]`);
+    const r = await copy();
+    const want = `${page}?device=\${UniqueDeviceID}&promo=${promo}&orientation=${o}`;
+    assert.deepEqual(r, { label: 'Copied', copied: want, field: false }, `${what} ${o}`);
+    assert.equal(await frame.textContent('#cpTip'), want, `${what} ${o} tooltip`);
+  };
+  for (const [tab, promo] of [['Morning', 'morning'], ['Afternoon', 'afternoon'], ['Closed', 'closed']]) {
+    await frame.click(`#dpTabs button:has-text("${tab}")`);
+    for (const o of ['portrait', 'landscape']) await check(promo, o, tab);
+  }
+  // Seasonal: one URL for every season (the screen plays the season whose dates hold the store's date).
+  await frame.click('#dpTabs button:has-text("Seasonal")');
+  const seasons = await frame.$$eval('#pmTpl option', (o) => o.map((x) => x.value));
+  assert.equal(seasons.length, 6);
+  const was = await frame.inputValue('#pmTpl');
+  for (const s of seasons) {
+    await frame.selectOption('#pmTpl', s);
+    for (const o of ['landscape', 'portrait']) await check('occasions', o, s);
+  }
+  await frame.selectOption('#pmTpl', was);
+  await frame.evaluate(() => window.pharmacyAdmin.flush());
+  await ctx.close();
+});
+
+test('Copy experience URL: when the browser refuses to copy at all, the URL is shown selected for the keyboard', async () => {
+  const { ctx, frame } = await host('as=hq');
+  await frame.evaluate(() => { document.execCommand = () => false; });
+  await frame.click('#dpTabs button:has-text("Afternoon")');
+  await frame.click('#orTabs button[data-or="landscape"]');
+  await frame.click('#cpUrl');
+  await frame.waitForSelector('#cpField:not([hidden])');
+  const want = `${new URL('../pharmacy-screen.html', frame.url()).href}?device=\${UniqueDeviceID}&promo=afternoon&orientation=landscape`;
+  assert.equal(await frame.inputValue('#cpField'), want);
+  assert.match(await frame.textContent('#cpTx'), /^Press (Ctrl\+C|⌘C) to copy the URL below$/);
+  assert.doesNotMatch(await frame.textContent('#cpTx'), /tooltip/);
+  // Selected and focused, read-only.
+  assert.deepEqual(await frame.$eval('#cpField', (e) => ({ focused: document.activeElement === e, sel: e.value.slice(e.selectionStart, e.selectionEnd), ro: e.readOnly })), { focused: true, sel: want, ro: true });
+  // The field follows the preview: switch orientation and it holds the portrait URL.
+  await frame.click('#orTabs button[data-or="portrait"]');
+  assert.equal(await frame.inputValue('#cpField'), want.replace('orientation=landscape', 'orientation=portrait'));
+  // The label goes back to "Copy experience URL".
+  await frame.waitForFunction(() => document.getElementById('cpTx').textContent === 'Copy experience URL', null, { timeout: 6000 });
+  await ctx.close();
+});

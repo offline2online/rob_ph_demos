@@ -115,12 +115,17 @@ are 1–40 lower-case letters, digits and hyphens, unique across promotions.
 | `morning` | Morning | Promotion scenes (`builtin-promotion-scenes`) | Greeting, service chips, one scene per service, "Walk in today" close; "Open today" bar |
 | `afternoon` | Afternoon | Promotion scenes | The same, with afternoon copy |
 | `closed` | Closed | Opening hours (`builtin-opening-hours`) | Rotating headlines, the full week's hours, "Public Holidays: Please call to confirm", phone |
-| `occasions` | Seasonal | One of the six seasonal templates (seeded Christmas) | The season whose dates hold the store's date (else the chosen one): its standalone animation, its copy as beats, each for its own seconds (seeded: a 7 s loop, playback duration 8 s; with no seconds set, a 12 s loop and 13 s); no "Open today" bar |
+| `occasions` | Seasonal | One of the six seasonal templates (seeded Christmas) | The season whose dates hold the store's date (else the pharmacy's own season, `content[<promotion id>].season`): its standalone animation, its copy as beats, each for its own seconds (seeded: 7 s of beats, playback duration 8 s; with no seconds set, 12 s and 13 s), played once with the last beat held; no "Open today" bar |
 
 Admins can add more (Admin → New promotion). Which promotion plays when is scheduled in Personalisation Hub
 Core, not here. A promotion can carry a **Schedule**: No schedule (the default, nothing stored) or Annual, a start
 and an end date (`"MM-DD"`, inclusive) that repeat every year. The dates are saved with the promotion and published
 in its screen config (`schedule`) for scheduling; the screen itself still plays whatever promotion `promo=` names.
+
+The screen plays the promotion once through and then holds its last scene (a Seasonal promotion: its last beat)
+until the player loads its next campaign, so the campaign's playback duration only needs to cover one play-through
+(the editor's Playback duration). It plays from the start again each time the page is loaded or shown again.
+`loop=1` on the URL loops it forever instead ([CONFIGURATION.md](CONFIGURATION.md) → "Query parameters").
 
 ## 3. Template tokens
 
@@ -221,6 +226,7 @@ record also has `version`, `createdAt`, `createdBy`, `updatedAt`, `updatedBy`. F
       "showAddress": false
     },
     "<promotion id, occasion template>": {
+      "season": "christmas",              // this pharmacy's own: plays outside every season's dates
       "occasions": { "christmas": { "from": "12-15", "to": "12-27", "beats": [ { "text": "Merry Christmas, ${Suburb}", "dur": 3 }, { "label": "With warm wishes", "text": "from the whole ${StoreName} team", "dur": 4 } ] } /* one per occasion; Christmas 2 beats, the others 3 */ }
     }
   }
@@ -242,13 +248,21 @@ record also has `version`, `createdAt`, `createdBy`, `updatedAt`, `updatedBy`. F
 - Season dates: `from` and `to` (optional, `MM-DD`, inclusive, every year; `from` after `to` runs over New Year).
   Missing or invalid, the defaults apply: Christmas `12-15`–`12-27`, New Year's `12-28`–`01-05`, Australia Day
   `01-26`, Valentine's Day `02-14`, Easter Good Friday to Easter Monday (worked out for each year), Anzac Day
-  `04-25`. The screen plays the season whose dates hold the store's date, else the promotion's template.
+  `04-25`. The screen plays the season whose dates hold the store's date, else the pharmacy's own season.
+- Seasonal content is each pharmacy's own (`config-api/src/seasonal.js`): `content[<promotion id>].season` (one of
+  the season keys) and every season's copy, dates and timings in `content[<promotion id>].occasions`, with
+  `detached[<promotion id>]` always including `"occasions"` for a Seasonal promotion. The server gives a pharmacy
+  without them its own copy of what it plays (the master's; `season` from the promotion's `templateId`) before and
+  after every write, so a change to the master never reaches a live store. The master is only where a new pharmacy
+  starts and what the editor's **Copy from master** copies.
 
 Master template: a promotion's optional `master` holds the default content (the same shape as one entry of
 `content` above) that every pharmacy inherits section by section; a pharmacy's optional
 `"detached": { "<promotion id>": ["greeting", "slots", "close", "footer", "headlines", "address", "occasions"] }`
-lists the sections it manages itself (its own `content` is used for those). Branding is never inherited. The
-published screen config below carries the resolved content only.
+lists the sections it manages itself (its own `content` is used for those). Branding is never inherited, and
+neither is seasonal content (`"occasions"` is always listed for a Seasonal promotion). The published screen config
+below carries the resolved content only: for a Seasonal promotion its `template` is the store's own season's
+template (`builtin-occasion-<season>`), and `content` carries no `season`.
 
 Tokens set by hand: a pharmacy's optional `"tokens": { "<token name>": "<text>" }` (section 3, "Set by hand");
 blank values are dropped and the field is left out when none are set. The published screen config carries it
@@ -261,7 +275,7 @@ Promotion: `{ "name", "promoId", "templateId", "schedule"?, "master"? }`, where 
 
 ### Published screen config (what a screen reads)
 
-`GET /api/screens/{storeCode}`: public, no sign-in, no secrets, cached 15 s. Rebuilt in the same transaction
+`GET /api/screens/{storeCode}`: public, no sign-in, no secrets, cached 5 s. Rebuilt in the same transaction
 as every write that affects it, copied field by field (`config-api/src/publish.js`):
 
 ```json

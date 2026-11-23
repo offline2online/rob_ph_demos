@@ -3,21 +3,26 @@
 //
 // Registered by js/player.js with scope pharmacy-screen.html only, so the admin editor is never touched.
 //
-//   The shell (the page, its scripts and stylesheets, which carry the self-hosted fonts, icons and the Seasonal Christmas photo, about 1.5 MB) is
-//   downloaded once into a cache named after BUILD and served from that cache from then on, with no request at all.
-//   scripts/deploy.mjs stamps BUILD with a hash of the shell's files, so this file's bytes change exactly when the
-//   shell changes. The browser compares sw.js on every page load and the player asks again every 30 minutes
+//   The shell (the page, its fingerprinted scripts and stylesheets, the self-hosted fonts and icons as .woff2 files
+//   and the Seasonal Christmas photo, all in assets/) is downloaded once into a cache named after BUILD and served
+//   from that cache from then on, with no request at all. scripts/deploy.mjs (buildShell) stamps FILES with every
+//   shell file and the hash of its content, and BUILD with a hash of that list, so this file's bytes change exactly
+//   when the shell changes. The browser compares sw.js on every page load and the player asks again every 30 minutes
 //   (UPDATE_CHECK_MS in player.js): one small request, answered 304 while nothing has changed. When it has changed,
-//   the new worker downloads the new shell, takes over, the old cache is deleted and the player reloads itself once.
+//   the new worker copies every file whose hash is unchanged from the old build's cache and downloads only the
+//   changed ones (a change to js/player.js: the page and that one script), takes over, the old cache is deleted and
+//   the player reloads itself once.
 //   Images are kept after their first download. Our own logos and backgrounds carry their content's hash in the
 //   URL, so they are never asked for again. Any other image (a logo URL from PH, which can be replaced in place) is
 //   shown from the device's copy at once and checked in the background, so a new one shows on the next play.
 //   The data (/api/**) is never cached here: js/live-data.js polls it and keeps the last good copy in localStorage.
 //   The seed fixtures (mockapi=1) are fetched from the network first, with the last copy as a fallback.
 //
-// Unstamped (BUILD still the placeholder: tools/serve.mjs, the tests), the shell is fetched from the network first,
-// so a local edit shows on the next reload, and the cached copy is only the offline fallback.
+// Unstamped (BUILD still the placeholder: tools/serve.mjs, the tests), the shell is SHELL below, fetched from the
+// network first, so a local edit shows on the next reload, and the cached copy is only the offline fallback.
 const BUILD = '__PHARMACY_SCREEN_BUILD__';
+// { path relative to this file: the first 16 hex characters of the SHA-256 of its bytes }, stamped by the deploy.
+const FILES = {/*__PHARMACY_SCREEN_FILES__*/};
 const DEV = BUILD.startsWith('__');
 const SHELL_CACHE = 'pharmacy-screen-shell-' + (DEV ? 'dev' : BUILD);
 const MEDIA_CACHE = 'pharmacy-screen-media';
@@ -28,9 +33,9 @@ const MEDIA_MAX = 40;
 // Our media's URLs end in the content's SHA-256 (config-api/src/service.js): the same URL is always the same image.
 const IMMUTABLE_URL = /[0-9a-f]{64}/i;
 
-// Everything the page needs to start, relative to this file. test/offline-cache.test.mjs checks it lists every file
-// in js/ and css/, so a new module can't be left out.
-const SHELL = [
+// Unstamped, everything the page needs to start, relative to this file. test/offline-cache.test.mjs checks it lists
+// every file in js/ and css/, so a new module can't be left out. Stamped, the shell is FILES.
+const SHELL = DEV ? [
   'pharmacy-screen.html',
   'css/fonts.css',
   'css/material-symbols.css',
@@ -46,19 +51,45 @@ const SHELL = [
   'js/tokens.js',
   'js/occasions.js',
   'js/debug-panel.js',
-];
+] : Object.keys(FILES);
 const shellUrls = new Set(SHELL.map((p) => new URL(p, self.location).href));
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
-    if (!DEV) {
-      const cache = await caches.open(SHELL_CACHE);
-      // cache: 'reload' skips the HTTP cache, so the new build is never filled from a stale copy.
-      await cache.addAll(SHELL.map((p) => new Request(p, { cache: 'reload' })));
-    }
+    if (!DEV) await fillShell();
     await self.skipWaiting();
   })());
 });
+
+// The new build's cache: each file from an older build's cache when its bytes hash to the same value, otherwise
+// downloaded (cache: 'reload' skips the HTTP cache, so it is never filled from a stale copy) and checked against its
+// hash. A file that does not match fails the install: the old build keeps playing and the next update check tries
+// again, so a half-published deploy is never kept.
+async function fillShell() {
+  const cache = await caches.open(SHELL_CACHE);
+  const older = [];
+  for (const name of await caches.keys()) {
+    if (name.startsWith('pharmacy-screen-shell-') && name !== SHELL_CACHE) older.push(await caches.open(name));
+  }
+  await Promise.all(Object.entries(FILES).map(async ([path, hash]) => {
+    const url = new URL(path, self.location).href;
+    const have = await cache.match(url); // kept by an earlier, interrupted install of this build
+    if (have && (await hashOf(have)) === hash) return;
+    for (const old of older) {
+      const hit = await old.match(url);
+      if (hit && (await hashOf(hit.clone())) === hash) { await cache.put(url, hit); return; }
+    }
+    const res = await fetch(new Request(path, { cache: 'reload' }));
+    if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
+    if ((await hashOf(res.clone())) !== hash) throw new Error(`${path}: not the published build`);
+    await cache.put(url, res);
+  }));
+}
+
+async function hashOf(res) {
+  const digest = await crypto.subtle.digest('SHA-256', await res.arrayBuffer());
+  return [...new Uint8Array(digest)].slice(0, 8).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
 
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {

@@ -170,7 +170,7 @@ same). JSON in and out; errors are `{"error": {"code", "message"}}` with
 `duplicate-promo-id` / `version-conflict`, 413 `too-large`, 415
 `unsupported-media-type`.
 
-### Public (no sign-in, CORS `*`, cached 15 s)
+### Public (no sign-in, CORS `*`, cached 5 s)
 
 | Method | Path | |
 | --- | --- | --- |
@@ -231,7 +231,14 @@ All non-secret; set as function environment variables.
 | `PS_ALLOWED_ORIGINS` | none | comma-separated origins allowed to call admin endpoints from a browser (the admin editor's origin) |
 | `PS_MEDIA_BUCKET` | `<project>-pharmacy-screen-media` | bucket for logos and backgrounds; deploy `rules/storage.rules` to it |
 | `PS_FIRESTORE_ROOT` | `pharmacyScreen` | top-level collection |
-| `PS_REGION` | `us-central1` | function region (the same as the Location API proxy, `ph-proxy/`) |
+| `PS_REGION` | `australia-southeast1` | function region (the same as the Location API proxy, `ph-proxy/`, and `firebase.json`'s rewrites) |
+| `PS_MIN_INSTANCES` | `0` | instances kept warm; above 0 is a monthly cost, only with the owner's yes |
+| `PS_RATE_LIMIT_SCREENS_PER_IP_PER_MIN` | `600` | `GET /api/screens/**` per client address per minute, per instance (`429` past it; `0` = off) |
+| `PS_TRUSTED_PROXY_HOPS` | `1` | `X-Forwarded-For` entries our platform appends; the address the limit counts (`src/rate-limit.js`) |
+
+`POST /api/csp-report` takes the Content-Security-Policy reports the screen and the editor send and logs one short
+line per violation (`[csp] report <directive> blocked <origin> on <path> …`, never a full URL or query string),
+at most 30 per client address a minute; it always answers `204`.
 
 Grant the admin role: `node scripts/set-admin-claim.js --project rob-ph-demos --uid <uid>`
 (`--revoke` to take it away). The user gets it on their next sign-in or token

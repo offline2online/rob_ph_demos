@@ -960,7 +960,7 @@ test('pharmacy view: admin/?store=<code> shows only that pharmacy\'s promotions,
   for (const id of ['#pvSel', '#setBtn', '#settingsView']) assert.equal(await page.isHidden(id), true, id);
   // No ${Suburb} hint, no remote config, and no Copy experience URL or playback duration (with its tooltip) under
   // the preview: an administrator sets up the campaign in the full editor.
-  for (const id of ['#dpHint', '#cfgBox', '#cfgJson', '#cpRow', '#cpUrl', '#pbDur', '#pbInfo']) assert.equal(await page.isHidden(id), true, id);
+  for (const id of ['#dpHint', '#cfgBox', '#cfgJson', '#cpRow', '#cpUrl', '#cpField', '#pbDur', '#pbInfo']) assert.equal(await page.isHidden(id), true, id);
   assert.equal(await page.isVisible('#stage'), true);
   assert.equal(await page.isVisible('#playBtn'), true);
   assert.equal(await page.evaluate(() => window.pharmacyAdmin.state.cur.id), 'seed-pharmacy-vic-mp-005');

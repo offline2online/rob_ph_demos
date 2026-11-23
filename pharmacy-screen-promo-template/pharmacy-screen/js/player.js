@@ -7,10 +7,16 @@
 // every 20 s / 15 s, last good server first, re-rendered only on change, last good result kept in
 // localStorage. The servers are the page's <meta name="pharmacy-screen-api"> (empty: this page's origin).
 //
+// Playback: the promotion plays once through and then stays on its last scene (an occasion: its last beat), fully
+// drawn, until the PH player loads the next campaign of its rotation. It plays from the start again when the page is
+// loaded again, when it becomes visible again after being hidden (visibilitychange, pageshow), and when a season
+// changes at midnight. The held scene still follows the store's clock and new data, redrawn in place.
+//   loop=1             loop forever instead (the behaviour before), for a screen that shows this one campaign only
+//
 // Testing parameters (not used by the PH player):
 //   mockapi=1          use the seed fixtures (fixtures/campaign-data.json, fixtures/config.json) instead of the API
 //   debug=1            show the debug panel: device, store code, last fetch, server used, test time override
-//   scene=<n>          hold on scene n (0-based) instead of playing the loop (an occasion: beat n, held still)
+//   scene=<n>          hold on scene n (0-based) instead of playing the promotion (an occasion: beat n, held still)
 //   now=<day>-<HH:MM>  pretend the store's local time is this, e.g. now=fri-18:45 (the "Open today" bar)
 //   date=<YYYY-MM-DD>  pretend the store's date is this, e.g. date=2026-12-20 (which season the Seasonal promotion
 //                      plays; MM-DD for this year)
@@ -31,6 +37,7 @@ const params = {
   date: q.get('date') || '',
   mock: flag('mockapi'),
   debug: flag('debug'),
+  loop: flag('loop'),
 };
 // An unswapped ${UniqueDeviceID} is not a device ID.
 if (params.device.includes('${')) params.device = '';
@@ -65,6 +72,28 @@ const meta = document.querySelector('meta[name="pharmacy-screen-api"]');
 let config = null, store = null, play = null, data = null, panel = null; // panel: a promise of the debug panel (debug=1)
 let scene = 0, playing = params.hold === null, timers = [], lastStateKey = '', last = null;
 let testTime = null, started = false, fontsWaited = false, shown = '';
+// Playing once (no loop=1): held is set once the last scene's seconds are up; playStart (performance.now()) is when
+// the current run through began, so a redrawn occasion carries on from where it was.
+let held = false, playStart = 0;
+
+// The Seasonal templates' fonts and Christmas photo (css/occasion-fonts.css, css/occasion-media.css, most of the
+// screen's bytes) are loaded only when a Seasonal promotion plays, once; any other promotion never asks for them.
+// The deploy rewrites these paths to the fingerprinted copies (scripts/deploy.mjs buildShell), and the service worker
+// keeps them on the device with the rest of the screen, so a Seasonal promotion still plays offline.
+const OCCASION_STYLESHEETS = ['css/occasion-fonts.css', 'css/occasion-media.css'];
+let occasionCss = null, occasionCssIn = false;
+function loadOccasionCss() {
+  if (!occasionCss) {
+    occasionCss = Promise.all(OCCASION_STYLESHEETS.map((href) => new Promise((resolve) => {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = href;
+      link.onload = link.onerror = () => resolve(); // failed: the copy still plays, in the fallback fonts
+      document.head.appendChild(link);
+    }))).then(() => { occasionCssIn = true; });
+  }
+  return occasionCss;
+}
 
 function fit() {
   const W = params.orientation === 'landscape' ? 1920 : 1080, H = params.orientation === 'landscape' ? 1080 : 1920;
@@ -93,19 +122,49 @@ function stateKey() {
 function clearTimers() { timers.forEach(clearTimeout); timers = []; }
 
 function show(i, enter) {
+  // A Seasonal promotion before its stylesheets are in (one the data switched to): drawn now, and again once they
+  // are, so its copy is fitted in its own fonts.
+  if (play.base === 'occasion' && !occasionCssIn) {
+    const p = play;
+    loadOccasionCss().then(() => { if (play === p) show(scene, false); });
+  }
   const seq = sequence(play);
+  const once = playing && !params.loop;
+  // Played through: a redraw (new data, the bar's next state) stays on the last scene.
+  if (once && held) i = seq.length - 1;
   scene = ((i % seq.length) + seq.length) % seq.length;
-  // An occasion is one continuous animation: while playing, its beats loop in CSS (12 s) with no timers or redraws.
-  const loop = playing && play.base === 'occasion';
-  if (loop) scene = 0;
-  last = renderScene(el, { store, play, orientation: params.orientation, scene, now: testNow(), enter, loop });
+  // An occasion is one continuous animation: while playing, its beats run in CSS with no timers; played once, a redraw
+  // carries on from the seconds already played (at), so the beats don't start again.
+  const occ = playing && play.base === 'occasion';
+  if (occ) scene = 0;
+  const at = occ && once ? (performance.now() - playStart) / 1000 : 0;
+  last = renderScene(el, { store, play, orientation: params.orientation, scene, now: testNow(), enter, loop: occ, once: occ && once, at });
   lastStateKey = stateKey();
   shown = 'scene';
   clearTimers();
-  if (!playing || loop) return;
+  if (!playing || occ) return;
   const t = seq[scene].t * 1000;
+  // Played once: after the last scene's seconds it stays, with no leaving fade and no return to the first scene.
+  if (once && scene === seq.length - 1) {
+    if (!held) timers.push(setTimeout(() => { held = true; }, t));
+    return;
+  }
   timers.push(setTimeout(() => el.classList.add('leaving'), Math.max(0, t - 250)));
   timers.push(setTimeout(() => show(scene + 1, true), t));
+}
+
+/** Play the promotion from its first scene (the page loaded, shown again, or a new season). */
+function restart() {
+  held = false;
+  playStart = performance.now();
+  show(0, true);
+}
+
+/** Whether playback has played once through and is holding its last scene (an occasion: its last beat). */
+function isHeld() {
+  if (!play || !playing || params.loop) return false;
+  if (play.base !== 'occasion') return held;
+  return (performance.now() - playStart) / 1000 >= sequence(play).reduce((a, s) => a + s.t, 0);
 }
 
 function message(title, detail, opts) {
@@ -158,11 +217,13 @@ async function apply(s) {
   config = s.config; store = nextStore; play = nextPlay;
   if (first) {
     started = true;
+    if (play.base === 'occasion') await loadOccasionCss();
     await fontsReady();
     if (!play) return; // replaced by a message while the fonts loaded
-    show(params.hold === null ? 0 : params.hold, true);
+    if (params.hold === null) restart();
+    else show(params.hold, true);
   } else {
-    // New data for the same screen: redraw the current scene in place, the loop carries on.
+    // New data for the same screen: redraw the current scene in place, playback carries on.
     show(scene, false);
   }
 }
@@ -189,12 +250,13 @@ function debugInfo(s) {
 
 // The "Open today" bar follows the store's clock (store_timezone): re-check at the turn of every minute.
 function minuteTick() {
-  // (A season shows nothing that depends on the store's hours: no redraw, so its loop carries on, until its dates
-  // end or another season's begin: then the season for the new date starts, with nobody needing to change anything.)
+  // (A season shows nothing that depends on the store's hours: no redraw, so its beats carry on, until its dates
+  // end or another season's begin: then the season for the new date plays from its first beat, with nobody needing
+  // to change anything.)
   if (play && store && play.base === 'occasion' && playing) {
     let next = null;
     try { next = resolvePromotion(config, store, play.promoId, { today: todayForStore() }); } catch (e) { next = null; }
-    if (next && next.occasion !== play.occasion) { play = next; show(0, true); }
+    if (next && next.occasion !== play.occasion) { play = next; restart(); }
   } else if (play && store && play.base !== 'occasion' && stateKey() !== lastStateKey) show(scene, false);
   if (panel && data) panel.then((p) => p && p.update(debugInfo(data.state)));
   setTimeout(minuteTick, 60000 - (Date.now() % 60000) + 50);
@@ -226,9 +288,11 @@ function start() {
   // A player that hid the page between playlist slots, or lost its network, catches up at once instead of waiting
   // for the next poll.
   const catchUp = () => { if (document.visibilityState !== 'hidden') data.refresh(); };
-  document.addEventListener('visibilitychange', catchUp);
+  // Shown again (the player's next turn for this campaign): play from the first scene again, unless loop=1.
+  const replay = () => { if (document.visibilityState !== 'hidden' && play && playing && shown === 'scene' && !params.loop) restart(); };
+  document.addEventListener('visibilitychange', () => { replay(); catchUp(); });
   window.addEventListener('online', catchUp);
-  window.addEventListener('pageshow', (e) => { if (e.persisted) catchUp(); });
+  window.addEventListener('pageshow', (e) => { if (e.persisted) { replay(); catchUp(); } });
   // Ask the browser not to evict the screen's copy (the shell, images and last good data) under storage pressure.
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch (e) {}
   setTimeout(minuteTick, 60000 - (Date.now() % 60000) + 50);
@@ -247,8 +311,9 @@ function createDebugPanelLazy() {
 
 // Hook for the overflow audit, the screen tests and the admin editor's tests.
 window.pharmacyScreen = {
-  get ready() { return !!play || !!el.querySelector('.s-msg,.s-setup-body'); },
-  get info() { return play ? { store: store.code, promo: play.promoId, base: play.base, occasion: play.occasion || null, auto: !!play.auto, scene, scenes: sequence(play).map((s, i) => sceneName(play, i)), fit: last && last.fit, state: last && last.state.state } : null; },
+  // A scene drawn (not only chosen: the first one waits for the fonts, and a Seasonal one for its stylesheets), or a message.
+  get ready() { return (!!play && shown === 'scene') || !!el.querySelector('.s-msg,.s-setup-body'); },
+  get info() { return play ? { store: store.code, promo: play.promoId, base: play.base, occasion: play.occasion || null, auto: !!play.auto, scene, scenes: sequence(play).map((s, i) => sceneName(play, i)), fit: last && last.fit, state: last && last.state.state, playback: params.loop ? 'loop' : 'once', held: isHeld() } : null; },
   get data() { return data ? JSON.parse(JSON.stringify({ storeCode: data.state.storeCode, deviceStatus: data.state.deviceStatus, configStatus: data.state.configStatus, fromCache: data.state.fromCache, lastStore: data.state.lastStore, lastConfig: data.state.lastConfig, view: screenView(data.state).kind })) : null; },
   promotions: () => (config ? config.promotions.map((p) => p.promoId || p.token || p.id) : []),
   occasions: () => OCCASION_IDS.slice(),
@@ -261,8 +326,8 @@ window.pharmacyScreen = {
     show(i, false);
     return this.info;
   },
-  /** Resolves once what is on screen is final (an occasion: its fonts are in and its copy refitted). */
-  settled() { return last && last.ready ? last.ready.then(() => true) : Promise.resolve(true); },
+  /** Resolves once what is on screen is final (an occasion: its stylesheets and fonts are in and its copy refitted). */
+  settled() { return Promise.resolve(occasionCss).then(() => (last && last.ready) || null).then(() => true); },
   audit() { return last ? auditScene(el, last.G) : ['nothing rendered']; },
 };
 

@@ -12,13 +12,14 @@ through small adapters (store, blobs, auth, secret store), and this folder suppl
 
 | Part | AWS | Notes |
 |---|---|---|
-| Screen and admin pages | S3 (private) behind **CloudFront**, one HTTPS domain | Same allow-listed files as the Firebase deploy. `/` redirects to `/admin/`. HSTS, `nosniff`, `Referrer-Policy: same-origin`. No `X-Frame-Options`: the editor is iframed into HQ Admin |
-| API | **API Gateway** (HTTP API) → two **Lambda** functions (Node 24, arm64), optionally inside your VPC | `/api/health`, `/api/screens/**`, `/api/admin/**` → `ConfigApi`; `/api/settings/ph-api[/**]`, `/api/device/**` → `PhApi`. CloudFront routes `/api/*` to it on the same domain; `/api/screens/*` is cached up to 60 s as the API says (15 s) |
+| Screen and admin pages | S3 (private) behind **CloudFront**, one HTTPS domain | Same allow-listed files as the Firebase deploy. The screen's fingerprinted `assets/` are uploaded first with `Cache-Control: public, max-age=31536000, immutable` and never pruned (a player on the previous page can finish loading it); everything else is `no-cache`. `/` redirects to `/admin/`. HSTS, `nosniff`, `Referrer-Policy: same-origin`. No `X-Frame-Options`: the editor is iframed into HQ Admin |
+| API | **API Gateway** (HTTP API) → two **Lambda** functions (Node 24, arm64), optionally inside your VPC | `/api/health`, `/api/screens/**`, `/api/csp-report`, `/api/admin/**` → `ConfigApi`; `/api/settings/ph-api[/**]`, `/api/device/**` → `PhApi`. CloudFront routes `/api/*` to it on the same domain; `/api/screens/*` is cached up to 60 s as the API says (5 s) |
 | Config store | **DynamoDB** (on-demand, point-in-time recovery) | Pharmacies, promotions, templates, services, the audit log and the published screen configs, in one table (`pk`, `sk`). Transactions are serialisable, so store codes and promo IDs stay unique under concurrent edits (`adapters/dynamodb-store.js`) |
 | Logos and backgrounds | **S3** media bucket (private), served by CloudFront at `/pharmacyScreen/media/*` | Only `ConfigApi` may write it |
 | PH API token | DynamoDB, **KMS envelope-encrypted** | A fresh AES-256-GCM data key encrypts the token; a customer-managed **KMS key** (90-day rotation) wraps the data key, with an encryption context. Only `PhApi` may use the key, and only `PhApi` ever decrypts, in memory. Write-only in the editor (last 4 shown). See `../pharmacy-screen/ph-proxy/README.md` |
 | Admin sign-in | **Cognito** user pool with group `admin` (default), or **your own OIDC provider** | The editor signs in with authorization code + PKCE and sends the ID token; both APIs verify it against the issuer's keys and require the admin claim (`adapters/oidc-auth.js`) |
-| Origin header | **Secrets Manager** | A generated value CloudFront adds to every API request, so `PhApi` trusts the viewer address for its rate limits only on requests that came through CloudFront |
+| Origin header | **Secrets Manager** | A generated value CloudFront adds to every API request. Both functions refuse a request without it (`403`: the API Gateway URL called directly answers nothing) and trust the viewer address for their rate limits only on requests that carry it. They get the secret's ARN and read the value at run time (`lambda/origin-secret.js`); it is never in their environment. CloudFront's own copy is a dynamic reference in the template, resolved at deploy (readable with `cloudfront:GetDistributionConfig`); changing the secret needs a redeploy. With `--vpc-endpoints` a Secrets Manager interface endpoint is added (an hourly cost, like the KMS one) |
+| Content-Security-Policy | CloudFront response headers | `Content-Security-Policy-Report-Only` on the screen and the editor (`/admin/*`, which may also call the sign-in's token endpoint), from `infra/csp.js`; reports go to `/api/csp-report` |
 
 ## Before you start
 
@@ -63,6 +64,7 @@ All outputs are saved to `.deploy-aws/<stack>.outputs.json`. Running it again up
 | `--oidc-issuer <url> --oidc-client-id <id>` | Use your own identity provider instead of creating a Cognito pool. Its endpoints are read from the issuer's discovery document. The client must be a public client (no secret) allowing authorization code + PKCE, with `https://<site>/admin/` as redirect and post-logout URI |
 | `--admin-claim <claim> --admin-value <value>` | The ID token claim that grants the admin role (default `cognito:groups` = `admin`; with `--oidc-issuer`, `groups` = `admin`) |
 | `--ph-api-base-url <url>` | Default Personalisation Hub API base URL until an admin saves one in Settings (default `https://ph.mipharmacy.net`) |
+| `--ph-api-allowed-hosts <hosts>` | Comma-separated hosts an admin may save as a PH API base URL in Settings, e.g. `ph.mipharmacy.net,ph-backup.mipharmacy.net` (`.mipharmacy.net` allows any host under it). The PH API token is sent to these hosts, so any other host is refused (`BASE_URL_HOST_NOT_ALLOWED`). Must include the host of `--ph-api-base-url`; `*` is not accepted. Default: only the host of `--ph-api-base-url`. Sets `PH_API_ALLOWED_HOSTS` on `PhApi` |
 | `--admin-email <address>` | Cognito only: create that admin user and add it to the admin group |
 | `--retain-data` | Keep the table, media bucket, KMS key and user pool when the stack is deleted (recommended for production) |
 
@@ -103,7 +105,8 @@ The ticket's acceptance steps, against a deployed stack:
      `pk = pharmacyScreen#private` holds only `token.envelope` (`kms: "aws-kms"`, ciphertext, wrapped key) and
      `last4`; CloudTrail shows `Decrypt` calls only from the `PhApi` role, with the encryption context.
    - **Failover**: in Settings, put an unreachable base URL first and the real one second; a screen still
-     loads (the proxy tries the last good server first, then the rest).
+     loads (the proxy tries the last good server first, then the rest). Both hosts must be allowed: deploy with
+     `--ph-api-allowed-hosts` naming them (a host outside the list is refused with `BASE_URL_HOST_NOT_ALLOWED`).
    - **Android 12 playback**: the Campaign URL (portrait and landscape) in the PH player on the Android 12 device.
 3. **Tear down**: `npm run destroy:aws -- --region <r>` leaves no stack, bucket, table, function, user pool or
    log group of it behind (the KMS key shows "Pending deletion").
