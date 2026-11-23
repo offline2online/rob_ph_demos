@@ -7117,8 +7117,10 @@ page is filed as a ticket (SUP-AID-49 and 50).
   second round sees at most 6,000 characters of each earlier read.
 - **SUP-AID-17** An answer written from console data is short and in the
   body when it fits roughly a page (3,000 characters, 45 lines); a longer one
-  is attached as a Markdown file with a summary of at most two lines in the
-  body and a line naming the file. Tickets, projects and concepts are named
+  is printed and attached as a PDF (`<name>.pdf`, never a Markdown file,
+  SUP-AID-68) with a summary of at most two lines in the body and a line
+  naming the file. When the PDF can't be made, the answer is sent in full in
+  the body with no attachment. Tickets, projects and concepts are named
   by their titles: an id in the reply (or the attachment) is replaced by its
   title, or dropped when unknown, unless the instruction asks for ids.
   The same holds for a write that used console data: the reply text and the
@@ -8120,7 +8122,8 @@ that was written to hello@ or aidan@ before then stays in Support Inbox.
 Every reply goes out from the connected mailbox's address, whichever alias
 the customer wrote to. Aidan's reply waits for the next scheduled sync (five
 minutes, or longer when GitHub's schedule is busy). Aidan's document is a
-Markdown file, not Word or PDF. Files Aidan can't read (Word, PowerPoint,
+PDF, never a Markdown file (SUP-AID-68); a request for Word or PowerPoint
+gets a PDF, with a cover note saying so. Files Aidan can't read (Word, PowerPoint,
 spreadsheets) are named to the model, not read. Kept reference material has
 no page of its own yet. The sender check trusts Gmail's own
 `Authentication-Results` (authserv-id `mx.google.com`); if mail ever
