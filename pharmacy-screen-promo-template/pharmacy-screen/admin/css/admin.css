@@ -197,7 +197,7 @@ details summary{cursor:pointer;color:var(--primary)}
 /* preview column */
 /* the preview scrolls up with the page until the Portrait/Landscape tabs reach the very top, then stays there; the
    stage is sized to the visible height (dvh: on a tablet, 100vh counts the space under the browser bars, which cut
-   the bottom of the preview off), leaving 284px (set at the end of this file) for the tabs, the sample-hours row, scene bar, controls and Copy URL
+   the bottom of the preview off), leaving 274px (set at the end of this file) for the tabs, scene bar, scene time, controls and Copy URL
    row around it */
 .pv{position:sticky;top:0;display:grid;gap:10px;min-width:0;container:pv/inline-size}
 .pv>.card{padding:12px;gap:8px}
@@ -205,16 +205,21 @@ details summary{cursor:pointer;color:var(--primary)}
 .isLand .stage{height:auto!important;width:100%!important;aspect-ratio:16/9!important;min-height:0!important}
 .stage{height:min(calc(100vh - 190px),760px);height:min(calc(100dvh - 190px),760px);min-height:240px;width:auto;justify-self:center;aspect-ratio:1080/1920;max-width:100%;border-radius:8px;overflow:hidden;position:relative;box-shadow:0 1px 2px rgba(0,0,0,.06),0 8px 24px rgba(0,0,0,.12);background:#000}
 .stage>.screen{position:absolute;left:0;top:0;transform-origin:0 0}
-.controls{display:flex;flex-wrap:nowrap;gap:8px;align-items:center;min-width:0}
+.controls{position:relative;display:flex;flex-wrap:nowrap;gap:8px;align-items:center;min-width:0}
 .controls>button{flex:none;white-space:nowrap}
-/* "Sample opening hours" has a row of its own under the Portrait/Landscape tabs, so the label always shows in full:
-   centred, and wrapping onto a second line (never cut short) when the preview column is narrower than the label.
-   Its info tooltip opens below the row, from the row's left edge and no wider than it, so it is never clipped by the
-   preview column or by the top of the frame once the preview has stuck there. */
-.pvnote{position:relative;display:flex;justify-content:center;align-items:center;gap:4px;min-width:0}
-.pvnote>.pill{display:block;flex:0 1 auto;min-width:0;text-align:center;white-space:normal;overflow-wrap:anywhere;border-radius:12px}
+/* "Sample opening hours" sits under the preview, directly to the right of Play/Pause on the same row, and always
+   shows in full (it never shrinks, wraps or ellipsises). The scene time is on its own line under the scene bar, so
+   the row only ever holds Play/Pause and the label and fits one line in every preview column. The label's info
+   tooltip opens above the controls row, from the row's left edge and no wider than it, so it is never clipped by
+   the preview column or the bottom of the frame. */
+.pvnote{position:static;display:flex;align-items:center;gap:4px;flex:none;min-width:0}
+.pvnote>.pill{white-space:nowrap;flex:none}
 .pvnote>.infowrap{position:static;flex:none}
-.pvnote .infotip{left:0;right:auto;top:calc(100% + 8px);bottom:auto;max-width:100%}
+.pvnote .infotip{left:0;right:auto;bottom:calc(100% + 8px);top:auto;max-width:100%}
+/* In a preview column too narrow for Pause and the whole label (under 270px: a tablet-sized frame's 240px
+   column), Play/Pause shows as its icon alone (its name stays for screen readers), as the toolbar buttons do in a
+   narrow editor column, so the label still fits beside it in full. */
+@container pv (max-width:269px){#playTx{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}}
 .tl{display:flex;gap:4px;min-width:0}
 .tl button{flex-grow:var(--w);flex-basis:0;min-width:0;display:grid;gap:4px;padding:0;border:none;background:none;min-height:0;cursor:pointer;text-align:left}
 .tl .bar{height:8px;border-radius:4px;background:var(--primary-tint);overflow:hidden;display:block}
@@ -224,7 +229,7 @@ details summary{cursor:pointer;color:var(--primary)}
 .tl button[aria-current=true] .bar{box-shadow:0 0 0 2px var(--primary)}
 .tl button[aria-current=true] .lb{color:var(--primary)}
 .tl button:hover .bar{background:rgba(22,155,194,.25)}
-.tltime{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums;margin-left:auto;flex:none;white-space:nowrap}
+.tltime{font-size:13px;line-height:20px;color:var(--muted);font-variant-numeric:tabular-nums;justify-self:end;margin-top:-6px;white-space:nowrap}
 .tltime b{color:var(--text);font-weight:500}
 .slot.focus,.rtf.focus{box-shadow:0 0 0 2px var(--primary);border-color:var(--primary);background:var(--primary-tint);border-radius:8px;transition:box-shadow .3s,background .3s;position:relative}
 .slot.focus::after,.rtf.focus::after{content:"In preview";position:absolute;top:-10px;right:12px;background:var(--primary);color:#fff;font-size:11px;font-weight:500;padding:1px 8px;border-radius:9999px}
@@ -245,7 +250,7 @@ details summary{cursor:pointer;color:var(--primary)}
 .hint.err{color:var(--err)}
 .dlg-err{padding:0 16px 10px}
 [hidden]{display:none!important}
-.stage{height:auto;min-height:0;width:min(100%,calc(min(100vh - 284px,760px) * .5625))}
+.stage{height:auto;min-height:0;width:min(100%,calc(min(100vh - 274px,760px) * .5625))}
 div.f{display:grid;gap:4px;font-size:12px;color:var(--muted);min-width:0}
 @container frame (max-width:920px){.wrap.isLand{grid-template-columns:minmax(0,1fr) minmax(0,min(640px,44cqi))}}
 @container frame (max-width:600px){.wrap.isLand{grid-template-columns:minmax(0,1fr)}.pv{position:static}}

@@ -1,5 +1,5 @@
 {
-  "_doc": "Built-in templates (requirement 11): Promotion scenes, Opening hours and one per season (the Seasonal promotion). Read-only and defined in code (config-api/src/builtins.js), so the seed never writes them: it checks the store lists exactly these. Kept here so the fixtures describe the whole seeded config.",
+  "_doc": "Built-in templates (requirement 11): Promotion scenes, Opening hours, the Fallback and one per season (the Seasonal promotion). Read-only and defined in code (config-api/src/builtins.js), so the seed never writes them: it checks the store lists exactly these. Kept here so the fixtures describe the whole seeded config.",
   "templates": [
     {
       "id": "builtin-promotion-scenes",
@@ -11,6 +11,13 @@
       "id": "builtin-opening-hours",
       "name": "Opening hours",
       "kind": "opening-hours",
+      "builtIn": true
+    },
+    {
+      "id": "builtin-occasion-fallback",
+      "name": "Fallback",
+      "kind": "occasion",
+      "occasion": "fallback",
       "builtIn": true
     },
     {

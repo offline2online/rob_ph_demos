@@ -9,7 +9,7 @@
 // and maps them to the shape the shared render engine (../js/render.js) takes, so the live preview draws
 // exactly what a screen draws.
 
-import { defaultContent, occasionCopy, OCCASIONS, OCCASION_IDS, DEFAULT_OCCASION, DEFAULT_HTML, footerConfig, beatSeconds, defaultHeadlineSeconds, sceneSeconds, fmtMonthDay, seasonDates } from '../../js/render.js';
+import { defaultContent, occasionCopy, OCCASIONS, OCCASION_IDS, DEFAULT_OCCASION, DEFAULT_HTML, footerConfig, beatSeconds, defaultHeadlineSeconds, sceneSeconds, fmtMonthDay, seasonDates, liveOccasion, occasionOf } from '../../js/render.js';
 import { DATA_TOKENS, isSettableToken, tokensIn, cleanTokens } from '../../js/tokens.js';
 
 export const BUILTIN_SCENES = 'builtin-promotion-scenes';
@@ -28,6 +28,8 @@ export const OCCASION_CHOICES = OCCASIONS.map((o) => ({ id: o.id, name: o.name, 
 export function seasonOptionLabel(id, occasions, year = new Date().getFullYear()) {
   const o = OCCASIONS.find((x) => x.id === id);
   if (!o) return '';
+  // The fallback has no dates: it plays whenever no season is on.
+  if (o.fallback) return o.name;
   const r = seasonDates(id, occasions && occasions[id], year), from = fmtMonthDay(r.from), to = fmtMonthDay(r.to);
   return from && to ? `${o.name} (${from}${to !== from ? ' – ' + to : ''})` : o.name;
 }
@@ -141,8 +143,14 @@ export function effectiveContent(master, own, detached) {
   return out;
 }
 
-/** The season a pharmacy plays for a Seasonal promotion: its own pick (content.season), else the promotion's. */
-export const seasonOf = (p, ownContent) => (ownContent && OCCASION_IDS.includes(ownContent.season) ? ownContent.season : occasionOfTemplate(p && p.templateId) || DEFAULT_OCCASION);
+/** Today's date in this browser, as {y, m, d}. */
+export const localToday = (now = new Date()) => ({ y: now.getFullYear(), m: now.getMonth() + 1, d: now.getDate() });
+/**
+ * What a Seasonal promotion plays on `today` for this content (js/render.js liveOccasion, as the screen works it out):
+ * a running "Activate on display" (content.activation), else the season whose dates hold today, else the fallback.
+ * The old Season pick (content.season, before 23 Nov 2026) no longer counts. `p` is unused, kept for callers.
+ */
+export const seasonOf = (p, ownContent, today = localToday()) => liveOccasion(isObj(ownContent) ? ownContent : {}, today);
 
 /**
  * Seasonal content is each pharmacy's own (config-api/src/seasonal.js, which this mirrors): its season, and every
@@ -353,7 +361,7 @@ const sum = (a) => Math.round(a.reduce((x, y) => x + y, 0) * 1000) / 1000;
  * the defaults), an opening-hours promotion's headlines (base 'hours'), or a scenes promotion's greeting, slots and
  * close.
  */
-export const loopSeconds = (d, base) => (Array.isArray(d.beats) ? sum(d.beats.map((b) => beatSeconds(b, d.beats.length)))
+export const loopSeconds = (d, base, occasion) => (Array.isArray(d.beats) ? (occasion && occasionOf(occasion).id === occasion && occasionOf(occasion).durs ? sum(occasionOf(occasion).durs) : sum(d.beats.map((b) => beatSeconds(b, d.beats.length))))
   : base === 'hours' ? sum(headlineSeconds(d))
   : (+d.introDur || 3) + (d.slots || []).reduce((a, x) => a + (+x.dur || 2), 0) + (+(d.close && d.close.dur) || 2));
 

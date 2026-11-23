@@ -207,15 +207,62 @@ to the screen's `connect-src` (`screenCsp({ connect: [...] })`) before enforcing
 ## Regions and warm instances (Firebase test environment)
 
 Both functions run in `australia-southeast1` (Sydney), next to the stores. `firebase.json`'s rewrites and
-`PS_REGION` / `PH_REGION` must name the same region (`npm run check` fails otherwise). The deploy first removes the
-functions' old copies from `us-central1` if they are still there: a few minutes without the API on the test site,
-once. Firestore and the media bucket stay where they were created; if Firestore is not in Australia, each config
-read still crosses to it.
+`PS_REGION` / `PH_REGION` must name the same region (`npm run check` fails otherwise). They ran in `us-central1`
+until 23 Nov 2026; those copies are gone. Firestore and the media bucket stay where they were created; if Firestore
+is not in Australia, each config read still crosses to it.
+
+The deploy (`scripts/deploy.mjs`) deploys the functions on their own, then Hosting and the rules, then checks that
+the site's config API and PH API proxy answer through Hosting (`checkApi`; Hosting's own HTML "Page not found" on
+an `/api` route fails it). A functions error stops the deploy before Hosting, so the site keeps the functions it
+had; the one exception is the cleanup-policy message below. The deploy never deletes a function.
 
 No instance is kept warm (`PS_MIN_INSTANCES` / `PH_MIN_INSTANCES` default `0`), so the first request after a quiet
 spell has a cold start of a second or two. Keeping one instance of each warm (`1`) removes that, for a monthly cost
 whether or not screens call it: set it only with the owner's yes, and run that deploy by hand, since the Firebase
 CLI asks to confirm the cost.
+
+### Image cleanup policy
+
+Firebase keeps each function's container images in Artifact Registry and wants a cleanup policy for them in each
+region it deploys to. The CI service account (`pharmacy-screen-ci`: Firebase Admin, Cloud Functions Admin, Service
+Account User, Cloud Build Editor) may not set it, so CI does not try. **The project owner sets it once per region**
+(and again after a move to a new region):
+
+```bash
+npx firebase-tools@14.27.0 functions:artifacts:setpolicy --location australia-southeast1 --days 7 --force --project rob-ph-demos
+```
+
+`npm run deploy` without `--skip-setup` runs the same command in its setup. Until the policy exists, the functions
+step ends in "Functions successfully deployed but could not set up cleanup policy"; the deploy passes that message
+alone with a warning naming the command above, and carries on to Hosting. Any other functions error, or that
+message together with a function that failed to create or update, stops the deploy. Letting CI set the policy
+itself would need Artifact Registry Administrator (`roles/artifactregistry.admin`) on the service account, broader
+than a deploy account needs; the one-time owner command is preferred.
+
+### Moving the functions to another region
+
+On 23 Nov 2026 the move to Sydney deleted the functions in `us-central1` before their replacements answered, one
+of them failed to create, and the site's API answered "Page not found" from 19:55 to 22:13 UTC. Any future move
+is done as **separate deploys, in this order, deleting last**:
+
+1. Change `REGION` in `scripts/deploy.mjs`, `firebase.json`'s rewrites and `PS_REGION` / `PH_REGION` together, and
+   set the cleanup policy in the new region (above). While the old copies exist, the scripted deploy (CI included)
+   stops at the functions step: firebase-tools will not leave functions that are no longer in the source when run
+   non-interactively. That is the safe outcome: Hosting is not published and the site keeps the old copies.
+2. The owner creates the functions in the new region by hand, interactively, answering **No** when asked to
+   delete the old-region copies: run `npm run deploy -- --skip-setup` once (it stages `.deploy/` and the admin
+   config, then stops at the functions step), then
+   `npx firebase-tools@14.27.0 deploy --only functions:pharmacy-screen-config-api,functions:pharmacy-screen-ph-proxy --project rob-ph-demos`.
+3. Publish Hosting pointing at them:
+   `npx firebase-tools@14.27.0 deploy --only hosting:pharmacy-screen --project rob-ph-demos --non-interactive`.
+4. Check the API answers: `curl` `/api/health` and an `/api/device/<id>/campaign_data` route on the site, both
+   JSON, not Hosting's HTML "Page not found". If not, republish Hosting from the previous commit; the old copies
+   are still there.
+5. Only then, as a separate, deliberate step, delete the old copies by name:
+   `npx firebase-tools@14.27.0 functions:delete pharmacyScreenConfigApi pharmacyScreenPhApi --region <old region> --project rob-ph-demos`.
+   From then on the scripted deploy and CI run normally. Never add that delete to `scripts/deploy.mjs`
+   (`npm run check` fails if a deploy step deletes a function), and never use `firebase deploy --force` (it would
+   also delete Firestore indexes the menu-board demo owns).
 
 ## Limits
 

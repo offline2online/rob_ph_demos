@@ -115,7 +115,7 @@ are 1–40 lower-case letters, digits and hyphens, unique across promotions.
 | `morning` | Morning | Promotion scenes (`builtin-promotion-scenes`) | Greeting, service chips, one scene per service, "Walk in today" close; "Open today" bar |
 | `afternoon` | Afternoon | Promotion scenes | The same, with afternoon copy |
 | `closed` | Closed | Opening hours (`builtin-opening-hours`) | Rotating headlines, the full week's hours, "Public Holidays: Please call to confirm", phone |
-| `occasions` | Seasonal | One of the six seasonal templates (seeded Christmas) | The season whose dates hold the store's date (else the pharmacy's own season, `content[<promotion id>].season`): its standalone animation, its copy as beats, each for its own seconds (seeded: 7 s of beats, playback duration 8 s; with no seconds set, 12 s and 13 s), played once with the last beat held; no "Open today" bar |
+| `occasions` | Seasonal | The Fallback and the six seasonal templates (published as the Fallback) | A running "Activate on display" (`content[<promotion id>].activation`), else the season whose dates hold the store's date, else the Fallback (the pharmacy's brand colours, logo and name, "Thank you, ${Suburb}, for supporting your local pharmacy", exactly 7 s). For a season: its standalone animation, its copy as beats, each for its own seconds (seeded: 7 s of beats, playback duration 8 s; with no seconds set, 12 s and 13 s), played once with the last beat held; no "Open today" bar |
 
 Admins can add more (Admin → New promotion). Which promotion plays when is scheduled in Personalisation Hub
 Core, not here. A promotion can carry a **Schedule**: No schedule (the default, nothing stored) or Annual, a start
@@ -226,7 +226,7 @@ record also has `version`, `createdAt`, `createdBy`, `updatedAt`, `updatedBy`. F
       "showAddress": false
     },
     "<promotion id, occasion template>": {
-      "season": "christmas",              // this pharmacy's own: plays outside every season's dates
+      "activation": { "occasion": "christmas", "until": "2026-12-27" },  // optional, one-off: "Activate on display"
       "occasions": { "christmas": { "from": "12-15", "to": "12-27", "beats": [ { "text": "Merry Christmas, ${Suburb}", "dur": 3 }, { "label": "With warm wishes", "text": "from the whole ${StoreName} team", "dur": 4 } ] } /* one per occasion; Christmas 2 beats, the others 3 */ }
     }
   }
@@ -244,13 +244,20 @@ record also has `version`, `createdAt`, `createdBy`, `updatedAt`, `updatedBy`. F
 - Rich text (headlines, bar messages) keeps only bold, italic, line breaks and `<span class="reg">` /
   `<span class="acc">`; everything else is stripped.
 - Content is bounded at 200 KB per promotion.
-- Occasion (season) keys: `christmas`, `new-year`, `australia-day`, `valentines-day`, `easter`, `anzac-day`.
+- Occasion keys: `fallback` (no dates, fixed beats of 2, 3 and 2 seconds: its `dur`, `from` and `to` are ignored),
+  then the seasons `christmas`, `new-year`, `australia-day`, `valentines-day`, `easter`, `anzac-day`.
+- `activation` (optional): `occasion` (an occasion key) and `until` (`YYYY-MM-DD`, the last day, in the store's
+  time zone). Written by the editor's **Activate on display**: `until` is the scheduled end date of that season's
+  current or next run by the pharmacy's dates (the Fallback during a season: that season's end). While the store's
+  date is on or before `until` the screen plays `occasion`; after it, the schedule again, so it never carries into
+  the next year. A malformed one is ignored (and not published). The older `season` field (the Season drop-down
+  before 23 Nov 2026) may still be stored; it is not published and nothing reads it.
 - Season dates: `from` and `to` (optional, `MM-DD`, inclusive, every year; `from` after `to` runs over New Year).
   Missing or invalid, the defaults apply: Christmas `12-15`–`12-27`, New Year's `12-28`–`01-05`, Australia Day
   `01-26`, Valentine's Day `02-14`, Easter Good Friday to Easter Monday (worked out for each year), Anzac Day
-  `04-25`. The screen plays the season whose dates hold the store's date, else the pharmacy's own season.
-- Seasonal content is each pharmacy's own (`config-api/src/seasonal.js`): `content[<promotion id>].season` (one of
-  the season keys) and every season's copy, dates and timings in `content[<promotion id>].occasions`, with
+  `04-25`. The screen plays a running `activation`, else the season whose dates hold the store's date, else the
+  Fallback.
+- Seasonal content is each pharmacy's own (`config-api/src/seasonal.js`): its `activation` and every season's copy, dates and timings in `content[<promotion id>].occasions`, with
   `detached[<promotion id>]` always including `"occasions"` for a Seasonal promotion. The server gives a pharmacy
   without them its own copy of what it plays (the master's; `season` from the promotion's `templateId`) before and
   after every write, so a change to the master never reaches a live store. The master is only where a new pharmacy
@@ -261,8 +268,14 @@ Master template: a promotion's optional `master` holds the default content (the 
 `"detached": { "<promotion id>": ["greeting", "slots", "close", "footer", "headlines", "address", "occasions"] }`
 lists the sections it manages itself (its own `content` is used for those). Branding is never inherited, and
 neither is seasonal content (`"occasions"` is always listed for a Seasonal promotion). The published screen config
-below carries the resolved content only: for a Seasonal promotion its `template` is the store's own season's
-template (`builtin-occasion-<season>`), and `content` carries no `season`.
+below carries the resolved content only: for a Seasonal promotion its `template` is the Fallback
+(`builtin-occasion-fallback`; the screen picks the season by date), and `content` carries `activation` when one is
+set and well formed, and no `season`.
+
+**Store segment.** Whether a pharmacy shows these promotions at all is decided in Personalisation Hub, not here:
+the campaign that plays `promo=occasions` is targeted at the promotion store segment. A pharmacy in the segment
+plays the schedule above (and the Fallback between seasons); a pharmacy outside it is not sent the campaign, so its
+screens play whatever else Personalisation Hub schedules for them.
 
 Tokens set by hand: a pharmacy's optional `"tokens": { "<token name>": "<text>" }` (section 3, "Set by hand");
 blank values are dropped and the field is left out when none are set. The published screen config carries it

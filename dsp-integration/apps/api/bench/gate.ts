@@ -8,7 +8,10 @@
    Each shape runs bench/load.ts in its own process with --json, then every
    number is compared with the threshold (bench/compare.ts): req/s must not
    fall below threshold × (1 − tolerance), a latency must not rise above
-   threshold × (1 + tolerance). Thresholds are the committed numbers
+   threshold × (1 + tolerance). A shape with a breach is run once more and
+   a metric fails only if it breaches both runs, reporting the better value
+   (compare.ts → confirmBreaches; ticket YLWwUhbyeGDuQxJYQPeZ, 23 Nov 2026:
+   single runs varied ~30%, so one noisy run filed a ticket). Thresholds are the committed numbers
    (re-baselined 19 Oct 2026, ticket IqAdH5i8jWIGNElQR135; Available Inventory
    for A/B keeps the 3 Oct numbers, see _about in thresholds.json) unless bench/baseline.local.json exists, in which
    case this machine's own calibration is the baseline — CI calibrates once
@@ -26,7 +29,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { compare, reproFor, type BenchCase, type Shape } from './compare'
+import { compare, confirmBreaches, reproFor, type BenchCase, type Shape } from './compare'
 
 const DIR = fileURLToPath(new URL('.', import.meta.url))
 const ROOT = join(DIR, '../../..')
@@ -76,7 +79,18 @@ for (const name of names) {
     continue
   }
   const r = compare(name, shape, base, m, tol)
-  cases.push(...r.cases)
+  let shapeCases = r.cases
+  /* A breach counts only if a second run repeats it (compare.ts → confirmBreaches). */
+  if (!calibrate && shapeCases.some((c) => c.status === 'fail')) {
+    console.log(`  ${name}: ${shapeCases.filter((c) => c.status === 'fail').map((c) => c.title).join('; ')} — re-running ${name} once to confirm`)
+    try {
+      shapeCases = confirmBreaches(shapeCases, compare(name, shape, base, await run([...shape.args.split(' '), ...thresholds.args.split(' '), ...passthrough]), tol).cases)
+      for (const c of shapeCases.filter((x) => x.runs && x.runs.length > 1)) console.log(`  ${name} ${c.label} ${c.kind}: ${c.runs!.join(' then ')} — ${c.status === 'fail' ? 'breached both runs' : 'inside the bound on the retry'}`)
+    } catch (e) {
+      console.log(`  ${name} retry crashed (${(e as Error).message}); keeping the first run`)
+    }
+  }
+  cases.push(...shapeCases)
   measured[name] = r.measured
 }
 const breaches = cases.filter((c) => c.status === 'fail').map((c) => (c.label === 'crash' ? `${c.shape}: ${c.actual}` : c.actual === 'not measured' ? `${c.shape}: ${c.label} ${c.kind} not measured` : c.title))

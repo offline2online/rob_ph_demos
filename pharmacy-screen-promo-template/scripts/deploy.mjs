@@ -16,11 +16,15 @@
 //                Firebase Storage), the Cloud KMS key that wraps the PH API
 //                token and the functions' right to use it, the Hosting
 //                domains as Auth authorized domains, the Artifact Registry
-//                cleanup policy. Each step checks first and does nothing if
-//                it is already in place.
-//   3. deploy    firebase deploy of Hosting (the screen and admin), both
-//                functions codebases (config API, PH API proxy), the Firestore
-//                rules and indexes and the media bucket's Storage rules
+//                cleanup policy for the function images. Each step checks
+//                first (or is idempotent) and does nothing if it is already in
+//                place.
+//   3. deploy    firebase deploy of both functions codebases (config API, PH
+//                API proxy) on their own; then Hosting (the screen and admin),
+//                the Firestore rules and indexes and the media bucket's
+//                Storage rules; then a check that the site's API answers.
+//                A functions error stops the deploy before Hosting, except the
+//                missing-cleanup-policy message (functionsDeployOutcome).
 //   4. URLs      prints the screen, admin and API URLs
 //
 // Options:
@@ -34,7 +38,7 @@
 // writes or prints the PH API token: the admin enters it in Settings after the
 // first deploy (pharmacy-screen/ph-proxy/README.md).
 
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync, mkdirSync, copyFileSync, cpSync, rmSync, readdirSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
@@ -46,12 +50,11 @@ export const FIREBASE_TOOLS = "firebase-tools@14.27.0";
 // Where both functions run: Sydney, next to the Australian stores (they ran in us-central1 until 23 Nov 2026).
 // firebase.json's Hosting rewrites name it too, and PS_REGION / PH_REGION in the functions' .env.<project> files
 // must match (test/deploy-config.test.mjs). The media bucket is created here only if it does not exist yet.
+// The deploy never deletes a function. A future region move is done as separate deploys, in this order: create
+// the functions in the new region, publish Hosting pointing at them, check the API answers, and only then delete
+// the old ones by hand (docs/DEPLOYMENT.md → "Moving the functions to another region"). Deleting first is what
+// took the site's API down on 23 Nov 2026.
 export const REGION = "australia-southeast1";
-// Where the functions ran before. The deploy deletes them there first (LEGACY_FUNCTIONS): firebase deploy
-// --non-interactive refuses to leave or delete them by itself, and --force is ruled out (it would also delete
-// Firestore indexes the menu-board demo owns).
-export const LEGACY_REGION = "us-central1";
-export const LEGACY_FUNCTIONS = ["pharmacyScreenConfigApi", "pharmacyScreenPhApi"];
 export const KMS = { location: "global", keyRing: "pharmacy-screen", key: "ph-api-token" };
 export const CODEBASES = ["pharmacy-screen-config-api", "pharmacy-screen-ph-proxy"];
 export const FUNCTION_SOURCES = ["pharmacy-screen/config-api", "pharmacy-screen/ph-proxy"];
@@ -374,24 +377,17 @@ export function buildPlan({ project, site, bucket, skipSetup = false }) {
       label: `Add ${site}.web.app and ${site}.firebaseapp.com to Auth authorized domains`,
       args: { project, domains: [`${site}.web.app`, `${site}.firebaseapp.com`] },
     });
+    // Setup, not deploy: the CI service account may not set it (it needs Artifact Registry Administrator), and
+    // trying on every CI run only printed an error. The owner's run sets it once per region (idempotent); until
+    // then the functions step ends in the cleanup-policy message, which functionsDeployOutcome lets through.
     steps.push({
       phase: "setup",
       kind: "run",
-      optional: true,
-      label: "Artifact Registry cleanup policy for function images (keeps the deploy non-interactive)",
-      cmd: fb("functions:artifacts:setpolicy", "--location", REGION, "--days", "7", "--force", "--project", project),
+      label: `Artifact Registry cleanup policy for function images in ${REGION} (keeps 7 days)`,
+      cmd: fb(...CLEANUP_POLICY_ARGS, "--project", project),
     });
   }
 
-  // In the deploy phase, so it runs with --skip-setup (CI) too.
-  steps.push({
-    phase: "deploy",
-    kind: "run",
-    optional: true,
-    optionalNote: "nothing to remove: the functions are not in the old region",
-    label: `Remove the functions from their old region (${LEGACY_REGION}), if they are still there`,
-    cmd: fb("functions:delete", ...LEGACY_FUNCTIONS, "--region", LEGACY_REGION, "--force", "--project", project),
-  });
   steps.push({
     phase: "deploy",
     kind: "task",
@@ -399,25 +395,56 @@ export function buildPlan({ project, site, bucket, skipSetup = false }) {
     label: `Write the admin editor's Firebase sign-in config (web app "${ADMIN_WEB_APP}") into the staged admin/config.js`,
     args: { project },
   });
+  // Functions first and on their own, then everything else, then a check that the site's API answers. One
+  // `firebase deploy` of both stops before Hosting when the functions step ends in any error, the missing image
+  // cleanup policy included. So the functions step is judged by functionsDeployOutcome: the cleanup-policy message
+  // alone (the functions themselves deployed) carries on to Hosting with a warning; any other functions error stops
+  // the deploy here, before Hosting, which keeps serving the previous functions (nothing is ever deleted). The API
+  // check after Hosting then decides whether the deploy is good.
+  const deploy = (only) => fb("deploy", "--project", project, "--non-interactive", "--only", only.join(","));
   steps.push({
     phase: "deploy",
     kind: "run",
-    label: "Deploy Hosting, functions, Firestore rules and indexes, Storage rules",
-    cmd: fb(
-      "deploy",
-      "--project", project,
-      "--non-interactive",
-      "--only",
-      [
-        "hosting:pharmacy-screen",
-        ...CODEBASES.map((c) => `functions:${c}`),
-        "firestore:rules",
-        "firestore:indexes",
-        "storage:pharmacy-screen-media",
-      ].join(",")
-    ),
+    judge: "functionsDeploy",
+    label: "Deploy the functions",
+    cmd: deploy(CODEBASES.map((c) => `functions:${c}`)),
+  });
+  steps.push({
+    phase: "deploy",
+    kind: "run",
+    label: "Deploy Hosting, Firestore rules and indexes, Storage rules",
+    cmd: deploy(["hosting:pharmacy-screen", "firestore:rules", "firestore:indexes", "storage:pharmacy-screen-media"]),
+  });
+  steps.push({
+    phase: "deploy",
+    kind: "task",
+    task: "checkApi",
+    label: "Check the site's API answers (config API and PH API proxy, through Hosting)",
+    args: { site },
   });
   return steps;
+}
+
+// The one-time command that sets the function images' cleanup policy (without --project). The owner's deploy runs
+// it in setup; it is also the command docs/DEPLOYMENT.md and README "Continuous deploy" give the owner.
+export const CLEANUP_POLICY_ARGS = ["functions:artifacts:setpolicy", "--location", REGION, "--days", "7", "--force"];
+
+// How the "Deploy the functions" step ended, from its exit status and everything it printed:
+//   "ok"              exit 0
+//   "cleanup-policy"  the functions deployed, but the Firebase CLI could not set up the image cleanup policy
+//                     ("Functions successfully deployed but could not set up cleanup policy in location …"): passable,
+//                     the deploy carries on to Hosting with a warning naming the owner's one-time command
+//   "failed"          anything else, including that message alongside a function that failed to create or update:
+//                     the deploy stops before Hosting
+export const CLEANUP_POLICY_MESSAGE = /Functions successfully deployed but could not set up cleanup polic/i;
+// Both strings are firebase-tools' own wording (pinned by FIREBASE_TOOLS above); re-check them when it is upgraded.
+// Unrecognised output fails closed: only the exact cleanup-policy sentence, with no failure line, is passable.
+const FUNCTION_FAILURE = /Functions deploy had errors|Failed to (create|update|delete) function/i;
+export function functionsDeployOutcome(status, output = "") {
+  if (status === 0) return "ok";
+  const text = String(output);
+  if (CLEANUP_POLICY_MESSAGE.test(text) && !FUNCTION_FAILURE.test(text)) return "cleanup-policy";
+  return "failed";
 }
 
 // ── execution ──────────────────────────────────────────────────────────────
@@ -425,6 +452,18 @@ export function buildPlan({ project, site, bucket, skipSetup = false }) {
 function run(cmd, { quiet = false } = {}) {
   const r = spawnSync(cmd[0], cmd.slice(1), { cwd: ROOT, stdio: quiet ? "ignore" : "inherit", env: process.env });
   return r.status === 0;
+}
+
+// Runs a command with its output shown as it comes and kept, for a step that is judged by what it printed.
+function runTee(cmd) {
+  return new Promise((resolve) => {
+    const child = spawn(cmd[0], cmd.slice(1), { cwd: ROOT, stdio: ["inherit", "pipe", "pipe"], env: process.env });
+    let output = "";
+    child.stdout.on("data", (d) => { output += d; process.stdout.write(d); });
+    child.stderr.on("data", (d) => { output += d; process.stderr.write(d); });
+    child.on("error", (e) => resolve({ status: 1, output: output + String(e && e.message) }));
+    child.on("close", (status) => resolve({ status, output }));
+  });
 }
 
 function capture(cmd) {
@@ -446,7 +485,31 @@ async function googleApi(method, url, project, body) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// The site's own /api routes, through Hosting's rewrites: the config API's health route must answer 200, and the
+// proxy must answer a device read as JSON (a made-up device is a clean JSON error; Hosting's own "Page not found"
+// HTML means the rewrite reaches no function). Tried for up to two minutes: a new release takes a moment.
+export async function checkApi({ site, origin = `https://${site}.web.app`, fetchImpl = fetch, tries = 12, waitMs = 10000 }) {
+  let last = "";
+  for (let i = 0; i < tries; i++) {
+    try {
+      const bust = `deploycheck=${Date.now()}`;
+      const health = await fetchImpl(`${origin}/api/health?${bust}`, { cache: "no-store" });
+      const device = await fetchImpl(`${origin}/api/device/DEPLOY-CHECK/campaign_data?${bust}`, { cache: "no-store" });
+      const json = String(device.headers.get("content-type") || "").includes("application/json");
+      if (health.status === 200 && json) return `config API ${health.status}, PH API proxy ${device.status} (JSON)`;
+      last = `health ${health.status}, device read ${device.status}${json ? "" : " (not JSON: no function behind the rewrite)"}`;
+    } catch (e) {
+      last = String((e && e.message) || e);
+    }
+    if (i < tries - 1) await new Promise((r) => setTimeout(r, waitMs));
+  }
+  throw new Error(`The site's API does not answer after the deploy: ${last}. The editor and screens cannot load data until this is fixed.`);
+}
+
 const TASKS = {
+  async checkApi(args) {
+    return checkApi(args);
+  },
   async stage() {
     return stage();
   },
@@ -554,8 +617,18 @@ async function main() {
       if (!run(step.cmd)) throw new Error(`Failed: ${step.label}`);
     } else if (step.kind === "task") {
       console.log(`   ${await TASKS[step.task](step.args)}`);
+    } else if (step.judge === "functionsDeploy") {
+      const { status, output } = await runTee(step.cmd);
+      const outcome = functionsDeployOutcome(status, output);
+      if (outcome === "cleanup-policy") {
+        console.warn(`   ! the functions deployed, but the image cleanup policy in ${REGION} is not set and this account may not set it.`);
+        console.warn(`     The project owner runs this once: npx ${FIREBASE_TOOLS} ${CLEANUP_POLICY_ARGS.join(" ")} --project ${t.project}`);
+        console.warn("     (docs/DEPLOYMENT.md → \"Image cleanup policy\"). Carrying on to Hosting.");
+      } else if (outcome === "failed") {
+        throw new Error(`Failed: ${step.label}. Hosting was not published, so the site still uses the functions it had before this deploy.`);
+      }
     } else if (!run(step.cmd)) {
-      if (step.optional) { console.warn(`   ! skipped (${step.optionalNote || "optional step failed; the deploy may ask about image cleanup"})`); continue; }
+      if (step.optional) { console.warn(`   ! skipped (${step.optionalNote || "optional step failed"})`); continue; }
       throw new Error(`Failed: ${step.label}`);
     }
   }

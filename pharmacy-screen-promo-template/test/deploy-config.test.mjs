@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { hasGit } from "../scripts/release.mjs";
 import { createRequire } from "node:module";
-import { ROOT, buildPlan, readTargets, urls, parseArgs, stage, stagePublic, adminConfigJs, writeAdminConfig, CODEBASES, RULES_SOURCE, STAGE_DIR, ADMIN_WEB_APP, REGION, LEGACY_REGION, LEGACY_FUNCTIONS } from "../scripts/deploy.mjs";
+import { ROOT, buildPlan, readTargets, urls, parseArgs, stage, stagePublic, adminConfigJs, writeAdminConfig, CODEBASES, RULES_SOURCE, STAGE_DIR, ADMIN_WEB_APP, REGION, CLEANUP_POLICY_ARGS, functionsDeployOutcome, checkApi } from "../scripts/deploy.mjs";
 
 const csp = createRequire(import.meta.url)("../aws/infra/csp.js");
 
@@ -238,16 +238,17 @@ test("the deploy plan installs, sets up and deploys every part, in that order", 
   const phases = plan.map((s) => s.phase);
   assert.deepEqual([...new Set(phases)], ["install", "setup", "deploy"]);
   assert.equal(plan[0].task, "stage", "files and rules are staged before anything deploys");
-  const deploy = plan.at(-1);
-  const only = deploy.cmd[deploy.cmd.indexOf("--only") + 1].split(",");
-  assert.deepEqual(only, [
-    "hosting:pharmacy-screen",
-    "functions:pharmacy-screen-config-api",
-    "functions:pharmacy-screen-ph-proxy",
-    "firestore:rules",
-    "firestore:indexes",
-    "storage:pharmacy-screen-media",
-  ]);
+  // Functions on their own first, then Hosting and the rules, then a check that the site's API answers: one
+  // `firebase deploy` of both never publishes Hosting when the functions step ends in any error (23 Nov 2026).
+  const [functionsStep, deploy, check] = plan.slice(-3);
+  const onlyOf = (step) => step.cmd[step.cmd.indexOf("--only") + 1].split(",");
+  assert.deepEqual(onlyOf(functionsStep), ["functions:pharmacy-screen-config-api", "functions:pharmacy-screen-ph-proxy"]);
+  assert.equal(functionsStep.judge, "functionsDeploy", "the functions step is judged by functionsDeployOutcome");
+  assert.notEqual(functionsStep.optional, true, "a functions error other than the cleanup-policy message stops the deploy before Hosting");
+  assert.deepEqual(onlyOf(deploy), ["hosting:pharmacy-screen", "firestore:rules", "firestore:indexes", "storage:pharmacy-screen-media"]);
+  assert.notEqual(deploy.optional, true);
+  assert.deepEqual([check.kind, check.task, check.args.site], ["task", "checkApi", t.site]);
+  assert.ok(functionsStep.cmd.includes("--non-interactive") && !functionsStep.cmd.includes("--force"));
   assert.ok(deploy.cmd.includes("--non-interactive"));
   assert.ok(!deploy.cmd.includes("--force"), "no --force: it would delete Firestore indexes the menu-board demo owns");
   const labels = plan.map((s) => s.label).join("\n");
@@ -255,20 +256,60 @@ test("the deploy plan installs, sets up and deploys every part, in that order", 
     assert.match(labels, want);
   }
   assert.ok(plan.find((s) => s.phase === "setup" && s.cmd && s.cmd.includes("firebase.googleapis.com")), "the Firebase Management API is enabled (admin web app)");
-  assert.equal(plan.at(-2).task, "adminConfig", "the admin config is written right before firebase deploy");
+  assert.equal(plan.at(-4).task, "adminConfig", "the admin config is written right before firebase deploy");
   const setupFree = buildPlan({ ...t, skipSetup: true });
   assert.deepEqual([...new Set(setupFree.map((s) => s.phase))], ["install", "deploy"]);
-  assert.equal(setupFree.at(-2).task, "adminConfig", "CI (--skip-setup) writes the admin config too");
-  // The functions moved region: their old copies are deleted first, by name, in that region only, and a deploy
-  // where they are already gone carries on.
+  assert.equal(setupFree.at(-4).task, "adminConfig", "CI (--skip-setup) writes the admin config too");
+  // The image cleanup policy is set by the owner's run (setup), once per region; CI (--skip-setup) may not set it
+  // and no longer tries, so its log carries no permission error.
+  const policy = plan.find((x) => x.cmd && x.cmd.includes("functions:artifacts:setpolicy"));
+  assert.equal(policy.phase, "setup");
+  assert.notEqual(policy.optional, true);
+  assert.deepEqual(policy.cmd.slice(policy.cmd.indexOf("functions:artifacts:setpolicy")), [...CLEANUP_POLICY_ARGS, "--project", t.project]);
+  assert.ok(CLEANUP_POLICY_ARGS.includes(REGION));
+  assert.ok(!setupFree.some((x) => x.cmd && x.cmd.includes("functions:artifacts:setpolicy")), "CI does not try to set the cleanup policy");
+  // The deploy never deletes a function (23 Nov 2026: deleting the old region's functions before their replacements
+  // answered took the API down). A region move is separate deploys, deleting last, by hand (docs/DEPLOYMENT.md).
   for (const p of [plan, setupFree]) {
-    const legacy = p.at(-3);
-    assert.equal(legacy.phase, "deploy");
-    assert.equal(legacy.optional, true);
-    assert.deepEqual(legacy.cmd.slice(legacy.cmd.indexOf("functions:delete")), ["functions:delete", ...LEGACY_FUNCTIONS, "--region", LEGACY_REGION, "--force", "--project", t.project]);
+    for (const step of p) {
+      for (const cmd of [step.cmd, step.check].filter(Boolean)) assert.ok(!cmd.includes("functions:delete"), `${step.label} deletes functions`);
+    }
   }
-  assert.equal(LEGACY_REGION, "us-central1");
-  assert.notEqual(LEGACY_REGION, REGION);
+  const src = read("scripts/deploy.mjs");
+  assert.doesNotMatch(src, /LEGACY_REGION|LEGACY_FUNCTIONS/);
+});
+
+test("npm run deploy -- --dry-run --skip-setup shows no delete step", () => {
+  const r = spawnSync(process.execPath, [join(ROOT, "scripts/deploy.mjs"), "--dry-run", "--skip-setup"], { encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stdout, /functions:delete|old region/i);
+  assert.match(r.stdout, /Deploy the functions\n.*--only functions:pharmacy-screen-config-api,functions:pharmacy-screen-ph-proxy/);
+});
+
+test("the functions step: only the cleanup-policy message is passable; any other error stops the deploy before Hosting", () => {
+  // firebase-tools 14's own wording when the functions deployed but the policy could not be set.
+  const policyOnly = [
+    "✔  functions[pharmacyScreenConfigApi(australia-southeast1)] Successful update operation.",
+    "✔  functions[pharmacyScreenPhApi(australia-southeast1)] Successful update operation.",
+    "Error: Functions successfully deployed but could not set up cleanup policy in location australia-southeast1. Pass the --force option to automatically set up a cleanup policy or run 'firebase functions:artifacts:setpolicy' to manually set up a cleanup policy.",
+  ].join("\n");
+  assert.equal(functionsDeployOutcome(0, "✔  Deploy complete!"), "ok");
+  assert.equal(functionsDeployOutcome(1, policyOnly), "cleanup-policy");
+  // The first deploy on 23 Nov 2026: one function failed to create.
+  const oneFailed = [
+    "✔  functions[pharmacyScreenConfigApi(australia-southeast1)] Successful create operation.",
+    "Failed to create function projects/rob-ph-demos/locations/australia-southeast1/functions/pharmacyScreenPhApi",
+    "Functions deploy had errors with the following functions:",
+    "\tpharmacyScreenPhApi(australia-southeast1)",
+    "Error: There was an error deploying functions",
+  ].join("\n");
+  assert.equal(functionsDeployOutcome(1, oneFailed), "failed");
+  // Both at once: a failed function is never excused by the cleanup-policy message.
+  assert.equal(functionsDeployOutcome(1, `${oneFailed}\n${policyOnly}`), "failed");
+  // Anything unrecognised fails closed.
+  assert.equal(functionsDeployOutcome(1, "Error: Failed to authenticate, have you run firebase login?"), "failed");
+  assert.equal(functionsDeployOutcome(1, ""), "failed");
+  assert.equal(functionsDeployOutcome(null, "killed"), "failed");
 });
 
 test("URLs printed after a deploy", () => {
@@ -305,4 +346,31 @@ test("CI workflow template deploys from main, with setup skipped, and matches th
   if (existsSync(installed)) assert.equal(readFileSync(installed, "utf8"), yml, "the installed workflow is the template");
   assert.match(yml, /npm run deploy -- --skip-setup/);
   assert.match(yml, /secrets\.FIREBASE_SERVICE_ACCOUNT_ROB_PH_DEMOS/);
+});
+
+test("the deploy fails when the site's API does not answer afterwards, and passes when it does", async () => {
+  const reply = (status, type) => ({ status, headers: { get: () => type } });
+  const up = async (url) => (url.includes("/api/health") ? reply(200, "application/json") : reply(404, "application/json; charset=utf-8"));
+  assert.match(await checkApi({ site: "s", fetchImpl: up, tries: 1 }), /config API 200, PH API proxy 404 \(JSON\)/);
+  // What Hosting answered on 23 Nov 2026: its own HTML "Page not found" for every /api route.
+  const gone = async () => reply(404, "text/html; charset=UTF-8");
+  await assert.rejects(checkApi({ site: "s", fetchImpl: gone, tries: 2, waitMs: 1 }), /does not answer after the deploy/);
+  const halfGone = async (url) => (url.includes("/api/health") ? reply(200, "application/json") : reply(404, "text/html"));
+  await assert.rejects(checkApi({ site: "s", fetchImpl: halfGone, tries: 1 }), /not JSON/);
+  let n = 0;
+  const slow = async (url) => (++n > 2 ? up(url) : gone());
+  assert.match(await checkApi({ site: "s", fetchImpl: slow, tries: 3, waitMs: 1 }), /config API 200/);
+});
+
+test("the API check fails the 23 Nov 2026 first deploy, where one function failed to create (Hosting's HTML 404)", async () => {
+  // Firebase Hosting's own 404 page, as every /api route served it from 19:55 to 22:13 UTC on 23 Nov 2026.
+  const hosting404 = { status: 404, headers: { get: (h) => (/content-type/i.test(h) ? "text/html; charset=utf-8" : null) }, text: async () => "<!DOCTYPE html><html><head><title>Page Not Found</title></head><body><h1>Page Not Found</h1><p>This file does not exist and there was no index.html found in the current directory or 404.html in the root directory.</p></body></html>" };
+  const json = (status) => ({ status, headers: { get: (h) => (/content-type/i.test(h) ? "application/json; charset=utf-8" : null) } });
+  const routes = (health, device) => async (url) => (url.includes("/api/health") ? health() : device());
+  // Only the config API was created: the proxy's route falls through to Hosting's page.
+  await assert.rejects(checkApi({ site: "s", fetchImpl: routes(() => json(200), () => hosting404), tries: 2, waitMs: 1 }), /does not answer after the deploy: health 200, device read 404 \(not JSON/);
+  // Only the proxy was created: the health route is Hosting's page.
+  await assert.rejects(checkApi({ site: "s", fetchImpl: routes(() => hosting404, () => json(404)), tries: 2, waitMs: 1 }), /does not answer after the deploy: health 404/);
+  // Neither: every /api route is Hosting's page.
+  await assert.rejects(checkApi({ site: "s", fetchImpl: routes(() => hosting404, () => hosting404), tries: 2, waitMs: 1 }), /does not answer after the deploy/);
 });

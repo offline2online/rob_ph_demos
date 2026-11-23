@@ -303,9 +303,11 @@ test('published config: an occasion template plays its occasion (t_occ_<occasion
     content: { 'rec-occ': { occasions: { easter: { beats: [{ text: 'Hoppy Easter, ${Suburb}' }, { text: 'M' }, { text: 'Rest up' }] } } } } };
   const promos = [{ id: 'rec-occ', promoId: 'occasions', name: 'Occasions', templateId: 'builtin-occasion-easter' }];
   const cfg = fromPublishedConfig(buildScreenConfig(ph, promos, [], '2026-11-20T00:00:00.000Z'));
-  assert.deepEqual(cfg.promotions, [{ id: 'occasions', promoId: 'occasions', name: 'Occasions', template: 't_occ_easter' }]);
+  // Published as the Fallback (what plays outside every season); the screen works out the season from the date.
+  assert.deepEqual(cfg.promotions, [{ id: 'occasions', promoId: 'occasions', name: 'Occasions', template: 't_occ_fallback' }]);
   const store = storeModel({ data: { store_location: { store_code: 'VIC-MP-001' }, store_info: { address_info: { suburb: 'Beaumaris' } } } }, cfg);
-  const play = resolvePromotion(cfg, store, 'occasions');
+  assert.equal(resolvePromotion(cfg, store, 'occasions').occasion, 'fallback');
+  const play = resolvePromotion(cfg, store, 'occasions', { occasion: 'easter' });
   assert.equal(play.base, 'occasion');
   assert.equal(play.occasion, 'easter');
   assert.equal(play.content.beats[0].text, 'Hoppy Easter, ${Suburb}');
@@ -324,7 +326,9 @@ test('published config: beat and Closed headline timings set in the editor reach
   const promos = [{ id: 'rec-occ', promoId: 'occasions', name: 'Occasions', templateId: 'builtin-occasion-easter' }, { id: 'rec-closed', promoId: 'closed', name: 'Closed', templateId: 'builtin-opening-hours' }];
   const cfg = fromPublishedConfig(buildScreenConfig(ph, promos, [], '2026-11-20T00:00:00.000Z'));
   const store = storeModel({ data: { store_location: { store_code: 'VIC-MP-001' } } }, cfg);
-  assert.deepEqual(sequence(resolvePromotion(cfg, store, 'occasions')).map((x) => x.t), [7, 4, 1.5]);
+  assert.deepEqual(sequence(resolvePromotion(cfg, store, 'occasions', { occasion: 'easter' })).map((x) => x.t), [7, 4, 1.5]);
+  // The Fallback's timings are fixed: exactly 7 s.
+  assert.deepEqual(sequence(resolvePromotion(cfg, store, 'occasions')).map((x) => x.t), [2, 3, 2]);
   assert.deepEqual(sequence(resolvePromotion(cfg, store, 'closed')).map((x) => x.t), [2.7, 6, 2.6]);
 });
 

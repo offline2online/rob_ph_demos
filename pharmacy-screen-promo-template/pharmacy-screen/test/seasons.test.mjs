@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { activeOccasion, seasonDates, easterSunday, cleanMonthDay, inSeason, fmtMonthDay, occasionCopy, storeModel, resolvePromotion } from '../js/render.js';
+import { activeOccasion, seasonDates, easterSunday, cleanMonthDay, inSeason, fmtMonthDay, occasionCopy, storeModel, resolvePromotion, liveOccasion, activationOn, activationUntil, scheduledOccasion, sequence } from '../js/render.js';
 import { storeDate, parseTestDate } from '../js/hours.js';
 import { fromPublishedConfig } from '../js/live-data.js';
 
@@ -57,7 +57,7 @@ test('the store\'s date in its time zone, and the date= test parameter', () => {
   assert.equal(parseTestDate('soon', 2027), null);
 });
 
-test('the published screen config: promo=occasions plays the season for the store\'s date, else the one it is set to', () => {
+test('the published screen config: promo=occasions plays the season for the store\'s date, else the Fallback', () => {
   const ph = { id: 'rec-ph', storeCode: 'VIC-MP-001', name: 'Beaumaris Pharmacy', colours: { primary: '#0f1050', accent: '#5ee6b0' }, logo: null,
     content: { 'rec-occ': { occasions: { valentines: null, 'australia-day': { from: '01-20', to: '01-27', beats: [{ text: 'Aussie, ${Suburb}' }] } } } } };
   const promos = [{ id: 'rec-occ', promoId: 'occasions', name: 'Seasonal', templateId: 'builtin-occasion-easter' }];
@@ -70,10 +70,67 @@ test('the published screen config: promo=occasions plays the season for the stor
   const aus = resolvePromotion(cfg, store, 'occasions', { today: day('2027-01-21') });
   assert.equal(aus.occasion, 'australia-day', 'the pharmacy\'s own dates');
   assert.equal(aus.content.beats[0].text, 'Aussie, ${Suburb}');
-  // Outside every season: the season the promotion is set to (the Season drop-down).
+  // Outside every season: the Fallback (never nothing), and the day after a season ends too.
   const off = resolvePromotion(cfg, store, 'occasions', { today: day('2027-07-01') });
-  assert.equal(off.occasion, 'easter');
-  assert.equal(off.auto, false);
+  assert.equal(off.occasion, 'fallback');
+  assert.equal(off.auto, true);
+  assert.equal(resolvePromotion(cfg, store, 'occasions', { today: day('2026-12-28') }).occasion, 'new-year');
+  assert.equal(resolvePromotion(cfg, store, 'occasions', { today: day('2027-01-06') }).occasion, 'fallback');
+  assert.equal(resolvePromotion(cfg, store, 'occasions', { today: day('2027-02-14') }).occasion, 'valentines-day');
+  assert.equal(resolvePromotion(cfg, store, 'occasions', { today: day('2027-02-15') }).occasion, 'fallback');
   // opts.occasion (the copy-fit audit) wins over the date.
   assert.equal(resolvePromotion(cfg, store, 'occasions', { today: day('2026-12-20'), occasion: 'anzac-day' }).occasion, 'anzac-day');
+});
+
+test('Activate on display: runs to the season\'s scheduled end date, then the schedule; never carries into next year', () => {
+  // Christmas activated early (23 Nov): it plays now, to 27 Dec; New Year's on its own dates; then the Fallback.
+  const until = activationUntil('christmas', {}, day('2026-11-23'));
+  assert.equal(until, '2026-12-27');
+  const c = { activation: { occasion: 'christmas', until } };
+  assert.equal(liveOccasion(c, day('2026-11-23')), 'christmas');
+  assert.equal(liveOccasion(c, day('2026-12-27')), 'christmas');
+  assert.equal(liveOccasion(c, day('2026-12-28')), 'new-year');
+  assert.equal(liveOccasion(c, day('2027-01-06')), 'fallback');
+  // Next year: back to the standard dates (nothing on 23 Nov 2027, Christmas from 15 Dec).
+  assert.equal(liveOccasion(c, day('2027-11-23')), 'fallback');
+  assert.equal(liveOccasion(c, day('2027-12-15')), 'christmas');
+  // A range over New Year ends in the next year; Easter is worked out for its year; on now: the end of this run.
+  assert.equal(activationUntil('new-year', {}, day('2026-12-20')), '2027-01-05');
+  assert.equal(activationUntil('new-year', {}, day('2027-01-02')), '2027-01-05');
+  assert.equal(activationUntil('easter', {}, day('2027-03-01')), '2027-03-29');
+  assert.equal(activationUntil('christmas', {}, day('2026-12-28')), '2027-12-27');
+  // A pharmacy's own dates (Dates card) are its schedule every year, and an activation ends on them.
+  const own = { christmas: { from: '12-01', to: '12-24' } };
+  assert.equal(activationUntil('christmas', own, day('2026-11-20')), '2026-12-24');
+  assert.equal(scheduledOccasion(own, day('2027-12-01')), 'christmas');
+  assert.equal(scheduledOccasion(own, day('2027-12-25')), 'fallback');
+  // The Fallback during a season runs to that season's end; with no season on there is nothing to activate.
+  assert.equal(activationUntil('fallback', {}, day('2026-12-20')), '2026-12-27');
+  assert.equal(activationUntil('fallback', {}, day('2026-03-15')), '');
+  assert.equal(liveOccasion({ activation: { occasion: 'fallback', until: '2026-12-27' } }, day('2026-12-20')), 'fallback');
+  // Malformed activations are ignored: the schedule plays.
+  for (const a of [null, 'christmas', { occasion: 'halloween', until: '2026-12-27' }, { occasion: 'christmas', until: '12-27' }, { occasion: 'christmas' }]) {
+    assert.equal(activationOn(a, day('2026-11-23')), null, JSON.stringify(a));
+    assert.equal(liveOccasion({ activation: a }, day('2026-11-23')), 'fallback');
+  }
+  // No date known: the Fallback, never nothing.
+  assert.equal(liveOccasion({}, null), 'fallback');
+});
+
+test('the Fallback: never empty, exactly 7 s in three beats, the store\'s own name and suburb', () => {
+  const cfg = { pharmacies: [{ storeCode: 'A', name: 'Alpha Pharmacy', brand: { p: '#123456', a: '#abcdef' }, content: {} }, { storeCode: 'B', name: 'Beta Chemist', content: {} }],
+    promotions: [{ id: 'occasions', promoId: 'occasions', name: 'Seasonal', template: 't_occ_fallback' }], templates: [] };
+  for (const [code, suburb, name] of [['A', 'Ocean Grove', 'Alpha Pharmacy'], ['B', 'Mount Martha', 'Beta Chemist']]) {
+    const store = storeModel({ data: { store_location: { store_code: code }, store_info: { address_info: { suburb } } } }, cfg);
+    for (const d of ['2026-03-15', '2026-12-28', '2027-07-01', '2027-04-25']) {
+      const play = resolvePromotion(cfg, store, 'occasions', { today: day(d) });
+      assert.ok(play.occasion, `${code} ${d}: something plays`);
+    }
+    const play = resolvePromotion(cfg, store, 'occasions', { today: day('2026-03-15') });
+    assert.equal(play.occasion, 'fallback');
+    assert.deepEqual(sequence(play).map((x) => x.t), [2, 3, 2]);
+    assert.deepEqual(play.content.beats.map((b) => b.text), ['Thank you, ${Suburb}', 'for supporting your local pharmacy', '${StoreName}']);
+    assert.equal(store.name, name);
+    assert.equal(store.suburb, suburb);
+  }
 });

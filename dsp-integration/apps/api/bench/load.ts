@@ -21,7 +21,9 @@
       a few formats in every store — the review of 24 Sep 2026 runs both.
    3. Starts the real Fastify server on a random port and drives it with
       `--concurrency` parallel HTTP clients for `--seconds` per endpoint,
-      reporting req/s and p50 / p95 / p99 latency. The writes are real too:
+      reporting req/s and p50 / p95 / p99 latency. Each read endpoint is
+      first driven untimed for --warmup-seconds (default 0.5), so the first
+      endpoint isn't charged the process's JIT and cold caches. The writes are real too:
       POST /v1/reservations places a distinct bid (advertiser × position ×
       window) on every request, the way tier-2 advertisers bid.
    4. Times one full auction (every position, every connected DSP) for the
@@ -74,6 +76,14 @@ const SLOTS = arg('slots', 4)
 const STORES = arg('stores', 0)
 const SECONDS = arg('seconds', 4)
 const CONCURRENCY = arg('concurrency', 32)
+/* Untimed warm-up before each read endpoint's timed window: the same
+   requests at the same concurrency, thrown away. Without it the first
+   endpoint driven (GET /v1/inventory page of 50, then ?status=available)
+   carried the process's JIT and cold-cache cost — a p99 6x its p95 — and
+   was the only metric the nightly gate kept failing on in every shape
+   (tickets nPXnunW0tyLMIIBIjWdL and siblings, Nov 2026). The bid driver has
+   a fixed amount of work and is never warmed. --warmup-seconds=0 turns it off. */
+const WARMUP_SECONDS = arg('warmup-seconds', 0.5)
 /* Simulated round trip to each DSP's bidder, in ms. The mock DSPs answer
    in-process instantly, which would hide how the auction fans out; a real
    bidder takes tens to hundreds of ms (the timeout is 300). */
@@ -175,7 +185,17 @@ const AUTH = { authorization: 'Bearer poc-token-google-dv360' }
 const pct = (xs: number[], p: number) => xs[Math.min(xs.length - 1, Math.floor((p / 100) * xs.length))]
 /* `ok` says which statuses count as success; anything else is an error. A
    driver may return null to say it has nothing more to send. */
-async function drive(label: string, req: () => Promise<Response | null>, ok: (status: number) => boolean = (s) => s < 400) {
+async function drive(label: string, req: () => Promise<Response | null>, ok: (status: number) => boolean = (s) => s < 400, warm = true) {
+  if (warm && WARMUP_SECONDS > 0) {
+    const warmUntil = performance.now() + WARMUP_SECONDS * 1000
+    await Promise.all(Array.from({ length: CONCURRENCY }, async () => {
+      while (performance.now() < warmUntil) {
+        const r = await req()
+        if (!r) return
+        await r.text()
+      }
+    }))
+  }
   const lat: number[] = []
   let errors = 0
   /* The first few unexpected answers, so an error count is never a mystery. */
@@ -286,7 +306,7 @@ await drive('GET  /v1/inventory (bad token → 401)', () => fetch(`${BASE}/v1/in
     if (r.status === 201) placed++
     else if (r.status === 400 || r.status === 409 || r.status === 422) notOpen++
     return r
-  }, (s) => s === 201 || s === 400 || s === 409 || s === 422)
+  }, (s) => s === 201 || s === 400 || s === 409 || s === 422, false)
   console.log(`${''.padEnd(46)} ${String(Math.min(next, total)).padStart(6)} bids sent: ${placed} placed${notOpen ? `, ${notOpen} refused as expected (position not open to that advertiser, or window already sold)` : ''}`)
 }
 
