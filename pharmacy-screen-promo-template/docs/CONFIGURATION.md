@@ -94,11 +94,7 @@ Function settings are written by the deploy; you only set them yourself to run a
 | `PS_FIRESTORE_ROOT` | Top-level Firestore collection (Firebase) | `pharmacyScreen` | `pharmacyScreen` | No | `.env.rob-ph-demos` |
 | `PS_ROOT` | Key prefix in the DynamoDB table (AWS) | `pharmacyScreen` | `pharmacyScreen` | No | The CDK stack |
 | `PS_TABLE` | DynamoDB table name (AWS) | None (required on AWS) | `PharmacyScreen-Config…` | No | The CDK stack |
-| `PS_REGION` | Cloud Functions region (Firebase). Must match the region in `firebase.json`'s rewrites | `australia-southeast1` | `australia-southeast1` | No | `.env.rob-ph-demos` |
-| `PS_MIN_INSTANCES` | Instances kept warm (Firebase). `0` scales to zero, with a cold start after idle; above `0` is a monthly cost whether or not screens call it, so only with the owner's yes | `0` | `1` | No | Default (`.env.rob-ph-demos` to change it) |
-| `PS_RATE_LIMIT_SCREENS_PER_IP_PER_MIN` | `GET /api/screens/**` requests per client address per minute, per instance; past it `429` with `Retry-After` (`0` = no limit). Answers the CDN serves from cache are not counted | `60` | `60` | No | Default |
-| `PS_TRUSTED_PROXY_HOPS` | `X-Forwarded-For` entries, from the right, added by our own platform: the address the screen read's limit counts (Firebase; as `PH_TRUSTED_PROXY_HOPS`) | `1` | `1` | No | Default |
-| `PS_ORIGIN_VERIFY_SECRET_ARN` | ARN of the Secrets Manager secret holding the value CloudFront adds to every API request (AWS). Both functions read it at run time and answer `403` to a request without that value (`503` if the secret cannot be read); it also decides whether the viewer address is trusted. Also used by `PhApi` | None (no check) | `arn:aws:secretsmanager:ap-southeast-2:…:secret:OriginVerify…` | No (a reference; only the two functions' roles may read the secret) | The CDK stack |
+| `PS_REGION` | Cloud Functions region (Firebase) | `us-central1` | `us-central1` | No | `.env.rob-ph-demos` |
 | `PS_OIDC_ISSUER` | OIDC issuer URL (AWS) | None (required on AWS) | `https://cognito-idp.ap-southeast-2.amazonaws.com/ap-southeast-2_AbC…` | No | The CDK stack (Cognito, or `--oidc-issuer`); also used by `PhApi` |
 | `PS_OIDC_AUDIENCE` | The admin editor's client id; ID tokens must carry it as `aud` (AWS) | None (required on AWS) | `3n4b5…` | No | The CDK stack; also used by `PhApi` |
 | `PS_OIDC_JWKS_URI` | Signing keys URL (AWS) | `<issuer>/.well-known/jwks.json` from discovery | `https://…/.well-known/jwks.json` | No | The CDK stack; also used by `PhApi` |
@@ -118,22 +114,20 @@ Function settings are written by the deploy; you only set them yourself to run a
 | `PH_AUDIT_COLLECTION` | Firestore collection for the settings audit log (Firebase) | `pharmacyScreen/private/auditLog` | | No | `.env.rob-ph-demos` |
 | `PH_TABLE` | DynamoDB table (AWS) | None (required on AWS) | `PharmacyScreen-Config…` | No | The CDK stack |
 | `PH_ROOT` | Key prefix in that table (AWS) | `pharmacyScreen` | `pharmacyScreen` | No | The CDK stack |
-| `PH_REGION` | Cloud Functions region (Firebase). Must match the region in `firebase.json`'s rewrites | `australia-southeast1` | `australia-southeast1` | No | `.env.rob-ph-demos` |
-| `PH_MIN_INSTANCES` | Instances kept warm (Firebase). `0` scales to zero; above `0` is a monthly cost, only with the owner's yes | `0` | `1` | No | Default (`.env.rob-ph-demos` to change it) |
+| `PH_REGION` | Cloud Functions region (Firebase) | `us-central1` | `us-central1` | No | `.env.rob-ph-demos` |
 | `PH_PROXY_CACHE_SECONDS` | Seconds a device's answer and the decrypted settings are reused | `15` | `15` | No | Default |
 | `PH_PROXY_TIMEOUT_MS` | Timeout per PH server call, ms | `8000` | `8000` | No | Default |
 | `PH_PROXY_STALE_SECONDS` | Seconds the last good answer may be served (`meta.stale`) when a rate limit trips | `600` | `600` | No | Default |
 | `PH_RATE_LIMIT_PER_DEVICE_PER_MIN` | Cache misses per device per minute, per instance | `12` | `12` | No | Default |
 | `PH_RATE_LIMIT_PER_IP_PER_MIN` | Cache misses per client address per minute, per instance | `600` | `600` | No | Default |
 | `PH_UPSTREAM_CALLS_PER_MIN` | Calls to PH per minute, per instance | `1200` | `1200` | No | Default |
-| `PH_RATE_LIMIT_UNKNOWN_PER_IP_PER_MIN` | "Not registered to a store" answers per client address per minute, per instance. Past it, that address gets `429` for any device without a recent good answer; devices known to be real are still refreshed. Not-found answers are kept in their own small cache, so they never push a real device's fallback out | `30` | `30` | No | Default |
 | `PH_SESSION_AUTH` | `on` or `off`: whether `POST /api/auth/ph-session` (sign-in from Personalisation Hub) exists (Firebase) | `on` | `on` | No | Default |
 | `PH_REQUIRE_PH_SESSION` | `true`: the settings endpoints accept only sessions started from Personalisation Hub (Firebase) | `false` | `true` | No | `.env.rob-ph-demos`, together with `PS_REQUIRE_PH_SESSION` |
 | `PH_SESSION_HQ_ROLES` | Comma-separated HQ Admin roles that open the editor as an administrator | `ADMIN` | `ADMIN,HELP_DESK` | No | Default |
 | `PH_SESSION_MAX_HOURS` | Longest an editor session lasts before Personalisation Hub is asked again | `8` | `8` | No | Default |
 | `PH_SESSION_RATE_LIMIT_PER_IP_PER_MIN` | Sign-in attempts per client address per minute, per instance | `30` | `30` | No | Default |
 | `PH_TRUSTED_PROXY_HOPS` | `X-Forwarded-For` entries, from the right, added by our own platform | `1` (Firebase); `2` on AWS | `1` | No | `.env.rob-ph-demos`; the CDK stack |
-| `PS_ORIGIN_VERIFY` | The CloudFront origin value itself, for tests and local runs only (a deployment uses `PS_ORIGIN_VERIFY_SECRET_ARN`; the stack never puts the value in a function's environment) | None | `<test value>` | **Yes** | Tests only |
+| `PS_ORIGIN_VERIFY` | Value CloudFront adds to every API request, so the proxy trusts the viewer address only behind CloudFront (AWS) | None | `<generated>` | **Yes** (generated into Secrets Manager by the stack; never set by hand) | The CDK stack |
 
 ### Set by the platform (read, never set)
 

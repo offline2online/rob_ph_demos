@@ -86,7 +86,7 @@ test("stage: the site holds the screen and admin only; the functions hold their 
   assert.ok(!existsSync(join(fn, "pharmacy-screen/ph-proxy/.env.rob-ph-demos")));
   assert.ok(!existsSync(join(fn, "aws/infra")) && !existsSync(join(fn, "aws/test")) && !existsSync(join(fn, "aws/node_modules")));
   const pkg = JSON.parse(readFileSync(join(fn, "package.json"), "utf8"));
-  assert.deepEqual(Object.keys(pkg.dependencies).sort(), ["@aws-sdk/client-dynamodb", "@aws-sdk/client-kms", "@aws-sdk/client-s3", "@aws-sdk/client-secrets-manager"]);
+  assert.deepEqual(Object.keys(pkg.dependencies).sort(), ["@aws-sdk/client-dynamodb", "@aws-sdk/client-kms", "@aws-sdk/client-s3"]);
   // The staged entries load from their staged paths (the SDK is only required when a client is made).
   for (const entry of ["config-api", "ph-proxy"]) {
     const mod = require(join(fn, "aws", "lambda", `${entry}.js`));

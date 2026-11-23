@@ -11,56 +11,49 @@
           "source": "/api/settings/ph-api",
           "function": {
             "functionId": "pharmacyScreenPhApi",
-            "region": "australia-southeast1"
+            "region": "us-central1"
           }
         },
         {
           "source": "/api/settings/ph-api/**",
           "function": {
             "functionId": "pharmacyScreenPhApi",
-            "region": "australia-southeast1"
+            "region": "us-central1"
           }
         },
         {
           "source": "/api/auth/**",
           "function": {
             "functionId": "pharmacyScreenPhApi",
-            "region": "australia-southeast1"
+            "region": "us-central1"
           }
         },
         {
           "source": "/api/device/**",
           "function": {
             "functionId": "pharmacyScreenPhApi",
-            "region": "australia-southeast1"
-          }
-        },
-        {
-          "source": "/api/csp-report",
-          "function": {
-            "functionId": "pharmacyScreenConfigApi",
-            "region": "australia-southeast1"
+            "region": "us-central1"
           }
         },
         {
           "source": "/api/health",
           "function": {
             "functionId": "pharmacyScreenConfigApi",
-            "region": "australia-southeast1"
+            "region": "us-central1"
           }
         },
         {
           "source": "/api/screens/**",
           "function": {
             "functionId": "pharmacyScreenConfigApi",
-            "region": "australia-southeast1"
+            "region": "us-central1"
           }
         },
         {
           "source": "/api/admin/**",
           "function": {
             "functionId": "pharmacyScreenConfigApi",
-            "region": "australia-southeast1"
+            "region": "us-central1"
           }
         }
       ],
@@ -117,15 +110,6 @@
           ]
         },
         {
-          "source": "/pharmacy-screen.html",
-          "headers": [
-            {
-              "key": "Content-Security-Policy-Report-Only",
-              "value": "script-src 'self'; object-src 'none'; base-uri 'none'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self'; report-uri /api/csp-report"
-            }
-          ]
-        },
-        {
           "source": "/admin/**",
           "headers": [
             {
@@ -143,10 +127,6 @@
             {
               "key": "Content-Security-Policy",
               "value": "frame-ancestors 'self' https://ph.mipharmacy.net"
-            },
-            {
-              "key": "Content-Security-Policy-Report-Only",
-              "value": "script-src 'self' https://www.gstatic.com https://apis.google.com; object-src 'none'; base-uri 'none'; img-src 'self' https: data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com; frame-src https://rob-ph-demos.firebaseapp.com; report-uri /api/csp-report"
             }
           ]
         }

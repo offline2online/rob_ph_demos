@@ -39,10 +39,7 @@ function getApi() {
   return api;
 }
 
-// PH_REGION: Sydney by default, next to the stores. PH_MIN_INSTANCES: instances kept warm (default 0; above 0 is a
-// monthly cost whether or not screens call it, so only with the owner's yes).
-const minInstances = Math.min(Math.max(0, Math.floor(Number(process.env.PH_MIN_INSTANCES)) || 0), 20);
-exports.pharmacyScreenPhApi = onRequest({ region: process.env.PH_REGION || "australia-southeast1", memory: "256MiB", concurrency: 80, maxInstances: 20, minInstances }, async (req, res) => {
+exports.pharmacyScreenPhApi = onRequest({ region: process.env.PH_REGION || "us-central1", memory: "256MiB", concurrency: 80, maxInstances: 20 }, async (req, res) => {
   const out = await getApi().handle({
     method: req.method,
     path: req.path,

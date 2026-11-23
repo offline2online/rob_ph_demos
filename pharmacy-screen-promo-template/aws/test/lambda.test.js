@@ -17,8 +17,6 @@ const { createOidcAuth } = require("../adapters/oidc-auth");
 const { createS3Blobs } = require("../adapters/s3-blobs");
 const { awsKmsProvider } = require("../adapters/aws-kms-provider");
 const { fromEvent, toResult, clientIp, addressOnly } = require("../lambda/apigw");
-const { createOriginSecret, CACHE_MS } = require("../lambda/origin-secret");
-const SM = require("@aws-sdk/client-secrets-manager");
 const configLambda = require("../lambda/config-api");
 const phLambda = require("../lambda/ph-proxy");
 const S3 = require("@aws-sdk/client-s3");
@@ -71,12 +69,11 @@ function fakeKms(keyArn) {
   };
 }
 
-// Through CloudFront by default (it adds x-origin-verify); direct: true is a call straight to API Gateway.
-function event(method, path, { headers = {}, body, base64 = false, query, sourceIp = "198.51.100.9", direct = false } = {}) {
+function event(method, path, { headers = {}, body, base64 = false, query, sourceIp = "198.51.100.9" } = {}) {
   return {
     version: "2.0",
     rawPath: path,
-    headers: direct ? headers : { "x-origin-verify": ORIGIN_SECRET, ...headers },
+    headers,
     queryStringParameters: query,
     body: body === undefined ? undefined : base64 ? Buffer.from(body).toString("base64") : typeof body === "string" ? body : JSON.stringify(body),
     isBase64Encoded: base64,
@@ -105,7 +102,6 @@ function setupPh() {
     PH_ROOT: "pharmacyScreen",
     PH_TOKEN_KMS_KEY: kmsArn,
     PH_API_DEFAULT_BASE_URL: "https://ph.example",
-    PH_API_ALLOWED_HOSTS: "ph.example,down.example",
     PS_ORIGIN_VERIFY: ORIGIN_SECRET,
   };
   phLambda._reset();
@@ -169,7 +165,7 @@ test("ph-proxy on Lambda: the PH API token is saved write-only, KMS-envelope-enc
 });
 
 test("ph-proxy on Lambda: the viewer address is trusted only with CloudFront's origin header", () => {
-  const ev = (headers) => event("GET", "/api/device/X/campaign_data", { headers, sourceIp: "198.51.100.9", direct: true });
+  const ev = (headers) => event("GET", "/api/device/X/campaign_data", { headers, sourceIp: "198.51.100.9" });
   const h = (e) => fromEvent(e).allHeaders;
   const via = ev({ "x-origin-verify": ORIGIN_SECRET, "cloudfront-viewer-address": "203.0.113.5:4433" });
   assert.equal(clientIp(via, h(via), ORIGIN_SECRET), "203.0.113.5");
@@ -190,7 +186,7 @@ test("config API on Lambda: admin CRUD with an OIDC token, uploads to S3, public
   const s3 = fakeS3();
   configLambda._reset();
   configLambda.getApi(
-    { PS_TABLE: "fake", PS_ROOT: "pharmacyScreen", PS_MEDIA_BUCKET: "media-bucket", PS_MEDIA_BASE_URL: "https://screens.example.com", PS_ALLOWED_ORIGINS: "https://screens.example.com", PS_ORIGIN_VERIFY: ORIGIN_SECRET },
+    { PS_TABLE: "fake", PS_ROOT: "pharmacyScreen", PS_MEDIA_BUCKET: "media-bucket", PS_MEDIA_BASE_URL: "https://screens.example.com", PS_ALLOWED_ORIGINS: "https://screens.example.com" },
     { dynamodb: ddb, s3, auth: createOidcAuth({ issuer: idp.issuer, audience: idp.clientId, fetchImpl: idp.fetchImpl }) }
   );
   try {
@@ -242,75 +238,4 @@ test("adapters: S3 urls encode each path segment; delete is a plain DeleteObject
   assert.equal(s3.objects.size, 0);
   assert.throws(() => awsKmsProvider({}), /PH_TOKEN_KMS_KEY/);
   assert.deepEqual(toResult({ status: 204, headers: { A: 1 }, body: null }), { statusCode: 204, headers: { A: "1" }, body: "", isBase64Encoded: false });
-});
-
-test("both functions refuse a request that did not come through CloudFront (403), before any other work", async () => {
-  const ctx = setupPh();
-  configLambda._reset();
-  configLambda.getApi({ PS_TABLE: "fake", PS_MEDIA_BUCKET: "b", PS_MEDIA_BASE_URL: "https://screens.example.com", PS_ORIGIN_VERIFY: ORIGIN_SECRET }, { dynamodb: createFakeDynamo(), s3: fakeS3(), auth: { identify: async () => null } });
-  try {
-    for (const [fn, path] of [[phLambda, "/api/device/DEV-001/campaign_data"], [configLambda, "/api/screens/VIC-MP-001"], [configLambda, "/api/health"], [phLambda, "/api/settings/ph-api"]]) {
-      const direct = await fn.handler(event("GET", path, { direct: true }));
-      assert.equal(direct.statusCode, 403, `${path} straight to API Gateway`);
-      assert.equal(JSON.parse(direct.body).error.code, "forbidden");
-      assert.equal(direct.headers["Cache-Control"], "no-store");
-      assert.equal((await fn.handler(event("GET", path, { direct: true, headers: { "x-origin-verify": "guess" } }))).statusCode, 403, `${path} with a guessed header`);
-    }
-    assert.equal(ctx.upstream.length, 0, "nothing reached PH");
-    assert.equal((await configLambda.handler(event("GET", "/api/health"))).statusCode, 200, "through CloudFront");
-  } finally {
-    phLambda._reset();
-    configLambda._reset();
-  }
-});
-
-test("the origin secret is read by reference (its ARN), once per container for 5 minutes; unreadable means 503, never let through", async () => {
-  let t = 0;
-  const calls = [];
-  let fail = false;
-  const client = { async send(cmd) { assert.ok(cmd instanceof SM.GetSecretValueCommand); calls.push(cmd.input.SecretId); if (fail) throw Object.assign(new Error("denied"), { name: "AccessDeniedException" }); return { SecretString: ORIGIN_SECRET }; } };
-  const arn = "arn:aws:secretsmanager:ap-southeast-2:111122223333:secret:OriginVerify-abc";
-  const s = createOriginSecret({ env: { PS_ORIGIN_VERIFY_SECRET_ARN: arn }, client, now: () => t });
-  assert.equal(s.configured, true);
-  assert.deepEqual(await Promise.all([s.get(), s.get(), s.get()]), [ORIGIN_SECRET, ORIGIN_SECRET, ORIGIN_SECRET]);
-  assert.deepEqual(calls, [arn], "one read for concurrent requests");
-  t += CACHE_MS - 1;
-  await s.get();
-  assert.equal(calls.length, 1);
-  t += 2;
-  await s.get();
-  assert.equal(calls.length, 2, "read again after 5 minutes");
-  assert.equal(createOriginSecret({ env: {} }).configured, false, "nothing configured (local runs): no check");
-
-  configLambda._reset();
-  fail = true;
-  const errors = [];
-  const prevErr = console.error;
-  console.error = (m) => errors.push(String(m));
-  try {
-    configLambda.getApi({ PS_TABLE: "fake", PS_MEDIA_BUCKET: "b", PS_MEDIA_BASE_URL: "https://screens.example.com", PS_ORIGIN_VERIFY_SECRET_ARN: arn }, { dynamodb: createFakeDynamo(), s3: fakeS3(), auth: { identify: async () => null }, secretsManager: client });
-    const r = await configLambda.handler(event("GET", "/api/health"));
-    assert.equal(r.statusCode, 503);
-    assert.ok(errors.some((e) => /origin secret could not be read: AccessDeniedException/.test(e)));
-    assert.ok(!errors.join("").includes(ORIGIN_SECRET));
-    fail = false;
-    assert.equal((await configLambda.handler(event("GET", "/api/health"))).statusCode, 200, "recovers once the secret can be read");
-  } finally {
-    console.error = prevErr;
-    configLambda._reset();
-  }
-});
-
-test("config API on Lambda: the screen read's per-client limit counts the CloudFront viewer address", async () => {
-  configLambda._reset();
-  configLambda.getApi({ PS_TABLE: "fake", PS_MEDIA_BUCKET: "b", PS_MEDIA_BASE_URL: "https://screens.example.com", PS_ORIGIN_VERIFY: ORIGIN_SECRET, PS_RATE_LIMIT_SCREENS_PER_IP_PER_MIN: "3" }, { dynamodb: createFakeDynamo(), s3: fakeS3(), auth: { identify: async () => null } });
-  try {
-    const get = (viewer) => configLambda.handler(event("GET", "/api/screens/GUESS", { headers: { "cloudfront-viewer-address": viewer } }));
-    const codes = [];
-    for (let i = 0; i < 4; i++) codes.push((await get(`203.0.113.5:${4000 + i}`)).statusCode);
-    assert.deepEqual(codes, [404, 404, 404, 429], "one viewer, whatever its port");
-    assert.equal((await get("198.51.100.20:4000")).statusCode, 404, "another viewer through the same edge");
-  } finally {
-    configLambda._reset();
-  }
 });

@@ -8,12 +8,11 @@
 // Requests reach API Gateway through CloudFront, which adds two headers the
 // stack configures: `x-origin-verify` (a value only CloudFront and these
 // functions know, from Secrets Manager) and `cloudfront-viewer-address` (the
-// viewer's address, written by CloudFront itself). A request without the right
-// `x-origin-verify` (one sent straight to the API Gateway URL) is refused with
-// 403 by originCheck() before anything else runs. The client address used for
-// the per-client rate limits is the viewer address only when the request
-// proves it came through CloudFront; otherwise API Gateway's own sourceIp, so
-// a forged header can't spread one caller over many rate-limit buckets.
+// viewer's address, written by CloudFront itself). The client address used for
+// the proxy's per-client rate limit is the viewer address only when the
+// request proves it came through CloudFront; a request sent straight to the
+// API Gateway URL is keyed by API Gateway's own sourceIp, so a forged header
+// can't spread one caller over many rate-limit buckets.
 
 const crypto = require("node:crypto");
 
@@ -80,22 +79,4 @@ function toResult(out) {
   return { statusCode: (out && out.status) || 500, headers, body, isBase64Encoded: false };
 }
 
-const deny = (status, code, message) => toResult({ status, headers: { "Cache-Control": "no-store" }, body: { error: { code, message } } });
-
-// Before any other work: { ok: true, secret } for a request that came through CloudFront (or when no origin
-// secret is configured: local runs), else { ok: false, result } with the 403 (or 503 when the secret cannot be
-// read) to return. originSecret: lambda/origin-secret.js.
-async function originCheck(event, originSecret) {
-  if (!originSecret || !originSecret.configured) return { ok: true, secret: "" };
-  let secret;
-  try {
-    secret = await originSecret.get();
-  } catch (e) {
-    console.error(`origin secret could not be read: ${e && e.name ? e.name : "error"}`);
-    return { ok: false, result: deny(503, "unavailable", "Temporarily unavailable") };
-  }
-  if (!viaCloudFront(lowerHeaders(event.headers), secret)) return { ok: false, result: deny(403, "forbidden", "Use the site's own address") };
-  return { ok: true, secret };
-}
-
-module.exports = { fromEvent, toResult, clientIp, addressOnly, viaCloudFront, lowerHeaders, originCheck };
+module.exports = { fromEvent, toResult, clientIp, addressOnly, viaCloudFront, lowerHeaders };

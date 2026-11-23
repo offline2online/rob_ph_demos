@@ -7,28 +7,13 @@
 //      flight for that device, when it can (never rate limited, so nobody
 //      can lock a real screen out by spamming its device id),
 //   3. otherwise (a cache miss, which costs an upstream call) applies the
-//      rate limits, per client, per device and per instance, plus a much
-//      lower per-client limit on lookups of devices PH does not know (so
-//      one address guessing device ids gets 429 long before it spends the
-//      shared upstream budget), and calls {baseUrl}/location-api/device/{udid}/campaign_data with
+//      rate limits, per client, per device and per instance, and calls {baseUrl}/location-api/device/{udid}/campaign_data with
 //      the decrypted token in x-api-key, trying the last server that worked
 //      first and then the others, one at a time,
 //   4. returns only the fields the screen needs.
 // Concurrent requests for the same device share one upstream call.
-//
-// Two caches: real devices' answers (`cache`, up to 5000, also the stale
-// fallback served when a limit trips) and "not registered" answers
-// (`negative`, up to NEGATIVE_CACHE_SIZE, same lifetime as a fresh answer).
-// Unknown device ids therefore never push a real device's fallback out.
-//
-// Every limit here is per instance (Cloud Functions instance or Lambda
-// container): the effective limit is the setting times the instances
-// running, bounded by maxInstances. That is deliberate: a shared counter
-// would cost a database write on every cache miss.
 
 const DEVICE_ID = /^[A-Za-z0-9._:-]{1,128}$/;
-const CACHE_SIZE = 5000;
-const NEGATIVE_CACHE_SIZE = 1000;
 
 class ProxyError extends Error {
   constructor(status, code, message, extra = {}) {
@@ -43,19 +28,7 @@ class ProxyError extends Error {
 // instance limits on its own, which bounds abuse without a shared store).
 function createRateLimiter({ limit, windowMs = 60000, now = () => Date.now(), maxKeys = 20000 }) {
   const windows = new Map();
-  const current = (key, t) => {
-    const w = windows.get(key);
-    return w && t - w.start < windowMs ? w : null;
-  };
   return {
-    // Would the next take() for this key be refused? Counts nothing.
-    peek(key) {
-      if (!limit || limit <= 0) return { ok: true };
-      const t = now();
-      const w = current(key, t);
-      if (w && w.count >= limit) return { ok: false, retryAfterSec: Math.max(1, Math.ceil((w.start + windowMs - t) / 1000)) };
-      return { ok: true };
-    },
     take(key) {
       if (!limit || limit <= 0) return { ok: true };
       const t = now();
@@ -131,24 +104,14 @@ function createLocationProxy({
   perDeviceLimit = 12,
   perClientLimit = 600,
   upstreamLimit = 1200,
-  unknownPerClientLimit = 30,
   staleMs = 600000,
 }) {
-  const cache = new Map(); // udid -> { at, result } (result: {status, body}): real devices
-  const negative = new Map(); // udid -> { at, result }: "not registered to a store" answers
+  const cache = new Map(); // udid -> { at, result } (result: {status, body})
   const inflight = new Map(); // udid -> Promise
   let lastGood = null; // base URL that last answered
   const deviceLimiter = createRateLimiter({ limit: perDeviceLimit, now });
   const clientLimiter = createRateLimiter({ limit: perClientLimit, now });
   const upstreamLimiter = createRateLimiter({ limit: upstreamLimit, now });
-  const unknownLimiter = createRateLimiter({ limit: unknownPerClientLimit, now });
-
-  const remember = (map, max, udid, result) => {
-    map.delete(udid); // re-insert so the oldest entry is evicted first
-    map.set(udid, { at: now(), result });
-    if (map.size > max) map.delete(map.keys().next().value);
-  };
-  const limited = (retryAfterSec) => ({ status: 429, headers: { "Retry-After": String(retryAfterSec), "Cache-Control": "no-store" }, body: { ok: false, error: { code: "RATE_LIMITED", message: "Too many requests; slow down" } } });
 
   const withMeta = (result, meta) => (result.body.ok ? { status: result.status, body: { ...result.body, meta: { ...result.body.meta, ...meta } } } : result);
 
@@ -213,38 +176,25 @@ function createLocationProxy({
       // 1. A fresh cached answer, or a call already in flight: no limits.
       const hit = cache.get(udid);
       if (hit && now() - hit.at < cacheMs) return withMeta(hit.result, { cached: true });
-      const miss = negative.get(udid);
-      if (miss && now() - miss.at < cacheMs) return miss.result;
       let p = inflight.get(udid);
       if (p) return withMeta(await p, { cached: false });
-      const known = !!(hit && hit.result.body.ok && now() - hit.at < staleMs);
 
       // 2. A cache miss costs an upstream call: rate limit it. A limit that
       //    trips still answers with the last good data for this device if
       //    there is any (meta.stale), so a screen is not refused while a
-      //    recent answer exists. A client that has had too many "not
-      //    registered" answers this minute may still refresh devices that
-      //    are known to be real, but not look up any others.
-      const n = known ? { ok: true } : unknownLimiter.peek(clientKey);
-      const c = n.ok ? clientLimiter.take(clientKey) : n;
+      //    recent answer exists.
+      const c = clientLimiter.take(clientKey);
       const d = c.ok ? deviceLimiter.take(udid) : c;
       const u = d.ok ? upstreamLimiter.take("all") : d;
       if (!u.ok) {
-        if (known) return withMeta(hit.result, { cached: true, stale: true });
-        return limited(u.retryAfterSec);
+        if (hit && hit.result.body.ok && now() - hit.at < staleMs) return withMeta(hit.result, { cached: true, stale: true });
+        return { status: 429, headers: { "Retry-After": String(u.retryAfterSec) }, body: { ok: false, error: { code: "RATE_LIMITED", message: "Too many requests; slow down" } } };
       }
       p = fetchUpstream(udid)
         .then((result) => {
-          if (result.status === 404) {
-            unknownLimiter.take(clientKey);
-            remember(negative, NEGATIVE_CACHE_SIZE, udid, result);
-          } else {
-            negative.delete(udid);
-            // A failure (502/503) still replaces a real device's entry, as before, so its stale fallback is kept
-            // only while it is a good answer; an unknown device never lands here.
-            if (result.body.ok || cache.has(udid)) remember(cache, CACHE_SIZE, udid, result);
-            else remember(negative, NEGATIVE_CACHE_SIZE, udid, result);
-          }
+          cache.delete(udid); // re-insert so the oldest entry is evicted first
+          cache.set(udid, { at: now(), result });
+          if (cache.size > 5000) cache.delete(cache.keys().next().value);
           return result;
         })
         .catch((e) => {
@@ -261,4 +211,4 @@ function createLocationProxy({
   };
 }
 
-module.exports = { createLocationProxy, createRateLimiter, trimCampaignData, ProxyError, CACHE_SIZE, NEGATIVE_CACHE_SIZE };
+module.exports = { createLocationProxy, createRateLimiter, trimCampaignData, ProxyError };

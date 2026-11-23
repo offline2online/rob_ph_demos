@@ -95,10 +95,6 @@ With `debug=1`, use the panel's test time (or `now=<day>-<HH:MM>`), on a store o
 | G4 | Restore the base URLs | Screens come back within about 35 s, no reload | ☐ | ☐ |
 | G5 | Turn the player's network off for a few minutes, then on | It keeps playing, then resumes live updates | ☐ | ☐ |
 | G6 | Restart the player while offline | It starts from its own copy and shows the last good data | ☐ | ☐ |
-| G7 | From one address, request `/api/device/<made-up id>/campaign_data` for 100 different made-up ids within a minute | `404` for the first 30, then `429` with `Retry-After`; a real screen on that network still gets its data | ☐ | ☐ |
-| G8 | AWS: call the API Gateway URL (`ApiGatewayUrl` output) directly, e.g. `/api/health` | `403`: only CloudFront may call it | ☐ | ☐ |
-| G9 | With the report-only CSP live for a week, search the config API's logs for `[csp]` | No reports from players or the editor; then enforce it ([DEPLOYMENT.md](DEPLOYMENT.md) → "Content-Security-Policy") and check an injected inline script is blocked | ☐ | ☐ |
-| G10 | From an Australian network, time `/api/screens/<code>` a few times (warm) | Under 150 ms | ☐ | ☐ |
 
 ## H. Editor
 

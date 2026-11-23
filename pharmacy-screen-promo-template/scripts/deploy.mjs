@@ -43,15 +43,7 @@ import { fileURLToPath } from "node:url";
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 export const FIREBASE_TOOLS = "firebase-tools@14.27.0";
-// Where both functions run: Sydney, next to the Australian stores (they ran in us-central1 until 23 Nov 2026).
-// firebase.json's Hosting rewrites name it too, and PS_REGION / PH_REGION in the functions' .env.<project> files
-// must match (test/deploy-config.test.mjs). The media bucket is created here only if it does not exist yet.
-export const REGION = "australia-southeast1";
-// Where the functions ran before. The deploy deletes them there first (LEGACY_FUNCTIONS): firebase deploy
-// --non-interactive refuses to leave or delete them by itself, and --force is ruled out (it would also delete
-// Firestore indexes the menu-board demo owns).
-export const LEGACY_REGION = "us-central1";
-export const LEGACY_FUNCTIONS = ["pharmacyScreenConfigApi", "pharmacyScreenPhApi"];
+export const REGION = "us-central1";
 export const KMS = { location: "global", keyRing: "pharmacy-screen", key: "ph-api-token" };
 export const CODEBASES = ["pharmacy-screen-config-api", "pharmacy-screen-ph-proxy"];
 export const FUNCTION_SOURCES = ["pharmacy-screen/config-api", "pharmacy-screen/ph-proxy"];
@@ -386,14 +378,6 @@ export function buildPlan({ project, site, bucket, skipSetup = false }) {
   // In the deploy phase, so it runs with --skip-setup (CI) too.
   steps.push({
     phase: "deploy",
-    kind: "run",
-    optional: true,
-    optionalNote: "nothing to remove: the functions are not in the old region",
-    label: `Remove the functions from their old region (${LEGACY_REGION}), if they are still there`,
-    cmd: fb("functions:delete", ...LEGACY_FUNCTIONS, "--region", LEGACY_REGION, "--force", "--project", project),
-  });
-  steps.push({
-    phase: "deploy",
     kind: "task",
     task: "adminConfig",
     label: `Write the admin editor's Firebase sign-in config (web app "${ADMIN_WEB_APP}") into the staged admin/config.js`,
@@ -555,7 +539,7 @@ async function main() {
     } else if (step.kind === "task") {
       console.log(`   ${await TASKS[step.task](step.args)}`);
     } else if (!run(step.cmd)) {
-      if (step.optional) { console.warn(`   ! skipped (${step.optionalNote || "optional step failed; the deploy may ask about image cleanup"})`); continue; }
+      if (step.optional) { console.warn("   ! skipped (optional step failed; the deploy may ask about image cleanup)"); continue; }
       throw new Error(`Failed: ${step.label}`);
     }
   }
