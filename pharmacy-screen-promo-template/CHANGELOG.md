@@ -10,6 +10,18 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Fixed
 
+- **A real functions failure no longer looks like the cleanup-policy warning in the Firebase deploy.** The
+  "Deploy the functions" step used to end in an error on every CI run ("Functions successfully deployed but could
+  not set up cleanup policy": the CI account may not set it) and was ignored either way. Now only that exact
+  message is passed, with a warning naming the owner's one-time command; any other functions error stops the
+  deploy before Hosting, so the site keeps the functions it had. The cleanup policy is a setup step (the owner's
+  run), no longer tried by CI. The step that deleted the functions from `us-central1` is gone: the deploy never
+  deletes a function, and [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) records the order for any future region move
+  (create, publish Hosting, check the API, then delete, as separate deploys). A test confirms the API check fails
+  on Hosting's HTML 404, as on the first deploy of 23 Nov 2026.
+
+### Fixed
+
 - **The Firebase deploy can no longer leave the site without its API.** On 23 Nov 2026 the move to Sydney deleted
   the functions in `us-central1`, creating one of them in `australia-southeast1` failed, and a re-run then stopped
   on a missing image cleanup policy before Hosting was published, so every `/api` route answered "Page not found"
