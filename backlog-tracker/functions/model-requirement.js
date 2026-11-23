@@ -33,6 +33,19 @@
 // instead, so it runs on Opus from the start; without one it fires on the
 // shared Routine with the block below, as before.
 //
+// The advisor model (ticket MoCADJ47kT9a77tg4cfW, 23 Nov 2026). When a ticket
+// raises a question or needs analysis or support before it can be built (a
+// choice it leaves open, a blocker, something to clarify or investigate), the
+// build session consults Fable (claude-fable-5-2) as the advisor instead of
+// stopping on the question: the Agent tool with model "fable". Fable's advice
+// is posted on the card as a note starting ADVISOR_NOTE_PREFIX and the build
+// carries on with it. Fable only advises. The build and the review still run
+// on the ticket's model, and an Advanced ticket is never built on Fable:
+// isAdvancedModelId does not match it, so modelGuardRefusal refuses such a
+// patch (the earlier bug where Advanced builds came back from claude-fable-5-2
+// and were flagged model-unavailable). Every build fire carries advisorBlock()
+// through modelRequirementBlock, Standard and Advanced alike.
+//
 // Shared by functions/index.js, functions/mcp-server.js and
 // scripts/run-backlog-automation.js. public/js/app.js keeps its own copy of
 // the two values and labels (a browser module can't require this file).
@@ -43,6 +56,11 @@ const MODEL_UNAVAILABLE_REASON = "model-unavailable";
 const MODEL_LABELS = { standard: "Standard", advanced: "Advanced (Opus)" };
 // The Agent tool's model alias for the most capable model.
 const ADVANCED_AGENT_MODEL = "opus";
+// The advisor: its exact model id, the Agent tool's alias for it, and how its
+// advice starts on the card.
+const ADVISOR_MODEL = "claude-fable-5-2";
+const ADVISOR_AGENT_MODEL = "fable";
+const ADVISOR_NOTE_PREFIX = `[advisor · ${ADVISOR_MODEL}]`;
 
 function normaliseModelRequirement(value) {
   return value === "advanced" ? "advanced" : DEFAULT_MODEL_REQUIREMENT;
@@ -55,6 +73,25 @@ function requiresAdvancedModel(item) {
 // A model id or name such as "claude-opus-5-5" or "Claude Opus 5.5".
 function isAdvancedModelId(modelId) {
   return typeof modelId === "string" && /\bopus\b|-opus-|opus-\d/i.test(modelId);
+}
+
+// A model id or name such as "claude-fable-5-2" or "Claude Fable 5.2": the
+// advisor, never a build model for an Advanced ticket.
+function isAdvisorModelId(modelId) {
+  return typeof modelId === "string" && /\bfable\b|-fable-|fable-\d/i.test(modelId);
+}
+
+// The advisor rule every build fire carries. Pure.
+function advisorBlock(item) {
+  const advanced = requiresAdvancedModel(item);
+  return `\n\n=== ADVISOR: Fable (${ADVISOR_MODEL}) ===\n` +
+    "When this ticket raises a question, or needs analysis or support before it can be built (a choice it leaves open, a blocker, something to clarify or investigate), do not stop on it and do not ask a person: consult the advisor. Follow ROUTINE_INSTRUCTIONS.md → \"The advisor model (Fable)\":\n" +
+    `- Use the Agent tool with model "${ADVISOR_AGENT_MODEL}" (${ADVISOR_MODEL}). Brief it with the ticket, its comments and notes, what you found in the code and the exact question or analysis needed; ask it to say first which model id it runs as, then to give one recommendation and its reasoning.\n` +
+    `- Append its advice to this card as a note whose text starts "${ADVISOR_NOTE_PREFIX}" (Setup → "Append a note"), then carry on with the build on its recommendation and say under "Assumed:" what you took.\n` +
+    `- The advisor only advises: it writes no code, tests or patchFiles and never does the build. ${advanced ? `This ticket is Advanced: it is built on Claude Opus, and builtByModel is never ${ADVISOR_MODEL}.` : "builtByModel names the model that did the build, never the advisor."}\n` +
+    "- If you still have to flag the card waiting-on-input (only for something a person alone can supply), put the advisor's recommendation in blocked.recommendation.\n" +
+    "- If the advisor is unavailable (no Agent tool, or it fails to start or reports another model), decide as the ticket's Outcome, the spec and the code best fit, and say in the note that the advisor was unavailable.\n" +
+    "=== END ADVISOR ===";
 }
 
 // The requirement a handed-back patch is judged against. A person's choice (or
@@ -77,8 +114,11 @@ function requiredModelForBuild(item) {
 
 // The block a build fire carries. An Advanced ticket gets the full rule; a
 // Standard one only the line asking the session to record its model, so the
-// card says which model built every ticket.
+// card says which model built every ticket. Both end with the advisor rule.
 function modelRequirementBlock(item) {
+  return requirementOnlyBlock(item) + advisorBlock(item);
+}
+function requirementOnlyBlock(item) {
   if (!requiresAdvancedModel(item)) {
     return "\n\nModel requirement: Standard (the default build model). In the same PATCH as patchFiles/patchReady, set builtByModel to the exact model id this session runs as (e.g. claude-sonnet-5-5).";
   }
@@ -136,6 +176,7 @@ function modelEscalation(item, { countedSendBacks, autoRebuilds, now = new Date(
 module.exports = {
   ESCALATE_AFTER, ESCALATION_NOTE, modelEscalation,
   MODEL_REQUIREMENTS, DEFAULT_MODEL_REQUIREMENT, MODEL_UNAVAILABLE_REASON, MODEL_LABELS, ADVANCED_AGENT_MODEL,
-  normaliseModelRequirement, requiresAdvancedModel, requiredModelForBuild, isAdvancedModelId,
-  modelRequirementBlock, reviewModelTag, modelGuardRefusal,
+  ADVISOR_MODEL, ADVISOR_AGENT_MODEL, ADVISOR_NOTE_PREFIX,
+  normaliseModelRequirement, requiresAdvancedModel, requiredModelForBuild, isAdvancedModelId, isAdvisorModelId,
+  modelRequirementBlock, advisorBlock, reviewModelTag, modelGuardRefusal,
 };
