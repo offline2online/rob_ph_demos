@@ -4256,9 +4256,9 @@ const scenarios = [
     },
   },
   {
-    // QVpqiMuwipZ4mKSXHplM: Aidan's sender name ("Aidan Hubbot" by default) is
+    // QVpqiMuwipZ4mKSXHplM: Aidan's sender name ("Aidan H" by default) is
     // a first and a last name in Settings, used for the From name and the signature.
-    name: "Settings › Support inbox › Aidan: the sender name reads Aidan Hubbot, and Save Aidan sends a new one",
+    name: "Settings › Support inbox › Aidan: the sender name reads Aidan H, and Save Aidan sends a new one",
     hash: "#settings/support",
     seed: () => {
       const s = only("b1");
@@ -4266,16 +4266,16 @@ const scenarios = [
       s.docs.consoleUsers = { "admin@ph.example": { email: "admin@ph.example", role: "admin", displayName: "Ada Admin" } };
       s.supportStatus = { encryptionReady: true, aiReady: true, clientSet: true, clientId: "123-abc.apps.googleusercontent.com", connected: true, connectedEmail: "support@ph.example", connectionError: "", lastSyncAt: new Date().toISOString(), lastSyncOk: true,
         settings: { autoReply: false, autoReplyThreshold: 0.8, escalationAssignee: "", signature: "PH Support", fromName: "PH Support", vipDomains: [], importDays: 7 },
-        aidan: { enabled: true, switchedOn: true, senderCount: 1, requireSenderAuth: true, fromName: "Aidan Hubbot", fromFirstName: "Aidan", fromLastName: "Hubbot", signatureLineOn: false, signatureLine: "", sendersMasked: ["o***@example.com"] } };
+        aidan: { enabled: true, switchedOn: true, senderCount: 1, requireSenderAuth: true, fromName: "Aidan H", fromFirstName: "Aidan", fromLastName: "H", signatureLineOn: false, signatureLine: "", sendersMasked: ["o***@example.com"] } };
       s.supportAnswer = { ok: true };
       return s;
     },
     run: async (c) => {
       c.at("the Aidan block");
       await c.visible("#support-aidan-first", "the sender first name");
-      assert.deepStrictEqual([await c.page.inputValue("#support-aidan-first"), await c.page.inputValue("#support-aidan-last")], ["Aidan", "Hubbot"]);
-      assert.ok((await c.text("#support-aidan-name-hint")).includes("Emails from Aidan show as Aidan Hubbot"));
-      assert.ok((await c.text("#support-aidan-settings")).includes('Add a signature line under "Aidan Hubbot, Personalisation Hub"'), "the signature names the same sender name");
+      assert.deepStrictEqual([await c.page.inputValue("#support-aidan-first"), await c.page.inputValue("#support-aidan-last")], ["Aidan", "H"]);
+      assert.ok((await c.text("#support-aidan-name-hint")).includes("Emails from Aidan show as Aidan H"));
+      assert.ok((await c.text("#support-aidan-settings")).includes('Add a signature line under "Aidan H, Personalisation Hub"'), "the signature names the same sender name");
       assert.strictEqual(await c.page.isDisabled('[data-ss-act="save-aidan"]'), true, "nothing changed: Save Aidan is disabled");
       await c.page.fill("#support-aidan-last", "Bot");
       assert.strictEqual(await c.page.isDisabled('[data-ss-act="save-aidan"]'), false, "changed: Save Aidan enables");
