@@ -82,12 +82,14 @@ adjusts as soon as the menu changes, with no reload:
   with left/right arrows and faded edges, and the selected tab is kept in view (also when the frame is resized).
   In a narrow editor column (700px or less) Reset, Settings and Edit HTML show as icons (their names stay in the tooltip and
   for screen readers); the pharmacy picker and the promo URL pill shorten with an ellipsis instead of pushing
-  controls onto a new row. The one label that may wrap is the preview's "Sample opening hours" pill: it has a row of
-  its own, so it always shows in full, and takes a second line in a column narrower than the label.
+  controls onto a new row. The preview's "Sample opening hours" pill sits beside Play/Pause and always shows in
+  full: the scene time has its own line under the scene bar, so the controls row only holds the two and fits one
+  line in every preview column (in a column under 270px, such as a tablet frame's 240px one, Play/Pause shows as its
+  icon, its name kept for screen readers).
 - Nothing is `position: fixed`.
 - The preview scrolls up with the page until its Portrait/Landscape tabs reach the very top of the frame, then
   stays there (`position: sticky; top: 0`) while the editor scrolls on. The preview screen is sized to the visible
-  height (`100dvh`, falling back to `100vh`) less 284px for the tabs, the sample-hours row, the scene bar, controls and Copy URL row, so the whole
+  height (`100dvh`, falling back to `100vh`) less 274px for the tabs, the scene bar, the scene time, controls and Copy URL row, so the whole
   preview fits on a tablet with its browser bars showing.
 
 `test/editor.e2e.mjs` checks this inside a stand-in PH shell (256px menu expanded, 70px collapsed) at 1280, 1440
@@ -107,11 +109,12 @@ promotion's total length plus one second, rounded up (`playbackSeconds()` in `js
 finishes. It updates live as scenes are added, removed or retimed, and its info icon's tooltip gives the campaign
 setup steps (Creative tab → Experience URL → paste the URL, set the playback duration, save and activate). The
 preview uses sample opening hours (`sampleCampaign()` in `js/model.js`: Monday to Friday 9:00–17:30, Saturday
-9:00–13:00) and no suburb, and says so: the "Sample opening hours" pill (`#pvData`), on a row of its own under the Portrait/Landscape tabs
-(`.pvnote`, centred, wrapping onto two lines rather than being cut short), with an info icon
+9:00–13:00) and no suburb, and says so: the "Sample opening hours" pill (`#pvData`), under the preview directly to the right of
+Play/Pause on the same row (`.controls .pvnote`, never shrunk, wrapped or cut short; nothing about it shows above the preview), with an info icon
 (`#pvInfo`) whose tooltip (`#pvTip`) says each screen uses its own store's actual opening and closing hours from
-Personalisation Hub, for the day and time the promotion plays. The tooltip opens below that row, from its left
-edge and never wider than it, so it is not clipped in a narrow preview column or by the top of the frame.
+Personalisation Hub, for the day and time the promotion plays. The tooltip opens above the controls row, from its
+left edge and never wider than it, so it is not clipped in a narrow preview column or by the bottom of the frame.
+The scene time ("1.1s / 11.0s · 5 scenes", `#tlTime`) is on its own line, right-aligned, under the scene bar.
 
 ## Files
 

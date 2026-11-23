@@ -152,40 +152,54 @@ test('Settings holds the pharmacies, their details and branding, and the API; pr
   await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-003');
   await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-003');
   assert.equal(await page.inputValue('#storeSel'), 'seed-pharmacy-vic-mp-003');
-  // The pill says the hours are sample ones. It has a row of its own under the Portrait/Landscape tabs, above the
-  // preview screen, so the label shows in full; its info tooltip says each screen uses its store's actual hours for
-  // the day and time the promotion plays, opens on hover and keyboard focus, and is not clipped.
+  // The pill says the hours are sample ones. It sits under the preview, directly to the right of Pause on the
+  // controls row (nothing about it above the preview any more), and always shows in full; the scene time is on its
+  // own line under the scene bar. Its info tooltip says each screen uses its store's actual hours for the day and
+  // time the promotion plays, opens above the row on hover and keyboard focus, and is not clipped.
   assert.equal(await page.textContent('#pvData'), 'Sample opening hours');
   const pvRow = await page.evaluate(() => {
     const r = (s) => document.querySelector(s).getBoundingClientRect();
-    const p = document.getElementById('pvData'), row = p.parentElement, b = p.getBoundingClientRect();
-    return { cls: row.className, kids: [...row.children].map((e) => e.id || e.className), cut: p.scrollWidth > p.clientWidth, h: b.height, top: b.top, bottom: b.bottom,
-      tabsBottom: r('#orTabs').bottom, stageTop: r('#stage').top, inControls: !!document.querySelector('.controls #pvData, .controls #pvInfo') };
+    const p = document.getElementById('pvData'), row = p.parentElement, b = p.getBoundingClientRect(), play = r('#playBtn');
+    return { cls: row.className, kids: [...row.children].map((e) => e.id || e.className), parent: row.parentElement.className,
+      afterPlay: row.previousElementSibling && row.previousElementSibling.id, cut: p.scrollWidth > p.clientWidth, h: b.height, top: b.top,
+      left: b.left, playRight: play.right, centre: (b.top + b.bottom) / 2, playCentre: (play.top + play.bottom) / 2,
+      stageBottom: r('#stage').bottom, tlBottom: r('#tl').bottom, timeTop: r('#tlTime').top, timeBottom: r('#tlTime').bottom, controlsTop: r('.controls').top,
+      tabsNext: document.getElementById('orTabs').nextElementSibling.id, timeInControls: !!document.querySelector('.controls #tlTime') };
   });
   assert.equal(pvRow.cls, 'pvnote', JSON.stringify(pvRow));
-  assert.deepEqual(pvRow.kids, ['pvData', 'infowrap'], 'the row holds only the pill and its info icon');
-  assert.equal(pvRow.inControls, false, 'not beside Play any more');
+  assert.deepEqual(pvRow.kids, ['pvData', 'infowrap'], 'the label holds only the pill and its info icon');
+  assert.equal(pvRow.parent, 'controls', 'on the controls row under the preview');
+  assert.equal(pvRow.afterPlay, 'playBtn', 'directly to the right of Pause');
+  assert.equal(pvRow.tabsNext, 'stage', 'nothing between the Portrait/Landscape tabs and the preview');
+  assert.ok(pvRow.top >= pvRow.stageBottom && pvRow.left > pvRow.playRight && Math.abs(pvRow.centre - pvRow.playCentre) <= 1, `below the screen, right of Pause, same row: ${JSON.stringify(pvRow)}`);
   assert.equal(pvRow.cut, false, 'the label is not cut off');
-  assert.ok(pvRow.top >= pvRow.tabsBottom && pvRow.bottom <= pvRow.stageTop, `under the tabs, above the screen: ${JSON.stringify(pvRow)}`);
-  // In a preview column narrower than the label, it wraps onto a second line instead of being cut short.
-  const pvNarrow = await page.evaluate(() => {
-    const row = document.querySelector('.pvnote'), p = document.getElementById('pvData');
-    row.style.width = '150px';
-    const out = { h: p.getBoundingClientRect().height, cut: p.scrollWidth > p.clientWidth, right: p.getBoundingClientRect().right <= row.getBoundingClientRect().right + 0.5, text: p.innerText.replace(/\s+/g, ' ') };
-    row.style.width = '';
+  assert.equal(pvRow.timeInControls, false, 'the scene time is not on the controls row');
+  assert.ok(pvRow.timeTop >= pvRow.tlBottom - 0.5 && pvRow.timeBottom <= pvRow.controlsTop, `scene time under the scene bar: ${JSON.stringify(pvRow)}`);
+  // In the narrowest preview column (240px, a tablet-sized frame), Pause shows as its icon alone and the label still
+  // shares its line and shows in full.
+  const pvNarrow = await page.evaluate(async () => {
+    const pv = document.querySelector('.pv'), row = document.querySelector('.controls'), p = document.getElementById('pvData'), play = document.getElementById('playBtn');
+    pv.style.width = '240px';
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const b = p.getBoundingClientRect(), pb = play.getBoundingClientRect(), i = document.getElementById('pvInfo').getBoundingClientRect();
+    const out = { h: b.height, cut: p.scrollWidth > p.clientWidth, inside: i.right <= row.getBoundingClientRect().right + 0.5, sameLine: Math.abs((b.top + b.bottom) / 2 - (pb.top + pb.bottom) / 2) <= 1, overlap: b.left < pb.right, text: p.innerText.replace(/\s+/g, ' '), playName: play.textContent.replace('pause', '').trim(), playW: pb.width };
+    pv.style.width = '';
     return out;
   });
-  assert.ok(pvNarrow.h > pvRow.h * 1.5 && pvNarrow.h < pvRow.h * 2.5, `two lines when narrow: ${JSON.stringify(pvNarrow)} vs ${pvRow.h}`);
+  assert.ok(Math.abs(pvNarrow.h - pvRow.h) < 1, `one line when narrow: ${JSON.stringify(pvNarrow)} vs ${pvRow.h}`);
   assert.equal(pvNarrow.cut, false);
-  assert.equal(pvNarrow.right, true);
+  assert.equal(pvNarrow.inside, true, JSON.stringify(pvNarrow));
+  assert.equal(pvNarrow.sameLine, true, JSON.stringify(pvNarrow));
+  assert.equal(pvNarrow.overlap, false, JSON.stringify(pvNarrow));
   assert.equal(pvNarrow.text, 'Sample opening hours');
+  assert.ok(['Pause', 'Play'].includes(pvNarrow.playName) && pvNarrow.playW < 60, `Pause as its icon, named for screen readers: ${JSON.stringify(pvNarrow)}`);
   assert.match(await page.textContent('#pvTip'), /sample opening hours .*Each screen uses its own store's actual opening and closing hours from Personalisation Hub, for the day and time the promotion plays\.$/);
   await page.hover('#pvInfo');
   await page.waitForFunction(() => getComputedStyle(document.getElementById('pvTip')).opacity === '1');
-  const pvTip = await page.$eval('#pvTip', (e) => { const r = e.getBoundingClientRect(), c = e.closest('.pvnote').getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, cl: c.left, cr: c.right, cb: c.bottom, h: r.height }; });
-  assert.ok(pvTip.l >= pvTip.cl - 0.5 && pvTip.r <= pvTip.cr + 0.5 && pvTip.t >= pvTip.cb && pvTip.h > 40, JSON.stringify(pvTip));
+  const pvTip = await page.$eval('#pvTip', (e) => { const r = e.getBoundingClientRect(), c = e.closest('.controls').getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom, cl: c.left, cr: c.right, ct: c.top, h: r.height }; });
+  assert.ok(pvTip.l >= pvTip.cl - 0.5 && pvTip.r <= pvTip.cr + 0.5 && pvTip.b <= pvTip.ct && pvTip.t >= 0 && pvTip.h > 40, JSON.stringify(pvTip));
   await page.mouse.move(0, 0);
-  await page.focus('#orTabs [data-or="landscape"]');
+  await page.focus('#playBtn');
   await page.keyboard.press('Tab');
   assert.equal(await page.evaluate(() => document.activeElement.id), 'pvInfo');
   await page.waitForFunction(() => getComputedStyle(document.getElementById('pvTip')).opacity === '1');

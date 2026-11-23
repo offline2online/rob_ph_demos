@@ -10,6 +10,13 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Fixed
 
+- **Preview: "Sample opening hours" is under the preview, beside Pause.** The label and its info tooltip have moved
+  from their own row above the preview to the controls row under it, directly to the right of the Pause button, and
+  nothing about them shows above the preview any more. The label still always shows in full (at phone width too): the
+  scene time ("1.1s / 11.0s · 5 scenes") now has its own line under the scene bar, so Pause and the label always fit
+  one row (in a preview column under 270px wide, Play/Pause shows as its icon alone). The tooltip's wording is
+  unchanged; it now opens above the row. The preview screen is 10px taller, so the whole preview takes the same height
+  as before ([docs/USER-GUIDE.md](docs/USER-GUIDE.md)).
 - **A real functions failure no longer looks like the cleanup-policy warning in the Firebase deploy.** The
   "Deploy the functions" step used to end in an error on every CI run ("Functions successfully deployed but could
   not set up cleanup policy": the CI account may not set it) and was ignored either way. Now only that exact
