@@ -115,7 +115,7 @@ are 1–40 lower-case letters, digits and hyphens, unique across promotions.
 | `morning` | Morning | Promotion scenes (`builtin-promotion-scenes`) | Greeting, service chips, one scene per service, "Walk in today" close; "Open today" bar |
 | `afternoon` | Afternoon | Promotion scenes | The same, with afternoon copy |
 | `closed` | Closed | Opening hours (`builtin-opening-hours`) | Rotating headlines, the full week's hours, "Public Holidays: Please call to confirm", phone |
-| `occasions` | Seasonal | The Fallback and the six seasonal templates (published as the Fallback) | A running "Activate on display" (`content[<promotion id>].activation`), else the season whose dates hold the store's date, else the Fallback (the pharmacy's brand colours, logo and name, "Thank you, ${Suburb}, for supporting your local pharmacy", exactly 7 s). For a season: its standalone animation, its copy as beats, each for its own seconds (seeded: 7 s of beats, playback duration 8 s; with no seconds set, 12 s and 13 s), played once with the last beat held; no "Open today" bar |
+| `occasions` | Seasonal | The Fallback and the six seasonal templates (published as the Fallback, or as the activated season while an activation runs) | A running "Activate on display" (`content[<promotion id>].activation`), else the season whose dates hold the store's date, else the Fallback (the pharmacy's brand colours, logo and name, "Thank you, ${Suburb}, for supporting your local pharmacy", exactly 7 s). For a season: its standalone animation, its copy as beats, each for its own seconds (seeded: 7 s of beats, playback duration 8 s; with no seconds set, 12 s and 13 s), played once with the last beat held; no "Open today" bar |
 
 Admins can add more (Admin → New promotion). Which promotion plays when is scheduled in Personalisation Hub
 Core, not here. A promotion can carry a **Schedule**: No schedule (the default, nothing stored) or Annual, a start
@@ -268,9 +268,11 @@ Master template: a promotion's optional `master` holds the default content (the 
 `"detached": { "<promotion id>": ["greeting", "slots", "close", "footer", "headlines", "address", "occasions"] }`
 lists the sections it manages itself (its own `content` is used for those). Branding is never inherited, and
 neither is seasonal content (`"occasions"` is always listed for a Seasonal promotion). The published screen config
-below carries the resolved content only: for a Seasonal promotion its `template` is the Fallback
-(`builtin-occasion-fallback`; the screen picks the season by date), and `content` carries `activation` when one is
-set and well formed, and no `season`.
+below carries the resolved content only: for a Seasonal promotion its `template` is the season of a running
+"Activate on display" (its `until` not yet past on the UTC date of the publish), else the Fallback
+(`builtin-occasion-fallback`). The current screen decides from `content` (activation, else the season by the
+store's date, else the Fallback); the template is what an older player, which does not read `activation`, plays.
+`content` carries `activation` when one is set and well formed, and no `season`.
 
 **Store segment.** Whether a pharmacy shows these promotions at all is decided in Personalisation Hub, not here:
 the campaign that plays `promo=occasions` is targeted at the promotion store segment. A pharmacy in the segment

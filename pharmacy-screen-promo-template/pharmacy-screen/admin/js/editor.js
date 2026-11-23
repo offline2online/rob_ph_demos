@@ -666,7 +666,7 @@ function renderOccasion(B, d) {
       $('occWhen').textContent = span(o.from, o.to);
       // An "Activate on display" of this season still ends on its (new) end date.
       const a = d.activation;
-      if (a && a.occasion === occ.id) { const u = activationUntil(occ.id, d.occasions, M.localToday()); if (u) a.until = u; }
+      if (a && a.occasion === occ.id) { const u = activationUntil(occ.id, d.occasions, M.storeToday()); if (u) a.until = u; }
       relabelSeasons();
       changed(); renderActivate();
     };
@@ -767,7 +767,7 @@ function renderActivate() {
   const show = !!p && isOcc() && !!S.cur && !S.cur.isMaster;
   b.hidden = !show;
   if (!show) return;
-  const c = (S.cur.content && S.cur.content[p.id]) || {}, today = M.localToday();
+  const c = (S.cur.content && S.cur.content[p.id]) || {}, today = M.storeToday();
   const sel = seasonOf(p), live = liveSeasonOf(p), name = occasionOf(sel).name, act = activationOn(c.activation, today);
   const on = sel === live;
   b.disabled = on;
@@ -781,7 +781,7 @@ function renderActivate() {
 $('pmActivate').onclick = () => {
   const p = promo();
   if (!p || !isOcc() || !S.cur || S.cur.isMaster) return;
-  const c = content(), today = M.localToday(), id = seasonOf(p);
+  const c = content(), today = M.storeToday(), id = seasonOf(p);
   // What the schedule plays anyway needs no activation; anything else runs to its end date (activationUntil).
   const until = id === scheduledOccasion(c.occasions, today) ? '' : activationUntil(id, c.occasions, today);
   if (until) c.activation = { occasion: id, until }; else delete c.activation;
@@ -803,7 +803,10 @@ function renderPromoMeta() {
   $('pmName').readOnly = $('pmToken').readOnly = !!S.lock; $('pmTpl').disabled = !!S.lock && !occ;
   $('pmName').closest('label').hidden = $('pmToken').closest('label').hidden = $('pmUrl').hidden = occOnly;
   // A seasonal promotion picks its season here (read-only built-ins: nothing to edit or clone).
-  $('pmTpl').closest('label').querySelector('span').textContent = occ ? 'Currently active promotion' : 'Template';
+  // Seasonal: the drop-down keeps its width (css .occ-pick); in the pharmacy view it has the whole row (.occ-only).
+  const pick = $('pmTpl').closest('label');
+  pick.classList.toggle('occ-pick', occ); pick.classList.toggle('occ-only', occOnly);
+  pick.querySelector('span').textContent = occ ? 'Currently active promotion' : 'Template';
   $('pmTpl').setAttribute('aria-label', occ ? 'Currently active promotion' : 'Template');
   $('pmHtml').hidden = occ;
   renderActivate();

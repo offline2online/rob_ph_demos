@@ -508,10 +508,22 @@ test("an Occasions promotion: picking an occasion is its template, and the publi
   assert.equal((await call("PUT", `/api/admin/pharmacies/${ph.id}/content/${occ.id}`, { body: { ...mine, activation: act } })).status, 200);
   cfg = (await call("GET", "/api/screens/VIC-MP-001", { auth: null })).body;
   assert.deepEqual(cfg.promotions.occasions.content.activation, act);
+  // While it runs (the publish is dated 20 Nov 2026) the template is the activated season too, so a screen still on
+  // a player from before Activate on display, which plays the template's season, shows it as well.
+  assert.deepEqual([cfg.promotions.occasions.template.id, cfg.promotions.occasions.template.occasion], ["builtin-occasion-christmas", "christmas"]);
+  // Over (its last day before the publish date): published as the fallback again.
+  assert.equal((await call("PUT", `/api/admin/pharmacies/${ph.id}/content/${occ.id}`, { body: { ...mine, activation: { occasion: "easter", until: "2026-11-19" } } })).status, 200);
+  cfg = (await call("GET", "/api/screens/VIC-MP-001", { auth: null })).body;
+  assert.equal(cfg.promotions.occasions.template.occasion, "fallback");
+  // Its last day is still running.
+  assert.equal((await call("PUT", `/api/admin/pharmacies/${ph.id}/content/${occ.id}`, { body: { ...mine, activation: { occasion: "easter", until: "2026-11-20" } } })).status, 200);
+  cfg = (await call("GET", "/api/screens/VIC-MP-001", { auth: null })).body;
+  assert.equal(cfg.promotions.occasions.template.occasion, "easter");
   for (const bad of [{ occasion: "halloween", until: "2026-12-27" }, { occasion: "christmas", until: "12-27" }, "christmas"]) {
     assert.equal((await call("PUT", `/api/admin/pharmacies/${ph.id}/content/${occ.id}`, { body: { ...mine, activation: bad } })).status, 200);
     cfg = (await call("GET", "/api/screens/VIC-MP-001", { auth: null })).body;
     assert.equal(cfg.promotions.occasions.content.activation, undefined, JSON.stringify(bad));
+    assert.equal(cfg.promotions.occasions.template.occasion, "fallback", JSON.stringify(bad));
   }
   // The promotion's own template moves no existing store either.
   assert.equal((await call("PATCH", `/api/admin/promotions/${occ.id}`, { body: { templateId: "builtin-occasion-anzac-day" } })).status, 200);

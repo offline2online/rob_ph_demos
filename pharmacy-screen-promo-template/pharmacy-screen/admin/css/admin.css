@@ -105,6 +105,12 @@ button.text{border-color:transparent;background:none;color:var(--primary);paddin
 @container (max-width:480px){.meta-row{grid-template-columns:minmax(0,1fr)}}
 .mdpick{display:flex;gap:6px;min-width:0}.mdpick select:first-child{flex:0 0 72px}.mdpick select:last-child{flex:1;min-width:0}
 .tplpick{display:flex;gap:6px;min-width:0}.tplpick select{flex:1;min-width:0}.tplpick button{flex:none;white-space:nowrap}
+/* Seasonal: the Currently active promotion drop-down keeps one width, wide enough for its longest line
+   ("Christmas (15 Dec – 27 Dec) · on display"), so what is selected stays readable; Activate on display goes below it
+   when the row is too narrow for both. The pharmacy view (Retail Admin) shows only this field: it takes the whole row. */
+.meta-row>.f.occ-only{grid-column:1/-1}
+.f.occ-pick .tplpick{flex-wrap:wrap;row-gap:8px}
+.f.occ-pick .tplpick select{flex:0 1 340px;width:340px;min-width:min(100%,340px);max-width:100%}
 .pm-row{display:flex;gap:8px;align-items:center;min-width:0}
 .pm-row #pmUrl{display:block;flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pm-row #pmErr{flex:1 1 0;min-width:0}

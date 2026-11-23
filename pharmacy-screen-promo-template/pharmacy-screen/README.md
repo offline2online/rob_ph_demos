@@ -104,8 +104,9 @@ ${Suburb} / for supporting your local pharmacy" with its logo and name, exactly 
 until: "YYYY-MM-DD"}`, the season's scheduled end date) wins until the end of that day; `liveOccasion()` in
 `js/render.js` works all of this out, and the player checks it every minute, so a season starts, an activation
 ends and the Fallback returns at midnight with nobody changing anything. The config API publishes the promotion's
-template as the Fallback (`config-api/src/publish.js`); the old per-pharmacy Season pick (`content.season`) is no
-longer used. Dates are inclusive and the same every year: by default Christmas 15–27 Dec, New
+template as the season of a running activation, else the Fallback (`config-api/src/publish.js` `publishedSeason`),
+so a screen still on a player from before Activate on display (which plays the template) shows it too; the old
+per-pharmacy Season pick (`content.season`) is no longer used. Dates are inclusive and the same every year: by default Christmas 15–27 Dec, New
 Year's 28 Dec–5 Jan, Australia Day 26 Jan, Valentine's Day 14 Feb, Easter Good Friday to Easter Monday (worked out
 for each year) and Anzac Day 25 Apr (`OCCASIONS[].season`); each pharmacy can change its own in the editor
 (`content.occasions.<season>.from` / `.to`, `MM-DD`; never inherited from the master). Where two seasons' dates overlap, the one that started most

@@ -26,6 +26,13 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Fixed
 
+- **Seasonal: Currently active promotion is readable, and Activate on display reaches every screen.** In Retail
+  Admin the drop-down was squashed to a sliver beside Activate on display, so what was selected could not be seen;
+  it now has the row to itself and keeps one width (Activate on display goes below it on a narrow screen), in the
+  HQ Admin pharmacy view too. The published Seasonal template is now the activated season while an activation runs
+  (the Fallback otherwise), so a screen still on the player from before Activate on display plays the activated
+  season instead of the Fallback. The editor works out what is on display, and how long an activation runs, from
+  the store's date rather than the browser's.
 - **Preview: "Sample opening hours" is under the preview, beside Pause.** The label and its info tooltip have moved
   from their own row above the preview to the controls row under it, directly to the right of the Pause button, and
   nothing about them shows above the preview any more. The label still always shows in full (at phone width too): the

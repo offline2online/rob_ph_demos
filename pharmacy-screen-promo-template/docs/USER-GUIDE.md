@@ -177,7 +177,10 @@ change. **Activate on display**, beside it, puts the one picked on that pharmacy
 a season activated early still ends on its scheduled end date (the button's tooltip says which day), then the
 screens go back to the Fallback, and next year it starts on its own dates again. Activating the Fallback during a
 season shows the Fallback until that season would have ended. The button reads **On display** when the one picked
-is already playing. The master template has no screens, so it has no Activate on display. Each season's line
+is already playing. The drop-down keeps one width, wide enough to read the whole line; in Retail Admin it has the
+row to itself, and on a narrow screen Activate on display goes below it. Activate on display and "· on display" go
+by the store's date (Melbourne time when the store's time zone is not known), as the screens do, not the date on
+your own computer. The master template has no screens, so it has no Activate on display. Each season's line
 shows its start and end dates in brackets after its
 name, for example **Christmas (15 Dec – 27 Dec)** (one date for a one-day season: **Australia Day (26 Jan)**;
 Easter shows this year's Good Friday to Easter Monday). They are the dates in the season's **Dates** card, and

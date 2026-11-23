@@ -462,6 +462,8 @@ test('seasonal: Currently active promotion opens on what plays (the Fallback out
   await settle(page);
   screen = (await api('GET', '/api/screens/VIC-MP-001', { token: null })).body.promotions.occasions;
   assert.deepEqual(screen.content.activation, { occasion: 'easter', until: '2027-03-29' });
+  // Published as Easter's template while it runs, so a screen still on an older player plays Easter too.
+  assert.deepEqual([screen.template.kind, screen.template.occasion], ['occasion', 'easter']);
   assert.equal(await page.textContent('#pmActivate'), 'check_circleOn display');
   assert.match((await seasonOpts())[5], /· on display$/);
   assert.doesNotMatch((await seasonOpts())[0], /on display/);
@@ -1074,6 +1076,11 @@ test('pharmacy view: admin/?store=<code> shows only that pharmacy\'s promotions,
   assert.equal(await page.isDisabled('#pmTpl'), false);
   assert.equal(await page.inputValue('#pmTpl'), 'builtin-occasion-fallback');
   assert.equal(await page.isVisible('#pmActivate'), true);
+  // The drop-down is not squashed by the button beside it: its label takes the whole row in the pharmacy view and
+  // the drop-down keeps its width, so the selected line (with its dates and "· on display") can be read.
+  const pick = await page.evaluate(() => { const s = document.getElementById('pmTpl'), row = s.closest('.meta-row').getBoundingClientRect(), lab = s.closest('label').getBoundingClientRect(); return { sel: s.getBoundingClientRect().width, lab: lab.width, row: row.width }; });
+  assert.ok(pick.sel >= 300, `drop-down ${pick.sel}px wide`);
+  assert.ok(pick.lab >= pick.row - 1, 'the field spans the row');
   await page.selectOption('#pmTpl', 'builtin-occasion-christmas');
   assert.equal(await page.isHidden('#o0dur'), true);
   assert.equal(await page.isVisible('#occDates'), true, 'the pharmacy view shows the season dates');
