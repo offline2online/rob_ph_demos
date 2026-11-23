@@ -655,7 +655,7 @@ export function mountStaffKanban(ctx) {
     const relOpts = opt("", "All releases", board.release) + activeReleases(board.release).map((r) => opt(r.id, r.label + (r.id === state.settings.currentRelease ? " (current)" : r.released ? " (released)" : ""), board.release)).join("");
     store.watchRelease(board.release);
     headSig = ""; // (the view is drawn afresh below)
-    // Primary filters: staff, My tasks, Release. Secondary (in Filters): flagged, type, priority, sprint, label.
+    // Primary filters: staff, My tasks, search, Release. Secondary (in Filters): flagged, type, priority, sprint, label.
     const moreCount = [board.flagged, board.type, board.priority, board.sprint, board.project, board.label].filter(Boolean).length;
     const filtersActive = moreCount || board.mine || board.assignees.size || board.release || board.q;
     view.innerHTML = `
@@ -663,7 +663,6 @@ export function mountStaffKanban(ctx) {
         <h2>Staff Kanban</h2>
         ${tip("Staff Kanban is for staff tasks only: work a human staff member does. Work for agents (product, docs, prototype and tooling changes, including for this project) goes in the project backlog on the Agent Board. Agents can still create and assign tasks for staff here.")}
         <span class="page-header-count" id="kb-count"></span>
-        <label class="kb-search kb-header-search"><span class="material-symbols-outlined" aria-hidden="true">search</span><input type="search" id="kb-q" placeholder="Search tasks" value="${esc(board.q)}" aria-label="Search tasks"></label>
         <div class="kb-header-actions">
           <button type="button" class="btn-ghost kb-icon-label" id="kb-report-btn"><span class="material-symbols-outlined" aria-hidden="true">monitoring</span>Release report</button>
           ${canWrite() ? '<button type="button" class="btn-primary" id="kb-new-btn">+ New task</button>' : ""}
@@ -678,6 +677,7 @@ export function mountStaffKanban(ctx) {
             <button type="button" class="kb-person-chip${board.assignees.has("none") ? " on" : ""}" data-person="none" aria-pressed="${board.assignees.has("none")}" title="Unassigned">${avatar("")}<span>Unassigned</span></button>
           </div>
           <button type="button" class="kb-mine${board.mine ? " on" : ""}" id="kb-mine" aria-pressed="${board.mine}"><span class="material-symbols-outlined" aria-hidden="true">person</span>My tasks</button>
+          <label class="kb-search kb-filter-search"><span class="material-symbols-outlined" aria-hidden="true">search</span><input type="search" id="kb-q" placeholder="Search tasks" value="${esc(board.q)}" aria-label="Search tasks"></label>
           <select id="kb-release" class="kb-release-select" aria-label="Release">${relOpts}</select>
           <button type="button" class="kb-mine kb-filter-toggle${filtersOpen || moreCount ? " on" : ""}" id="kb-filter-toggle" aria-expanded="${filtersOpen}" aria-controls="kb-filter-panel"><span class="material-symbols-outlined" aria-hidden="true">tune</span>Filters${moreCount ? `<span class="kb-filter-count">${moreCount}</span>` : ""}</button>
           ${filtersActive ? '<button type="button" class="link-btn kb-clear" id="kb-clear">Clear filters</button>' : ""}

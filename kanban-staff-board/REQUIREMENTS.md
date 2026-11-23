@@ -56,8 +56,9 @@ Build, Publish, Search, Profile). Route `#staff-kanban`, with
 `#staff-kanban/report?…`, `#staff-kanban/settings` and one address per ticket,
 `#staff-kanban/ticket/PH-<n>` (KB-LINK-1).
 
-**KB-NAV-2** The Staff Kanban page header holds the title, task count, search
-box, **Release report**, **+ New task**, and a settings cog (no ⋮ menu). AC: the
+**KB-NAV-2** The Staff Kanban page header holds the title, task count,
+**Release report**, **+ New task**, and a settings cog (no ⋮ menu). The search
+box is in the pinned filter bar (KB-FLT-1). AC: the
 cog opens Kanban settings; Release report opens the report for the board's
 selected release.
 
@@ -197,8 +198,10 @@ the mentions bell panel opens inside the window (KB-NAV-2).
 select, full names, "Unassigned"), **My tasks**, **Release**. **Secondary**
 in a **Filters** menu: Flagged only, Type, Priority, Sprint, Project, Label; the
 button shows how many secondary filters are on. The Project filter is kept in the
-address (`#staff-kanban?project=<id>`), so a reload or a shared link keeps it. Search sits in the page header and
-matches key, title, description text and labels. **Clear filters** resets all.
+address (`#staff-kanban?project=<id>`), so a reload or a shared link keeps it. **Search**
+sits in the pinned filter bar between **My tasks** and **Release** (23 Nov 2026),
+so it stays on screen while the board scrolls, and matches key, title,
+description text and labels. (The prototype still shows it in the page header.) **Clear filters** resets all.
 
 **KB-FLT-2 Keep position.** Changing any filter keeps the page's scroll
 position (and the phone's current column). A scroll the person makes straight

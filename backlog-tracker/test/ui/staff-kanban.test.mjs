@@ -382,7 +382,7 @@ T("TC-08", "secondary filters live in the Filters menu; a filter change keeps th
   await p.done();
 });
 
-T("TC-09", "filter bar and column headers stay pinned; filter bar fits one line from 1024px", { on: on.wide }, async (prof) => {
+T("TC-09", "filter bar (with search) and column headers stay pinned; filter bar fits one line from 1024px", { on: on.wide }, async (prof) => {
   const p = await open(prof);
   await press(p, "#kb-mine");
   const ids = await p.$$eval(".kb-person-chip", (e) => e.map((x) => x.dataset.person));
@@ -393,6 +393,12 @@ T("TC-09", "filter bar and column headers stay pinned; filter bar fits one line 
   await p.evaluate(() => scrollTo(0, 800));
   await p.waitForTimeout(150);
   assert.equal(await p.$eval("#kb-sticky", (e) => Math.round(e.getBoundingClientRect().top)), 0);
+  // Search is in the pinned bar, between My tasks and Release, and still usable after scrolling.
+  const order = await p.$$eval(".kb-filters > *", (e) => e.map((x) => x.id || x.querySelector("input")?.id || x.className.split(" ")[0]));
+  assert.deepEqual(order.slice(order.indexOf("kb-mine"), order.indexOf("kb-mine") + 3), ["kb-mine", "kb-q", "kb-release"], "search sits between My tasks and Release");
+  assert.equal(await p.$eval("#kb-q", (e) => !!e.closest("#kb-sticky") && !e.closest(".page-header")), true, "search is in the pinned bar, not the page header");
+  const q = await p.$eval("#kb-q", (e) => { const r = e.getBoundingClientRect(); return { top: Math.round(r.top), w: Math.round(r.width) }; });
+  assert.ok(q.top >= 0 && q.top < 80 && q.w > 60, `search visible in the pinned bar after scrolling (${JSON.stringify(q)})`);
   const head = await p.$$eval("#kb-lanes-head .kb-lanes-head", (e) => e.map((x) => Math.round(x.getBoundingClientRect().left)));
   const cells = await p.$$eval(`.kb-lane-cell[data-lane="${ROB}"]`, (e) => e.map((x) => Math.round(x.getBoundingClientRect().left)));
   assert.deepEqual(head, cells, "pinned headers line up with the columns");
