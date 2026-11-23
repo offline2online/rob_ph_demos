@@ -23,7 +23,7 @@ const assert = require("assert");
 const Module = require("module");
 process.env.FIRE_SPACING_MS = "0";
 
-const { modelEscalation, ESCALATE_AFTER, modelGuardRefusal, requiredModelForBuild } = require("../functions/model-requirement");
+const { modelEscalation, ESCALATE_AFTER, modelGuardRefusal, requiredModelForBuild, modelRequirementBlock, advisorBlock, isAdvisorModelId, isAdvancedModelId, ADVISOR_MODEL, ADVISOR_AGENT_MODEL, ADVISOR_NOTE_PREFIX } = require("../functions/model-requirement");
 const skillBindings = require("../functions/skill-bindings");
 const auto = require("../scripts/run-backlog-automation.js");
 
@@ -428,6 +428,49 @@ async function withFetch(stub, fn) {
     assert.strictEqual(mod.__test.advancedRoutineFor({ model: "advanced" }, { ...usual, via: "member" }, adv).via, "member", "a member's own Routine is kept");
     assert.strictEqual(mod.__test.advancedRoutineFor({ model: "advanced" }, usual, null), usual);
     assert.strictEqual(mod.__test.advancedRoutineFor({ model: "advanced" }, null, adv), null, "no shared Routine: not sent, as before");
+  });
+
+  // ── The advisor model: Fable (MoCADJ47kT9a77tg4cfW) ──────────────────────
+  await test("advisor: every build fire names Fable as the advisor, posting its advice on the card", async () => {
+    assert.strictEqual(ADVISOR_MODEL, "claude-fable-5-2");
+    assert.strictEqual(ADVISOR_AGENT_MODEL, "fable");
+    assert.strictEqual(ADVISOR_NOTE_PREFIX, "[advisor · claude-fable-5-2]");
+    for (const model of ["standard", "advanced", undefined]) {
+      const text = modelRequirementBlock({ model });
+      assert.ok(text.includes("=== ADVISOR: Fable (claude-fable-5-2) ==="), `advisor block on ${model || "unset"}`);
+      assert.ok(text.includes('the Agent tool with model "fable"'));
+      assert.ok(text.includes('"[advisor · claude-fable-5-2]"'), "its advice is posted as a note on the card");
+      assert.ok(text.includes("blocked.recommendation"), "a flag carries its recommendation for the automatic answer");
+      assert.ok(text.includes("never does the build"));
+      assert.ok(text.trim().endsWith("=== END ADVISOR ==="));
+    }
+    const std = modelRequirementBlock({ model: "standard" });
+    assert.ok(std.indexOf("Model requirement: Standard") < std.indexOf("=== ADVISOR"), "the requirement comes first");
+    const adv = modelRequirementBlock({ model: "advanced" });
+    assert.ok(adv.indexOf("=== END MODEL REQUIREMENT ===") < adv.indexOf("=== ADVISOR"));
+    assert.ok(advisorBlock({ model: "advanced" }).includes("built on Claude Opus, and builtByModel is never claude-fable-5-2"));
+    assert.ok(!advisorBlock({ model: "standard" }).includes("built on Claude Opus"));
+  });
+
+  await test("advisor: Fable is never the build model for an Advanced ticket", async () => {
+    assert.ok(isAdvisorModelId("claude-fable-5-2") && isAdvisorModelId("Claude Fable 5.2"));
+    assert.ok(!isAdvisorModelId("claude-opus-5-5") && !isAdvisorModelId("") && !isAdvisorModelId(null));
+    assert.ok(!isAdvancedModelId(ADVISOR_MODEL), "the advisor is not an Opus");
+    const card = { model: "advanced", modelAuto: false, buildAttemptId: "a1", patchAttemptId: "a1", builtByModel: ADVISOR_MODEL };
+    const refusal = modelGuardRefusal(card);
+    assert.ok(refusal, "an Advanced patch built on Fable is refused");
+    assert.strictEqual(refusal.blocked.reason, "model-unavailable");
+    assert.ok(refusal.why.includes("claude-fable-5-2"));
+    assert.strictEqual(modelGuardRefusal({ ...card, builtByModel: "claude-opus-5-5" }), null, "built on Opus, advised by Fable: lands");
+    assert.strictEqual(modelGuardRefusal({ ...card, model: "standard" }), null, "a Standard ticket is judged as before");
+  });
+
+  await test("advisor: a flag carrying the advisor's recommendation is answered with it", async () => {
+    const now = Date.parse("2026-11-23T10:00:00Z");
+    const card = { status: "backlog", blocked: { reason: "waiting-on-input", setBy: "claude", setAt: "2026-11-23T09:59:00Z", recommendation: "Fable advises: keep the CSV export" } };
+    const plan = auto.autoAnswerPlan(card, now);
+    assert.ok(plan && plan.fromRecommendation);
+    assert.strictEqual(plan.answer, "Fable advises: keep the CSV export");
   });
 
   console.log(`\n${passed} passed, ${failures.length} failed`);

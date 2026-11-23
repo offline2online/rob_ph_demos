@@ -4753,6 +4753,34 @@ field.
   (`itemPipelineFields()` in `firestore.rules`): only the automation user
   writes them.
 
+### The advisor model: Fable (23 Nov 2026)
+
+Ticket MoCADJ47kT9a77tg4cfW. When a ticket raises a question, or needs
+analysis or support before it can be built (a choice left open, a blocker,
+something to clarify or investigate), the board calls on Fable
+(`claude-fable-5-2`) as the advisor, and the build carries on with its advice.
+
+- **In every build fire**: `modelRequirementBlock(item)` ends with
+  `advisorBlock(item)` (`functions/model-requirement.js`), an
+  `=== ADVISOR: Fable (claude-fable-5-2) ===` block, on Standard and Advanced
+  tickets alike. Constants: `ADVISOR_MODEL` (`claude-fable-5-2`),
+  `ADVISOR_AGENT_MODEL` (`fable`, the Agent tool's alias),
+  `ADVISOR_NOTE_PREFIX` (`[advisor · claude-fable-5-2]`).
+- **What the session does** (`ROUTINE_INSTRUCTIONS.md` → "The advisor model
+  (Fable)"): asks the advisor through the Agent tool with model `fable`,
+  appends its advice to the card as a note starting
+  `[advisor · claude-fable-5-2]`, and builds on its recommendation, saying
+  under "Assumed:" what it took. If a person alone can supply what is
+  missing, the flag carries the advisor's recommendation in
+  `blocked.recommendation`, which `sweepAutoAnswers` takes as the answer.
+  With no advisor available the session decides itself and says so.
+- **Fable never builds or reviews.** The build and the review run on the
+  ticket's model. An Advanced ticket is never built on Fable:
+  `isAdvancedModelId` does not match it, so `modelGuardRefusal` refuses such
+  a patch, and `isAdvisorModelId` names the advisor. `builtByModel` /
+  `reviewedByModel` record the model that did the work, never the advisor.
+- Tests: `test/model-flow.test.js` ("advisor").
+
 ### Chosen per ticket automatically (16 Nov 2026)
 
 Ticket CCPnRjXOH4YMsfy3C49r ("Flow 8/9", 14 Nov 2026 board flow review).
