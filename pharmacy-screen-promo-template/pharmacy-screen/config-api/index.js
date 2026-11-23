@@ -15,7 +15,10 @@
 //                        bucket so rules/storage.rules never replaces the
 //                        default bucket's (default "<project>-pharmacy-screen-media")
 //   PS_FIRESTORE_ROOT    top-level collection                    (default "pharmacyScreen")
-//   PS_REGION            function region                         (default "us-central1", like ph-proxy/)
+//   PS_REGION            function region                         (default "australia-southeast1", like ph-proxy/)
+//   PS_MIN_INSTANCES     instances kept warm                     (default 0; above 0 is a monthly cost, owner's call)
+//   PS_RATE_LIMIT_SCREENS_PER_IP_PER_MIN  GET /api/screens/** per client address per minute, per instance (default 60)
+//   PS_TRUSTED_PROXY_HOPS  X-Forwarded-For entries our platform appends (default 1; src/rate-limit.js)
 
 const { onRequest } = require("firebase-functions/v2/https");
 const logger = require("firebase-functions/logger");
@@ -29,6 +32,9 @@ const { toNodeHandler } = require("./src/http");
 const { createFirestoreStore } = require("./src/adapters/firestore-store");
 const { createGcsBlobs } = require("./src/adapters/blobs");
 const { createFirebaseAuth } = require("./src/adapters/auth");
+const { clientIpFromHeaders } = require("./src/rate-limit");
+
+const count = (v, d) => (Number.isFinite(Number(v)) && Number(v) >= 0 && String(v).trim() !== "" ? Math.floor(Number(v)) : d);
 
 let handler;
 function getHandler() {
@@ -45,12 +51,16 @@ function getHandler() {
     // Never log request bodies or headers: an Authorization header is a
     // credential. Only the route and the error.
     log: (level, msg) => (level === "error" ? logger.error(msg) : logger.warn(msg)),
+    screensPerClientLimit: count(env.PS_RATE_LIMIT_SCREENS_PER_IP_PER_MIN, 60),
   });
-  handler = toNodeHandler(api);
+  // Not req.ip: the caller writes the leftmost X-Forwarded-For entry (src/rate-limit.js).
+  handler = toNodeHandler(api, {
+    clientIp: (req) => clientIpFromHeaders(req.headers, { trustedHops: env.PS_TRUSTED_PROXY_HOPS || 1, fallback: (req.socket && req.socket.remoteAddress) || "unknown" }),
+  });
   return handler;
 }
 
 exports.pharmacyScreenConfigApi = onRequest(
-  { region: process.env.PS_REGION || "us-central1", memory: "256MiB", timeoutSeconds: 60, maxInstances: 10 },
+  { region: process.env.PS_REGION || "australia-southeast1", memory: "256MiB", timeoutSeconds: 60, maxInstances: 10, minInstances: Math.min(count(process.env.PS_MIN_INSTANCES, 0), 10) },
   (req, res) => getHandler()(req, res)
 );

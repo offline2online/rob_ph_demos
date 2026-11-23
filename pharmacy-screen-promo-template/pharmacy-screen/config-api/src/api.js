@@ -8,7 +8,8 @@
 //
 // Routes (README.md → "API" has the full reference):
 //   GET  /api/health
-//   GET  /api/screens/{storeCode}[?promo=<promoId>]       public, published config only
+//   GET  /api/screens/{storeCode}[?promo=<promoId>]       public, published config only; per-client rate limit
+//   POST /api/csp-report                                   public: Content-Security-Policy violation reports, logged
 //   /api/admin/...                                         admin role required
 //     pharmacies, pharmacies/{id}, pharmacies/{id}/content/{promotionId}, pharmacies/{id}/logo
 //     promotions, promotions/{id}
@@ -19,16 +20,71 @@
 const crypto = require("node:crypto");
 const { ApiError, bad } = require("./validate");
 const { createConfigService } = require("./service");
+const { createRateLimiter } = require("./rate-limit");
 
 const JSON_LIMIT = 2 * 1024 * 1024;
+// A CSP report is a few hundred bytes; anything bigger is not one.
+const CSP_REPORT_LIMIT = 8 * 1024;
+const CSP_REPORTS_PER_CLIENT_PER_MIN = 30;
+
+// One violation report (report-uri's application/csp-report, or the Reporting API's application/reports+json)
+// as a single short log line: the directive, the blocked origin (never the full URL, which can carry a query
+// string), the page path, the source line and whether the policy was enforced. Everything in a report is written
+// by the browser of whoever sent it, so every field is cut short and stripped to printable characters.
+function cspReportLines(type, body) {
+  let data;
+  try {
+    data = JSON.parse(body.toString("utf8"));
+  } catch {
+    return [];
+  }
+  const items = Array.isArray(data) ? data.filter((r) => r && r.type === "csp-violation").map((r) => r.body || {}) : data && typeof data["csp-report"] === "object" ? [data["csp-report"]] : [];
+  const clip = (v, n = 80) => String(v === undefined || v === null ? "" : v).replace(/[^\x20-\x7e]/g, "?").slice(0, n);
+  const originOf = (u) => {
+    const v = String(u || "");
+    if (/^(inline|eval|wasm-eval|trusted-types-[\w-]+|data|blob)$/.test(v)) return v;
+    try {
+      const url = new URL(v);
+      return /^https?:$/.test(url.protocol) ? url.origin : url.protocol;
+    } catch {
+      return clip(v, 40);
+    }
+  };
+  const pathOf = (u) => {
+    try {
+      return new URL(String(u)).pathname;
+    } catch {
+      return "";
+    }
+  };
+  const lines = [];
+  for (const r of items.slice(0, 5)) {
+    const blocked = originOf(r["blocked-uri"] ?? r.blockedURL);
+    // Browser extensions report into every page they touch; they say nothing about this site's policy.
+    if (/^(chrome-extension|moz-extension|safari-web-extension|about):?$/.test(blocked)) continue;
+    const directive = clip(r["effective-directive"] ?? r.effectiveDirective ?? r["violated-directive"], 40);
+    const page = clip(pathOf(r["document-uri"] ?? r.documentURL), 80);
+    const source = r["source-file"] ?? r.sourceFile;
+    const line = r["line-number"] ?? r.lineNumber;
+    const where = source ? ` at ${clip(pathOf(source) || originOf(source), 80)}${line ? `:${clip(line, 8)}` : ""}` : "";
+    const disposition = clip(r.disposition || "report", 10);
+    lines.push(`[csp] ${disposition} ${directive} blocked ${blocked} on ${page}${where}`);
+  }
+  return lines;
+}
 // How long a CDN may reuse a published screen config. Part of how soon an
 // edit reaches a screen: this, plus the screen's config poll (js/live-data.js
 // CONFIG_POLL_MS).
 const PUBLIC_MAX_AGE = 5;
 
-function createConfigApi({ store, blobs, auth, allowedOrigins = [], now, log = () => {} }) {
+// screensPerClientLimit: GET /api/screens/** requests per client address per minute (per instance; 0 = no limit).
+// Counted only when the entry point passes the address (req.ip): the Cloud Function and the Lambda do, the local
+// dev servers don't. clock: milliseconds, for that limit (tests).
+function createConfigApi({ store, blobs, auth, allowedOrigins = [], now, log = () => {}, screensPerClientLimit = 600, clock }) {
   const svc = createConfigService({ store, blobs, now, log });
   const origins = new Set(allowedOrigins.filter(Boolean));
+  const screensLimiter = createRateLimiter({ limit: screensPerClientLimit, now: clock });
+  const cspLimiter = createRateLimiter({ limit: CSP_REPORTS_PER_CLIENT_PER_MIN, now: clock });
 
   const routes = [];
   // admin: true   the admin role only (the default).
@@ -47,6 +103,14 @@ function createConfigApi({ store, blobs, auth, allowedOrigins = [], now, log = (
   // ── public ─────────────────────────────────────────────────────────────
   route("GET", "/api/health", () => ({ ok: true }), { admin: false });
   route("GET", "/api/screens/{storeCode}", ({ params, query }) => svc.getScreenConfig(params.storeCode, query.promo), { admin: false });
+  // Content-Security-Policy-Report-Only reports from the screen and the editor (firebase.json, aws/infra/stack.js).
+  // Always 204, whatever arrives: a report never gets an error a browser would retry. Logged at warn level.
+  route("POST", "/api/csp-report", ({ headers, body, ip }) => {
+    if (body.length && body.length <= CSP_REPORT_LIMIT && (!ip || cspLimiter.take(String(ip)).ok)) {
+      for (const line of cspReportLines(headers["content-type"], body)) log("warn", line);
+    }
+    return NO_CONTENT;
+  }, { admin: false });
 
   // ── admin ──────────────────────────────────────────────────────────────
   // Optimistic concurrency: If-Match: "<version>" (or ?expectedVersion=, or
@@ -97,6 +161,7 @@ function createConfigApi({ store, blobs, auth, allowedOrigins = [], now, log = (
 
   // ── dispatch ───────────────────────────────────────────────────────────
   const CREATED = Symbol("created");
+  const NO_CONTENT = Symbol("no-content");
   function created(promise) {
     return Promise.resolve(promise).then((value) => ({ [CREATED]: true, value }));
   }
@@ -135,7 +200,7 @@ function createConfigApi({ store, blobs, auth, allowedOrigins = [], now, log = (
 
     if (method === "OPTIONS") {
       return reply(204, null, {
-        "Access-Control-Allow-Methods": isPublic ? "GET, OPTIONS" : "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+        "Access-Control-Allow-Methods": isPublic ? (path === "/api/csp-report" ? "POST, OPTIONS" : "GET, OPTIONS") : "GET, POST, PUT, PATCH, DELETE, OPTIONS",
         "Access-Control-Allow-Headers": isPublic ? "Content-Type" : "Authorization, Content-Type, If-Match",
         "Access-Control-Max-Age": "600",
         "Cache-Control": "no-store",
@@ -146,6 +211,10 @@ function createConfigApi({ store, blobs, auth, allowedOrigins = [], now, log = (
     if (!matches.length) return reply(404, errorBody(new ApiError(404, "not-found", `No route ${path}`)));
     const r = matches.find((m) => m.method === method);
     if (!r) return reply(405, errorBody(new ApiError(405, "method-not-allowed", `${method} is not allowed on ${path}`)), { Allow: matches.map((m) => m.method).join(", ") });
+    if (path.startsWith("/api/screens/") && req.ip) {
+      const lim = screensLimiter.take(String(req.ip));
+      if (!lim.ok) return reply(429, errorBody(new ApiError(429, "rate-limited", "Too many requests; slow down")), { "Retry-After": String(lim.retryAfterSec), "Cache-Control": "no-store" });
+    }
 
     try {
       let actor = null;
@@ -184,7 +253,8 @@ function createConfigApi({ store, blobs, auth, allowedOrigins = [], now, log = (
           throw bad("Request body is not valid JSON");
         }
       };
-      const out = await r.handler({ actor, params, query, headers, body, json });
+      const out = await r.handler({ actor, params, query, headers, body, json, ip: req.ip });
+      if (out === NO_CONTENT) return reply(204, null, { "Cache-Control": "no-store" });
       if (out && out[CREATED]) return reply(201, out.value);
       if (isPublic && method === "GET" && out !== null && out !== undefined) {
         const etag = `"${crypto.createHash("sha256").update(JSON.stringify(out)).digest("base64url").slice(0, 27)}"`;
@@ -203,4 +273,4 @@ function createConfigApi({ store, blobs, auth, allowedOrigins = [], now, log = (
   return { handle, service: svc };
 }
 
-module.exports = { createConfigApi };
+module.exports = { createConfigApi, cspReportLines };

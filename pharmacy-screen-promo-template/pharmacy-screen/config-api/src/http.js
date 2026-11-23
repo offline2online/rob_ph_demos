@@ -26,7 +26,8 @@ function readBody(req) {
   });
 }
 
-function toNodeHandler(api) {
+// clientIp(req): the address the public screen read's rate limit counts against (index.js); none = not limited.
+function toNodeHandler(api, { clientIp } = {}) {
   return async (req, res) => {
     let body;
     try {
@@ -39,7 +40,7 @@ function toNodeHandler(api) {
     }
     const url = new URL(req.originalUrl || req.url || "/", "http://localhost");
     const query = Object.fromEntries(url.searchParams);
-    const out = await api.handle({ method: req.method, path: url.pathname, headers: req.headers, query, body });
+    const out = await api.handle({ method: req.method, path: url.pathname, headers: req.headers, query, body, ip: clientIp ? clientIp(req) : undefined });
     res.statusCode = out.status;
     for (const [k, v] of Object.entries(out.headers || {})) res.setHeader(k, v);
     res.end(out.body === null || out.body === undefined ? "" : JSON.stringify(out.body));
