@@ -603,6 +603,44 @@ const scenarios = [
     },
   },
   {
+    // Tkc6HIzQ2aWeaNIBq7sB: approving from a header scrolled just under the
+    // sticky top bar put Deploy to Main behind the top bar, and the pinned bar
+    // did not show because it measured from 0. Now the bar measures from the
+    // top bar's bottom edge, the page does not move, and the new Deploy to
+    // Main is outlined where it is.
+    name: "approve with the header under the top bar: page stays put, Deploy to Main shows outlined in the pinned bar",
+    seed: () => {
+      const s = only("b1", "r1");
+      for (let n = 2; n <= 6; n++) s.docs.backlogItems[`b${n}`] = { ...s.docs.backlogItems.b1, title: `Backlog card ${n}`, createdAt: t(T0 + n), updatedAt: t(T0 + n) };
+      s.docs.projects.p2 = { name: "Second Project", createdAt: t(T0 + 1) };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.click(".card-deploy-select-cb", "tick the Ready for Testing card");
+      await c.waitText(`.project[data-project-id="${PID}"] .project-header-actions .deploy-to-feature-btn`, "Approved for Deployment");
+      c.at("scroll the header's CTAs just under the top bar");
+      await c.page.evaluate((pid) => {
+        const edge = document.querySelector(".topbar").getBoundingClientRect().bottom;
+        const a = document.querySelector(`.project[data-project-id="${pid}"] .project-header-actions`).getBoundingClientRect();
+        window.scrollTo(0, window.scrollY + a.bottom - edge + 4);
+      }, PID);
+      await c.visible("#mobile-action-bar .deploy-to-feature-btn", "the hidden CTAs show in the pinned bar");
+      const y0 = await c.page.evaluate(() => window.scrollY);
+      await c.click("#mobile-action-bar .deploy-to-feature-btn", "approve from the pinned bar");
+      await until(async () => { const w = await c.writes(); return w.some((x) => x.path === `projects/${PID}`) ? w : null; }, "the approval writes");
+      await c.visible("#mobile-action-bar .deploy-notify-btn.cta-next-flash", "Deploy to Main is outlined in the pinned bar");
+      const y1 = await c.page.evaluate(() => window.scrollY);
+      assert.ok(Math.abs(y1 - y0) <= 2, `the page did not move (scrollY ${y0} -> ${y1})`);
+      const r = await c.page.evaluate(() => {
+        const b = document.querySelector("#mobile-action-bar .deploy-notify-btn").getBoundingClientRect();
+        const edge = document.querySelector(".topbar").getBoundingClientRect().bottom;
+        return { top: b.top, edge, right: b.right };
+      });
+      assert.ok(r.top >= r.edge - 1 && r.right <= c.width, `Deploy to Main is on screen below the top bar (${JSON.stringify(r)})`);
+    },
+  },
+  {
     name: "project header: big collapse control left of the name, star at the right; pinned bar collapses too",
     seed: () => {
       const s = seed();

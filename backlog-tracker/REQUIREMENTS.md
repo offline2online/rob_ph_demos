@@ -2991,6 +2991,28 @@ down under a finger, never sideways (ticket jcQCHLGeLP50iOeh1ZnJ).
   tickets scrolls sideways, no ticket is wider than its column, and every
   Staff Kanban ticket is `pan-y`.
 
+### After a header CTA, the page stays put and the next step is easy to find (23 Nov 2026)
+
+Approving cards (Approved for Deployment) moves them out of Ready for Testing
+and turns the button into Deploy to Main. The board never scrolls the page
+for this; instead:
+
+- **The pinned project bar measures from the sticky top bar.** A project's
+  header counts as scrolled away once its CTA row is under the bottom edge of
+  `.topbar`, not under the top of the window (`projectAtTopOfScreen` in
+  `app.js`). Before this, a header scrolled just under the top bar had its
+  buttons hidden behind it while the pinned bar stayed hidden, so the new
+  Deploy to Main was nowhere on screen.
+- **Deploy to Main is outlined where it appears.** After Approved for
+  Deployment, the project's Deploy to Main is briefly outlined
+  (`.cta-next-flash`, three pulses; a static outline with reduced motion) in
+  the pinned bar when the header is scrolled away, otherwise in the header.
+  If the button is not offered yet (a ticket still in Ready for Testing),
+  nothing flashes, and the request expires after 15 seconds.
+
+`test/ui/console-click.test.mjs` → "approve with the header under the top
+bar" covers it at every width.
+
 ### A Backlog card locks while a fix is in flight
 
 `cardHTML`'s `isInDevelopment` (`isBacklog && item.patchReady`) covers the

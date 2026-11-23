@@ -371,6 +371,9 @@ let items = [];
 // The Dashboard page (dashboard-page.js), once mounted. Declared up here because
 // renderNow() and recomputeAccess() redraw it and may run before its section below.
 let dashboardUi = null;
+// Projects whose next header CTA should be outlined on the next render
+// (flashPendingNextActions). Declared up here for the same reason.
+const pendingNextActionFlash = {};
 let dashboardUiLoading = null;
 let projects = [];
 let projectsLoaded = false;
@@ -3338,6 +3341,36 @@ function renderNow() {
 
   ensureGeneralProjectDoc(renderedProjects);
   syncMobileActionBar();
+  flashPendingNextActions();
+}
+
+// ── Point at the next step after a header CTA (Tkc6HIzQ2aWeaNIBq7sB) ──────
+// Approving cards moves them out of Ready for Testing, so the content under
+// you shifts and the button you pressed turns into Deploy to Main — which
+// was easy to lose. The page is deliberately NOT scrolled to it (that would
+// be one more jump); instead the new button is briefly outlined where it
+// actually is: in the pinned bar when the project's header is scrolled away,
+// otherwise in the header itself. The click sets a pending flag that the
+// next render consumes, because the snapshot-driven rebuild would wipe a
+// class added at click time; a flag nobody consumes expires on its own, so
+// a later, unrelated Deploy to Main never flashes.
+const NEXT_ACTION_FLASH_MS = 2400;
+const NEXT_ACTION_PENDING_MS = 15000;
+function queueNextActionFlash(pid) {
+  pendingNextActionFlash[pid] = Date.now();
+  render();
+}
+function flashPendingNextActions() {
+  Object.keys(pendingNextActionFlash).forEach((pid) => {
+    if (Date.now() - pendingNextActionFlash[pid] > NEXT_ACTION_PENDING_MS) { delete pendingNextActionFlash[pid]; return; }
+    const sel = `.deploy-notify-btn[data-project-id="${CSS.escape(pid)}"]:not([disabled])`;
+    const inBar = mobileActionBar && !mobileActionBar.hidden ? mobileActionBar.querySelector(sel) : null;
+    const target = inBar || document.querySelector(`.project[data-project-id="${CSS.escape(pid)}"] .project-header-actions ${sel}`);
+    if (!target) return; // not offered yet (a ticket still testing) — wait for a later render
+    delete pendingNextActionFlash[pid];
+    target.classList.add("cta-next-flash");
+    setTimeout(() => target.classList.remove("cta-next-flash"), NEXT_ACTION_FLASH_MS);
+  });
 }
 
 // ── The current project's actions, held on screen while scrolling ────────
@@ -3373,16 +3406,29 @@ let mobileBarProjectId = null;
 let mobileBarQueued = false;
 
 // Which project is under the top of the screen right now: the last one
-// whose section has started, ignoring any whose own header is still
+// whose section has started, ignoring any whose own header actions are still
 // visible (no point repeating buttons that are already on screen).
+//
+// "The top of the screen" is the bottom edge of the sticky .topbar, not 0
+// (Tkc6HIzQ2aWeaNIBq7sB): the topbar covers the first ~70px of the page, so
+// a header scrolled just under it had its buttons hidden behind the topbar
+// while the bar still counted them as on screen. Approving from the header
+// put the new Deploy to Main exactly there — invisible, and not in this bar
+// either. What matters is the CTA row, so that is what is measured.
+function stickyTopbarBottom() {
+  const bar = document.querySelector(".topbar");
+  return bar ? Math.max(0, bar.getBoundingClientRect().bottom) : 0;
+}
 function projectAtTopOfScreen() {
+  const edge = stickyTopbarBottom();
   let current = null;
   document.querySelectorAll(".project").forEach((section) => {
     const header = section.querySelector(".project-header");
     if (!header) return;
     const box = section.getBoundingClientRect();
-    const headerBox = header.getBoundingClientRect();
-    if (box.top <= 0 && box.bottom > 80 && headerBox.bottom <= 0) current = section;
+    const actions = header.querySelector(".project-header-actions") || header;
+    const actionsBox = actions.getBoundingClientRect();
+    if (box.top <= edge && box.bottom > edge + 80 && actionsBox.bottom <= edge) current = section;
   });
   return current;
 }
@@ -4709,6 +4755,8 @@ async function deployToFeatureNow(pid) {
   }
 
   getDeploySelectedSet(pid).clear();
+  // Deploy to Main is the next step: outline it where it appears.
+  queueNextActionFlash(pid);
 }
 
 // Same idea as requestNotify() above, but for the "Approved for Deployment"
