@@ -34,7 +34,7 @@
       "args": "--scale=60 --displays-per-type=250",
       "note": "60 × 250 = 15,000 displays, 248 positions",
       "rps": {
-        "GET  /v1/inventory (page of 50)": 248,
+        "GET  /v1/inventory (page of 50)": 242,
         "GET  /v1/inventory?status=available (1 yr)": 107,
         "GET  /v1/inventory/{id}": 3461,
         "GET  /v1/inventory/{id}/availability (7 d)": 4128,
