@@ -1182,21 +1182,10 @@ function cardHTML(item) {
   // gone.
   const testLinkHTML = isTesting && item.previewUrl ? testLinkRowHTML(item) : "";
 
-  // Once a ticket reaches Ready for Testing, the raw typed/dictated
-  // description that started it is no longer the most useful thing to
-  // read first — testSummary (set by whoever actually implemented and
-  // opened a PR for it, e.g. the Notify Claude Routine) is a clear,
-  // standalone description of what changed plus concrete steps to test it.
-  // The original request is still one click away, not deleted.
-  //
-  // Every card on the board shows its title only (10 Nov 2026: release 1.5.381
-  // did this for the Backlog column alone, and the request was for the whole
-  // board). What the card used to show is in the hover/focus popover instead:
-  // testSummary first when there is one, then the original request.
-  const hasTestSummary = isTesting && (item.testSummary || "").trim();
-  const popText = hasTestSummary
-    ? `${item.testSummary.trim()}${(item.desc || "").trim() ? `\n\nOriginal request:\n${item.desc.trim()}` : ""}`
-    : (item.desc || "").trim();
+  // Every card on the board shows its title only (10 Nov 2026), and since
+  // 23 Nov 2026 (ticket 8lQQ5RyxMnj1AnwXKIjN) there is no hover popover with
+  // the description either: the title is enough on the card, and the full
+  // text is in the ticket itself.
 
   // A file (image, video, PDF, document…) attached via uploadItemAttachment.
   // Always rendered now, even at zero — it used to only appear once a card
@@ -1240,9 +1229,7 @@ function cardHTML(item) {
         </div>
         <div class="card-move">${editBtn}${leftBtn}${rightBtn}</div>
       </div>
-      ${popText
-        ? `<h3 class="card-title card-title-hover" tabindex="0" aria-describedby="desc-pop-${escapeHTML(item.id)}">${escapeHTML(item.title)}<span class="card-desc-pop" id="desc-pop-${escapeHTML(item.id)}" role="tooltip">${escapeHTML(popText)}</span></h3>`
-        : `<h3 class="card-title">${escapeHTML(item.title)}</h3>`}
+      <h3 class="card-title">${escapeHTML(item.title)}</h3>
       ${cardStateLineHTML(cardSt)}
       ${sentBackLastTimeHTML(item)}
       ${roundChipHTML(item, { expanded: expandedRoundChips.has(item.id) })}${noDeployBadge}${carriedBadge}${ownerBadge}${contractReviewChip}${modelBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${blockedFlag}${isBacklog ? buildOrderChipHTML(item) : ""}${reviewFlag}${e2eFixBadge}${trainTestChipHTML(item)}${sharedWithChipsHTML(item)}${foreignPathsChipsHTML(item)}${approvedByHTML}${testVersionBadge}${prBadge}${deployBadge}
@@ -1257,40 +1244,6 @@ function cardHTML(item) {
       ${approveBtn}${failBtn}${ejectBtn}${inDevelopmentHint}
     </article>`;
 }
-
-// Backlog cards show the title only; the description pops up on hover/focus.
-// The popover is position: fixed and placed here from the title's position,
-// so the column's scrolling list (.col-list, overflow: auto) can't clip it,
-// and it is kept inside the viewport: below the title, or above it when there
-// is more room there (release 1.5.381 drew it inside the column, which cut off
-// everything past the column's edge).
-function placeCardDescPop(title) {
-  const pop = title && title.querySelector(".card-desc-pop");
-  if (!pop) return;
-  const r = title.getBoundingClientRect();
-  const gutter = 8, gap = 4;
-  const vw = document.documentElement.clientWidth, vh = window.innerHeight;
-  const width = Math.min(360, vw - gutter * 2);
-  const below = vh - r.bottom - gap - gutter, above = r.top - gap - gutter;
-  const useAbove = below < 160 && above > below;
-  const maxH = Math.max(80, Math.min(320, useAbove ? above : below));
-  pop.style.width = `${width}px`;
-  pop.style.maxHeight = `${maxH}px`;
-  pop.style.left = `${Math.max(gutter, Math.min(r.left, vw - gutter - width))}px`;
-  pop.style.top = useAbove ? "" : `${r.bottom + gap}px`;
-  pop.style.bottom = useAbove ? `${vh - r.top + gap}px` : "";
-}
-document.addEventListener("mouseover", (e) => {
-  const title = e.target.closest && e.target.closest(".card-title-hover");
-  if (title && !title.contains(e.relatedTarget)) placeCardDescPop(title);
-});
-document.addEventListener("focusin", (e) => {
-  if (e.target.classList && e.target.classList.contains("card-title-hover")) placeCardDescPop(e.target);
-});
-// A scroll moves the title out from under a fixed popover: re-place it.
-document.addEventListener("scroll", () => {
-  document.querySelectorAll(".card-title-hover:hover, .card-title-hover:focus").forEach(placeCardDescPop);
-}, { capture: true, passive: true });
 
 function archivedCountForProject(pid) {
   if (archivedLoaded) return allItems.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "archived").length;

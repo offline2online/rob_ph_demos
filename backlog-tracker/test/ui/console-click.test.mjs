@@ -3293,9 +3293,9 @@ const scenarios = [
     },
   },
   {
-    // Release 1.5.381 drew the popover inside the column's scroll box (.col-list, overflow: auto),
-    // which cut off everything past the column's edge. It is position: fixed now (placeCardDescPop).
-    name: "Board cards: title only in every column, the whole description pops up on hover/focus, unclipped",
+    // Cards show the title only (10 Nov 2026), and the hover popover with the description is gone
+    // (23 Nov 2026, ticket 8lQQ5RyxMnj1AnwXKIjN): nothing about the description appears on hover or focus.
+    name: "Board cards: title only in every column, no description popover on hover or focus",
     seed: () => {
       const s = seed();
       s.docs.backlogItems.b1.desc = "## Outcome\n" + "A long ticket description that runs on. ".repeat(25) + "\nLAST LINE";
@@ -3304,40 +3304,21 @@ const scenarios = [
     },
     async run(c) {
       await c.boardReady();
-      const title = '.card[data-id="b1"] .card-title-hover', pop = '.card[data-id="b1"] .card-desc-pop';
-      c.at("the Backlog card shows no description", title);
-      assert.ok(!(await c.page.locator('.card[data-id="b1"]').innerText()).includes("A long ticket description"), "no description text on the card");
-      assert.ok(await c.page.locator(pop).isHidden(), "the popover is hidden until hover");
-      // Every column, not just Backlog (release 1.5.381 left the other three showing descriptions).
-      for (const [id, words] of [["r1", ["Settings page fixed", "Fix the thing on the settings page"]], ["d1", ["Already approved"]], ["l1", ["Already live"]]]) {
-        const cardText = await c.page.locator(`.card[data-id="${id}"]`).innerText();
-        for (const w of words) assert.ok(!cardText.includes(w), `${id} shows "${w}" on the card; only the title should show`);
-        assert.strictEqual(await c.page.locator(`.card[data-id="${id}"] .card-desc, .card[data-id="${id}"] .card-desc-toggle-btn`).count(), 0, `${id} has no description block`);
-        const popText = await c.page.locator(`.card[data-id="${id}"] .card-desc-pop`).textContent();
-        for (const w of words) assert.ok(popText.includes(w), `${id}'s popover holds "${w}" (got "${popText}")`);
+      c.at("the Backlog card shows its title and no description", '.card[data-id="b1"] .card-title');
+      for (const [id, words] of [["b1", ["A long ticket description", "LAST LINE"]], ["r1", ["Settings page fixed", "Fix the thing on the settings page"]], ["d1", ["Already approved"]], ["l1", ["Already live"]]]) {
+        const card = c.page.locator(`.card[data-id="${id}"]`);
+        const html = await card.evaluate((el) => el.outerHTML);
+        for (const w of words) assert.ok(!html.includes(w), `${id} carries "${w}" in its markup; only the title should be there, with no popover`);
+        assert.strictEqual(await card.locator(".card-desc, .card-desc-toggle-btn, .card-desc-pop, .card-title-hover, [role=tooltip]").count(), 0, `${id} has no description block or popover`);
+        const t = card.locator(".card-title");
+        assert.strictEqual(await t.count(), 1, `${id} shows its title`);
+        assert.strictEqual(await t.getAttribute("title"), null, `${id}'s title has no native tooltip either`);
       }
-      assert.ok((await c.page.locator('.card[data-id="r1"] .card-desc-pop').textContent()).includes("Original request:"), "the test summary comes first, then the original request");
-      const unclipped = () => c.page.evaluate((sel) => {
-        const p = document.querySelector(sel), r = p.getBoundingClientRect();
-        const hit = (x, y) => { const e = document.elementFromPoint(x, y); return !!e && (e === p || p.contains(e)); };
-        return { inView: r.left >= 0 && r.right <= document.documentElement.clientWidth && r.top >= 0 && r.bottom <= innerHeight,
-          corners: hit(r.left + 6, r.top + 6) && hit(r.right - 6, r.top + 6) && hit(r.left + 6, r.bottom - 6) && hit(r.right - 6, r.bottom - 6), w: r.width };
-      }, pop);
       if (c.width >= 1024) {
-        c.at("hover shows the whole popover, unclipped", title);
-        await c.page.hover(title);
-        await until(async () => c.page.locator(pop).isVisible(), "the popover on hover", 3000);
-        const u = await unclipped();
-        assert.ok(u.inView && u.corners && u.w > 300, `the popover is inside the viewport and nothing covers or clips it: ${JSON.stringify(u)}`);
-        assert.ok((await c.page.locator(pop).innerText()).includes("LAST LINE"), "the full description is in it");
-        await c.page.mouse.move(2, 2);
-        await until(async () => c.page.locator(pop).isHidden(), "the popover hides when the pointer leaves", 3000);
+        await c.page.hover('.card[data-id="b1"] .card-title');
+        c.at("hovering the title shows nothing extra", '.card[data-id="b1"] .card-title');
+        assert.strictEqual(await c.page.locator('[role=tooltip]:visible').count(), 0, "no tooltip appears on hover");
       }
-      c.at("keyboard focus shows it too", title);
-      await c.page.focus(title);
-      await until(async () => c.page.locator(pop).isVisible(), "the popover on focus", 3000);
-      const u = await unclipped();
-      assert.ok(u.inView && u.corners, `focused popover is inside the viewport and unclipped at ${c.width}px: ${JSON.stringify(u)}`);
     },
   },
   {
