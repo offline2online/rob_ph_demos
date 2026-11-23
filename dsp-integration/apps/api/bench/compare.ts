@@ -4,7 +4,7 @@
    shape, not per metric (see gate.ts and bug-plan.mjs). */
 export interface Shape { args: string; note: string; rps: Record<string, number>; p50: Record<string, number>; ms: Record<string, number> }
 export type Kind = 'rps' | 'p50' | 'ms'
-export interface BenchCase { caseId: string; id: string; run: 'Bench'; title: string; status: 'pass' | 'fail'; expected: string; actual: string; repro: string; shape: string; label: string; kind: Kind; baseline?: number; value?: number }
+export interface BenchCase { caseId: string; id: string; run: 'Bench'; title: string; status: 'pass' | 'fail'; expected: string; actual: string; repro: string; shape: string; label: string; kind: Kind; baseline?: number; value?: number; runs?: number[] }
 
 /* Metric keys are the bench's labels; the reservations label carries counts, so match it by prefix. */
 export const metric = (m: Record<string, number>, label: string, kind: string) => {
@@ -36,4 +36,25 @@ export function compare(name: string, shape: Shape, base: Shape, m: Record<strin
   for (const label of Object.keys(shape.p50)) add('p50', label, metric(m, label, 'p50'), false)
   for (const label of Object.keys(shape.ms)) add('ms', label, metric(m, label, 'ms'), true)
   return { cases, measured }
+}
+
+/* A breach is confirmed only if it repeats (ticket YLWwUhbyeGDuQxJYQPeZ,
+   23 Nov 2026). One 3-second run of a ~10 ms CPU-bound endpoint at 32
+   clients is ~300 samples with GC stalls in its tail, and identical runs on
+   one machine differed by ~30% (shape A ?status=available p50 231.6 vs
+   320.9 ms) — as wide as the 25% tolerance, so a single run filed tickets
+   for noise. gate.ts re-runs a shape that breached once and passes both
+   runs' cases here: a metric fails only if it failed in both, and reports
+   the better of the two values; `runs` keeps both so the retry is visible.
+   A metric missing from the retry (it crashed) keeps the first result. */
+export function confirmBreaches(first: BenchCase[], retry: BenchCase[]): BenchCase[] {
+  const again = new Map(retry.map((c) => [c.caseId, c]))
+  return first.map((c) => {
+    const r = again.get(c.caseId)
+    if (c.status === 'pass' || !r) return c
+    const runs = [c.value, r.value].filter((v): v is number => v !== undefined)
+    if (r.status === 'pass') return { ...r, runs }
+    const better = c.value === undefined ? r : r.value === undefined ? c : (c.kind === 'rps' ? r.value > c.value : r.value < c.value) ? r : c
+    return { ...better, runs }
+  })
 }

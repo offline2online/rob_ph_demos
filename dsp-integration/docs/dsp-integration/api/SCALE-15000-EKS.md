@@ -32,7 +32,11 @@ shapes of the same 15,000 displays:
 The numbers below are now thresholds: `npm run bench -- --assert` runs
 shapes A, B, C and T (`bench/thresholds.json`, seeded from the "after"
 column with a 25% tolerance) and exits non-zero naming the shape and the
-endpoint that moved. Because they were measured on one sandbox, a
+endpoint that moved. A shape that breaches is run once more, and a metric
+fails only if it breaches both runs (the better value is reported; 23 Nov
+2026, ticket YLWwUhbyeGDuQxJYQPeZ): identical runs on one machine differed
+by about 30% on `?status=available (1 yr)`, as wide as the tolerance, so a
+single run filed tickets for noise. Because they were measured on one sandbox, a
 different machine first runs `npm run bench -- --calibrate`, which writes
 `bench/baseline.local.json` (not committed); `--assert` then compares
 against that. A deliberate change updates `thresholds.json` in the same
