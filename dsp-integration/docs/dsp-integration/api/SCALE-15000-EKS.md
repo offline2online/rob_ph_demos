@@ -47,6 +47,13 @@ PR. The thresholds were re-baselined on 19 Oct 2026 for the 8 Oct workload
 file. Shape T is the 7-Eleven Thailand estate as an assumption (shape C's
 mix) until CP Group confirms its display-type formats.
 
+Every read endpoint is driven untimed for `--warmup-seconds` (default 0.5)
+before its timed window (23 Nov 2026). Without that, the first endpoint
+driven — the inventory page of 50, then `?status=available` — carried the
+process's JIT and cold caches, and in November those two were the only
+metrics the nightly kept failing, in every shape, with no code change
+behind them. The bid driver has a fixed amount of work and is not warmed.
+
 ## How it was measured
 
 `npm run bench` now takes the estate's shape and exercises the write path
