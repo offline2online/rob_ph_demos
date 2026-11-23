@@ -318,11 +318,12 @@ window.pharmacyScreen = {
   promotions: () => (config ? config.promotions.map((p) => p.promoId || p.token || p.id) : []),
   occasions: () => OCCASION_IDS.slice(),
   /** Stop playback and show one promotion's scene, exactly as it renders after its entrance (an occasion: beat i,
-   *  held still). `occasion`: play that occasion on an occasion promotion (the copy-fit audit checks every one). */
+   *  held still). `occasion`: play that occasion on an occasion promotion (the copy-fit audit checks every one);
+   *  without it, what the screen plays on the store's date (an activation, the season by date, else the Fallback). */
   show(promoId, i, occasion) {
     playing = false;
     clearTimers();
-    play = resolvePromotion(config, store, promoId, { occasion });
+    play = resolvePromotion(config, store, promoId, { occasion, today: todayForStore() });
     show(i, false);
     return this.info;
   },

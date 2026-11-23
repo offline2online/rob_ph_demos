@@ -8,8 +8,8 @@
 // these records at all (it has its own encrypted settings store), and this
 // view could not carry it even if it did.
 
-const { BUILTIN_BY_ID, builtInFor, occasionTemplateId } = require("./builtins");
-const { seasonOfPromotion, seasonFor } = require("./seasonal");
+const { BUILTIN_BY_ID, builtInFor, occasionTemplateId, FALLBACK_OCCASION } = require("./builtins");
+const { seasonOfPromotion, cleanActivation } = require("./seasonal");
 const { effectiveContent } = require("./inherit");
 
 const PUBLISHED_SCHEMA_VERSION = 1;
@@ -44,10 +44,12 @@ function resolveTemplate(templateId, templatesById) {
   };
 }
 
-// The pharmacy's season is published as the template it plays, not as content.
+// The old Season pick (content.season, from before the fallback) is not published: outside every season's dates
+// the screen plays the fallback. An "Activate on display" (content.activation) is published only when well formed.
 function withoutSeason(content) {
-  const { season: _season, ...rest } = content;
-  return rest;
+  const { season: _season, activation, ...rest } = content;
+  const a = cleanActivation(activation);
+  return a ? { ...rest, activation: a } : rest;
 }
 
 // pharmacy: a stored pharmacy record (with id); promotions: every promotion
@@ -59,9 +61,10 @@ function buildScreenConfig(pharmacy, promotions, templates, publishedAt) {
   const detached = pharmacy.detached || {};
   const promos = {};
   for (const p of [...promotions].sort((a, b) => a.promoId.localeCompare(b.promoId))) {
-    // A Seasonal promotion plays this pharmacy's own season (src/seasonal.js),
-    // not the one the promotion itself is set to.
-    const season = seasonOfPromotion(p) ? seasonFor(p, content[p.id]) : null;
+    // A Seasonal promotion is published as the fallback: the screen plays a running
+    // "Activate on display" (content.activation), else the season whose dates hold
+    // the store's date, else this (js/render.js liveOccasion).
+    const season = seasonOfPromotion(p) ? FALLBACK_OCCASION : null;
     promos[p.promoId] = {
       promoId: p.promoId,
       name: p.name,

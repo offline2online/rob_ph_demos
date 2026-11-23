@@ -8,6 +8,41 @@ release handed to miPharmacy is tagged and packaged with this file and the `docs
 Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 ([docs/RELEASING.md](docs/RELEASING.md)).
 
+### Added
+
+- **Fallback promotion, and "Currently active promotion" in place of the Season drop-down.** Outside every season's
+  dates the Seasonal promotion (`promo=occasions`) now plays a **Fallback**: the pharmacy's own brand colours fill the
+  screen, "Thank you, ${Suburb}" slides up (0–2 s), "for supporting your local pharmacy" comes in beneath (2–5 s),
+  then the logo and pharmacy name settle in at the bottom with a gentle scale and shimmer (5–7 s); exactly 7 s
+  (playback duration 8 s), copy editable per pharmacy. Seasons still start and end by themselves on their dates;
+  the screen is never empty. The old **Season** drop-down (which season played outside every season's dates) is
+  now **Currently active promotion**: it opens on what this pharmacy's screens play today (Fallback, or a season),
+  lists the Fallback and every season, and picking one only previews it. **Activate on display** puts it on the
+  pharmacy's screens now, as a one-off (`content[<promotion id>].activation = {occasion, until}`): it ends on that
+  season's scheduled end date and does not carry into next year. A pharmacy's own dates in the Dates card stay its
+  schedule every year. The config API publishes the Seasonal promotion's template as the Fallback (the old
+  `content.season` is kept but no longer published). Which pharmacies show promotions at all is the campaign's
+  store segment targeting in Personalisation Hub ([docs/DATA-CONTRACT.md](docs/DATA-CONTRACT.md)).
+
+### Fixed
+
+- **Preview: "Sample opening hours" is under the preview, beside Pause.** The label and its info tooltip have moved
+  from their own row above the preview to the controls row under it, directly to the right of the Pause button, and
+  nothing about them shows above the preview any more. The label still always shows in full (at phone width too): the
+  scene time ("1.1s / 11.0s · 5 scenes") now has its own line under the scene bar, so Pause and the label always fit
+  one row (in a preview column under 270px wide, Play/Pause shows as its icon alone). The tooltip's wording is
+  unchanged; it now opens above the row. The preview screen is 10px taller, so the whole preview takes the same height
+  as before ([docs/USER-GUIDE.md](docs/USER-GUIDE.md)).
+- **A real functions failure no longer looks like the cleanup-policy warning in the Firebase deploy.** The
+  "Deploy the functions" step used to end in an error on every CI run ("Functions successfully deployed but could
+  not set up cleanup policy": the CI account may not set it) and was ignored either way. Now only that exact
+  message is passed, with a warning naming the owner's one-time command; any other functions error stops the
+  deploy before Hosting, so the site keeps the functions it had. The cleanup policy is a setup step (the owner's
+  run), no longer tried by CI. The step that deleted the functions from `us-central1` is gone: the deploy never
+  deletes a function, and [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) records the order for any future region move
+  (create, publish Hosting, check the API, then delete, as separate deploys). A test confirms the API check fails
+  on Hosting's HTML 404, as on the first deploy of 23 Nov 2026.
+
 ### Fixed
 
 - **The Firebase deploy can no longer leave the site without its API.** On 23 Nov 2026 the move to Sydney deleted

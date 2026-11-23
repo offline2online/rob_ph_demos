@@ -110,10 +110,16 @@ screen draws that occasion (`../js/render.js` → `OCCASIONS`, the standalone
 designs in `../js/occasions.js`, the Christmas photo and fonts self-hosted in
 `../css/`; the built-ins carry no html, css or backgrounds). The seeded
 Seasonal promotion (`promo=occasions`) uses `builtin-occasion-christmas`;
-the promotion's `templateId` is the season a new pharmacy starts on; each pharmacy's own season is `content[<promotion id>].season` (`src/seasonal.js`), which the admin editor's Season drop-down sets
-(what plays outside every season's dates; each season's `from` / `to` dates
-ride in the pharmacy content, `content.occasions.<season>`, and the screen
-picks the season by date).
+`builtin-occasion-fallback` is the Fallback (what plays whenever no season is
+on; the pharmacy's branded "Thank you"). The published screen config always
+names the Fallback as a Seasonal promotion's template (`src/publish.js`): the
+screen plays a pharmacy's running "Activate on display"
+(`content[<promotion id>].activation = {occasion, until: "YYYY-MM-DD"}`,
+published only when well formed, `cleanActivation` in `src/seasonal.js`), else
+the season whose dates hold the store's date (each season's `from` / `to`
+dates ride in the pharmacy content, `content.occasions.<season>`), else the
+Fallback. The old per-pharmacy Season pick (`content[<promotion id>].season`)
+is still stored but no longer published.
 They can't be cloned (400: there is no editable HTML version of an
 occasion). A pharmacy's content for an occasion promotion keeps every
 occasion's copy, `content.occasions.<occasion>.beats[]` (one per beat of the

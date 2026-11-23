@@ -26,9 +26,11 @@ after(async () => {
   if (dev) await dev.close();
 });
 
-async function open(token = 'dev-admin', { viewport = { width: 1400, height: 1000 }, path = '/admin/' } = {}) {
+// date: pin the browser's date (the Currently active promotion drop-down opens on what plays today).
+async function open(token = 'dev-admin', { viewport = { width: 1400, height: 1000 }, path = '/admin/', date } = {}) {
   const ctx = await browser.newContext({ viewport });
   const page = await ctx.newPage();
+  if (date) await page.clock.setFixedTime(new Date(date));
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto(dev.base + path);
@@ -152,40 +154,54 @@ test('Settings holds the pharmacies, their details and branding, and the API; pr
   await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-003');
   await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-003');
   assert.equal(await page.inputValue('#storeSel'), 'seed-pharmacy-vic-mp-003');
-  // The pill says the hours are sample ones. It has a row of its own under the Portrait/Landscape tabs, above the
-  // preview screen, so the label shows in full; its info tooltip says each screen uses its store's actual hours for
-  // the day and time the promotion plays, opens on hover and keyboard focus, and is not clipped.
+  // The pill says the hours are sample ones. It sits under the preview, directly to the right of Pause on the
+  // controls row (nothing about it above the preview any more), and always shows in full; the scene time is on its
+  // own line under the scene bar. Its info tooltip says each screen uses its store's actual hours for the day and
+  // time the promotion plays, opens above the row on hover and keyboard focus, and is not clipped.
   assert.equal(await page.textContent('#pvData'), 'Sample opening hours');
   const pvRow = await page.evaluate(() => {
     const r = (s) => document.querySelector(s).getBoundingClientRect();
-    const p = document.getElementById('pvData'), row = p.parentElement, b = p.getBoundingClientRect();
-    return { cls: row.className, kids: [...row.children].map((e) => e.id || e.className), cut: p.scrollWidth > p.clientWidth, h: b.height, top: b.top, bottom: b.bottom,
-      tabsBottom: r('#orTabs').bottom, stageTop: r('#stage').top, inControls: !!document.querySelector('.controls #pvData, .controls #pvInfo') };
+    const p = document.getElementById('pvData'), row = p.parentElement, b = p.getBoundingClientRect(), play = r('#playBtn');
+    return { cls: row.className, kids: [...row.children].map((e) => e.id || e.className), parent: row.parentElement.className,
+      afterPlay: row.previousElementSibling && row.previousElementSibling.id, cut: p.scrollWidth > p.clientWidth, h: b.height, top: b.top,
+      left: b.left, playRight: play.right, centre: (b.top + b.bottom) / 2, playCentre: (play.top + play.bottom) / 2,
+      stageBottom: r('#stage').bottom, tlBottom: r('#tl').bottom, timeTop: r('#tlTime').top, timeBottom: r('#tlTime').bottom, controlsTop: r('.controls').top,
+      tabsNext: document.getElementById('orTabs').nextElementSibling.id, timeInControls: !!document.querySelector('.controls #tlTime') };
   });
   assert.equal(pvRow.cls, 'pvnote', JSON.stringify(pvRow));
-  assert.deepEqual(pvRow.kids, ['pvData', 'infowrap'], 'the row holds only the pill and its info icon');
-  assert.equal(pvRow.inControls, false, 'not beside Play any more');
+  assert.deepEqual(pvRow.kids, ['pvData', 'infowrap'], 'the label holds only the pill and its info icon');
+  assert.equal(pvRow.parent, 'controls', 'on the controls row under the preview');
+  assert.equal(pvRow.afterPlay, 'playBtn', 'directly to the right of Pause');
+  assert.equal(pvRow.tabsNext, 'stage', 'nothing between the Portrait/Landscape tabs and the preview');
+  assert.ok(pvRow.top >= pvRow.stageBottom && pvRow.left > pvRow.playRight && Math.abs(pvRow.centre - pvRow.playCentre) <= 1, `below the screen, right of Pause, same row: ${JSON.stringify(pvRow)}`);
   assert.equal(pvRow.cut, false, 'the label is not cut off');
-  assert.ok(pvRow.top >= pvRow.tabsBottom && pvRow.bottom <= pvRow.stageTop, `under the tabs, above the screen: ${JSON.stringify(pvRow)}`);
-  // In a preview column narrower than the label, it wraps onto a second line instead of being cut short.
-  const pvNarrow = await page.evaluate(() => {
-    const row = document.querySelector('.pvnote'), p = document.getElementById('pvData');
-    row.style.width = '150px';
-    const out = { h: p.getBoundingClientRect().height, cut: p.scrollWidth > p.clientWidth, right: p.getBoundingClientRect().right <= row.getBoundingClientRect().right + 0.5, text: p.innerText.replace(/\s+/g, ' ') };
-    row.style.width = '';
+  assert.equal(pvRow.timeInControls, false, 'the scene time is not on the controls row');
+  assert.ok(pvRow.timeTop >= pvRow.tlBottom - 0.5 && pvRow.timeBottom <= pvRow.controlsTop, `scene time under the scene bar: ${JSON.stringify(pvRow)}`);
+  // In the narrowest preview column (240px, a tablet-sized frame), Pause shows as its icon alone and the label still
+  // shares its line and shows in full.
+  const pvNarrow = await page.evaluate(async () => {
+    const pv = document.querySelector('.pv'), row = document.querySelector('.controls'), p = document.getElementById('pvData'), play = document.getElementById('playBtn');
+    pv.style.width = '240px';
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const b = p.getBoundingClientRect(), pb = play.getBoundingClientRect(), i = document.getElementById('pvInfo').getBoundingClientRect();
+    const out = { h: b.height, cut: p.scrollWidth > p.clientWidth, inside: i.right <= row.getBoundingClientRect().right + 0.5, sameLine: Math.abs((b.top + b.bottom) / 2 - (pb.top + pb.bottom) / 2) <= 1, overlap: b.left < pb.right, text: p.innerText.replace(/\s+/g, ' '), playName: play.textContent.replace('pause', '').trim(), playW: pb.width };
+    pv.style.width = '';
     return out;
   });
-  assert.ok(pvNarrow.h > pvRow.h * 1.5 && pvNarrow.h < pvRow.h * 2.5, `two lines when narrow: ${JSON.stringify(pvNarrow)} vs ${pvRow.h}`);
+  assert.ok(Math.abs(pvNarrow.h - pvRow.h) < 1, `one line when narrow: ${JSON.stringify(pvNarrow)} vs ${pvRow.h}`);
   assert.equal(pvNarrow.cut, false);
-  assert.equal(pvNarrow.right, true);
+  assert.equal(pvNarrow.inside, true, JSON.stringify(pvNarrow));
+  assert.equal(pvNarrow.sameLine, true, JSON.stringify(pvNarrow));
+  assert.equal(pvNarrow.overlap, false, JSON.stringify(pvNarrow));
   assert.equal(pvNarrow.text, 'Sample opening hours');
+  assert.ok(['Pause', 'Play'].includes(pvNarrow.playName) && pvNarrow.playW < 60, `Pause as its icon, named for screen readers: ${JSON.stringify(pvNarrow)}`);
   assert.match(await page.textContent('#pvTip'), /sample opening hours .*Each screen uses its own store's actual opening and closing hours from Personalisation Hub, for the day and time the promotion plays\.$/);
   await page.hover('#pvInfo');
   await page.waitForFunction(() => getComputedStyle(document.getElementById('pvTip')).opacity === '1');
-  const pvTip = await page.$eval('#pvTip', (e) => { const r = e.getBoundingClientRect(), c = e.closest('.pvnote').getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, cl: c.left, cr: c.right, cb: c.bottom, h: r.height }; });
-  assert.ok(pvTip.l >= pvTip.cl - 0.5 && pvTip.r <= pvTip.cr + 0.5 && pvTip.t >= pvTip.cb && pvTip.h > 40, JSON.stringify(pvTip));
+  const pvTip = await page.$eval('#pvTip', (e) => { const r = e.getBoundingClientRect(), c = e.closest('.controls').getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom, cl: c.left, cr: c.right, ct: c.top, h: r.height }; });
+  assert.ok(pvTip.l >= pvTip.cl - 0.5 && pvTip.r <= pvTip.cr + 0.5 && pvTip.b <= pvTip.ct && pvTip.t >= 0 && pvTip.h > 40, JSON.stringify(pvTip));
   await page.mouse.move(0, 0);
-  await page.focus('#orTabs [data-or="landscape"]');
+  await page.focus('#playBtn');
   await page.keyboard.press('Tab');
   assert.equal(await page.evaluate(() => document.activeElement.id), 'pvInfo');
   await page.waitForFunction(() => getComputedStyle(document.getElementById('pvTip')).opacity === '1');
@@ -345,20 +361,40 @@ test('templates: built-ins read-only, clone, edit HTML with token chips, unsafe 
   await ctx.close();
 });
 
-test('seasonal: the Season drop-down picks what promo=occasions plays outside every season\'s dates; each season keeps its own copy and dates', async () => {
-  const { ctx, page, errors } = await open();
+test('seasonal: Currently active promotion opens on what plays (the Fallback outside every season), previews any one, and Activate on display puts it on the screens to its end date', async () => {
+  // 1 July 2026: outside every season's dates.
+  const { ctx, page, errors } = await open('dev-admin', { date: '2026-07-01T12:00:00' });
   await page.click('#dpTabs button:has-text("Seasonal")');
   await own(page);
   await page.click('#playBtn'); // pause
-  // The Template drop-down is the Season drop-down here, Christmas by default; seasonal templates have no Edit HTML.
-  assert.equal(await page.$eval('#pmTpl', (e) => e.closest('label').querySelector('span').textContent), 'Season');
-  // Each season shows its start and end dates after its name (one date for a one-day season; Easter's are this year's).
+  // The Template drop-down is Currently active promotion here; seasonal templates have no Edit HTML.
+  assert.equal(await page.$eval('#pmTpl', (e) => e.closest('label').querySelector('span').textContent), 'Currently active promotion');
+  // The Fallback first, then each season with its start and end dates after its name (Easter's are this year's); the
+  // one the screens play now ends in "· on display".
   const seasonOpts = () => page.$$eval('#pmTpl option', (o) => o.map((x) => x.textContent));
-  const easterOpt = (await seasonOpts())[4];
+  const easterOpt = (await seasonOpts())[5];
   assert.match(easterOpt, /^Easter \(\d{1,2} (Mar|Apr) – \d{1,2} (Mar|Apr)\)$/);
-  assert.deepEqual(await seasonOpts(), ['Christmas (15 Dec – 27 Dec)', "New Year's (28 Dec – 5 Jan)", 'Australia Day (26 Jan)', "Valentine's Day (14 Feb)", easterOpt, 'Anzac Day (25 Apr)']);
-  assert.equal(await page.inputValue('#pmTpl'), 'builtin-occasion-christmas');
+  assert.deepEqual(await seasonOpts(), ['Fallback · on display', 'Christmas (15 Dec – 27 Dec)', "New Year's (28 Dec – 5 Jan)", 'Australia Day (26 Jan)', "Valentine's Day (14 Feb)", easterOpt, 'Anzac Day (25 Apr)']);
+  assert.equal(await page.inputValue('#pmTpl'), 'builtin-occasion-fallback');
   assert.equal(await page.isHidden('#pmHtml'), true);
+  assert.equal(await page.textContent('#pmActivate'), 'check_circleOn display');
+  assert.equal(await page.isDisabled('#pmActivate'), true);
+  // The Fallback: the pharmacy's branding, three beats, exactly 7 s (no seconds to set), no dates.
+  await page.waitForFunction(() => document.querySelector('#screen .occ.occ-thankyou'));
+  assert.deepEqual(await page.$$eval('#tl button .lb', (b) => b.map((x) => x.textContent)), ['1Beat 1', '2Beat 2', '3Beat 3']);
+  assert.equal(await page.textContent('#loopLen'), 'Loop 7s');
+  assert.equal(await page.textContent('#pbSecs'), '8s');
+  assert.equal(await page.$$eval('#occList input[type=number], #occDates select', (e) => e.length), 0);
+  assert.match(await page.textContent('#occDates'), /When it plays.*Whenever no season is on/);
+  assert.match(await page.$eval('#screen .occ', (e) => e.style.getPropertyValue('--b-p')), /^#[0-9a-f]{6}$/i);
+  // Picking Christmas previews it only: the screens are unchanged until Activate on display.
+  await page.selectOption('#pmTpl', 'builtin-occasion-christmas');
+  await page.waitForFunction(() => document.querySelector('#screen .occ.occ-christmas'));
+  await settle(page);
+  assert.equal((await api('GET', '/api/screens/VIC-MP-001', { token: null })).body.promotions.occasions.content.activation, undefined);
+  assert.equal(await page.textContent('#pmActivate'), 'castActivate on display');
+  assert.equal(await page.isDisabled('#pmActivate'), false);
+  assert.match(await page.getAttribute('#pmActivate', 'title'), /until its end date, 27 Dec 2026, then the screens go back to the Fallback/);
   // Christmas: two beats, each a card of its lines; the preview draws the standalone design (no brand panel).
   assert.deepEqual(await page.$$eval('#tl button .lb', (b) => b.map((x) => x.textContent)), ['1Beat 1', '2Beat 2']);
   // The seeded seconds (3 s + 4 s): every season's loop is 7 s, so the playback duration is 8 s.
@@ -374,15 +410,15 @@ test('seasonal: the Season drop-down picks what promo=occasions plays outside ev
   assert.deepEqual([await page.inputValue('#occFromd'), await page.inputValue('#occFromm'), await page.inputValue('#occTod'), await page.inputValue('#occTom')], ['15', '12', '27', '12']);
   await page.selectOption('#occTod', '24');
   assert.equal(await page.textContent('#occWhen'), '15 Dec to 24 Dec');
-  // The Season drop-down follows the change straight away, and keeps Christmas selected.
-  assert.equal((await seasonOpts())[0], 'Christmas (15 Dec – 24 Dec)');
+  // The drop-down follows the change straight away, and keeps Christmas selected.
+  assert.equal((await seasonOpts())[1], 'Christmas (15 Dec – 24 Dec)');
   assert.equal(await page.inputValue('#pmTpl'), 'builtin-occasion-christmas');
   await settle(page);
   const xmasDates = (await api('GET', '/api/screens/VIC-MP-001', { token: null })).body.promotions.occasions.content.occasions.christmas;
   assert.deepEqual([xmasDates.from, xmasDates.to], ['12-15', '12-24']);
   await page.selectOption('#occTod', '27');
   assert.equal(await page.textContent('#occWhen'), '15 Dec to 27 Dec');
-  assert.equal((await seasonOpts())[0], 'Christmas (15 Dec – 27 Dec)');
+  assert.equal((await seasonOpts())[1], 'Christmas (15 Dec – 27 Dec)');
   // Each beat has its own seconds on screen: the loop, the timeline and the playback duration follow, and the playing
   // preview runs the beats on keyframes of that length.
   assert.deepEqual(await page.$$eval('#occList input[type=number]', (e) => e.map((x) => x.value)), ['3', '4']);
@@ -417,12 +453,19 @@ test('seasonal: the Season drop-down picks what promo=occasions plays outside ev
   assert.match(await page.textContent('#occWhen'), / this year$/);
   await page.fill('#o1text', 'Have a safe long weekend, everyone');
   await settle(page);
-  // The season is this pharmacy's own: the promotion itself (where a new pharmacy starts) and every other store stay on Christmas.
-  assert.equal((await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body.templateId, 'builtin-occasion-christmas');
-  assert.equal((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-001')).body.content['seed-promotion-occasions'].season, 'easter');
-  assert.equal((await api('GET', '/api/screens/VIC-MP-002', { token: null })).body.promotions.occasions.template.occasion, 'christmas');
-  const screen = (await api('GET', '/api/screens/VIC-MP-001', { token: null })).body.promotions.occasions;
-  assert.deepEqual([screen.template.kind, screen.template.occasion], ['occasion', 'easter']);
+  // Previewing changed nothing on the screens: still published as the Fallback, nothing activated.
+  let screen = (await api('GET', '/api/screens/VIC-MP-001', { token: null })).body.promotions.occasions;
+  assert.deepEqual([screen.template.kind, screen.template.occasion, screen.content.activation], ['occasion', 'fallback', undefined]);
+  // Activate on display: Easter goes on this pharmacy's screens now, until Easter Monday 2027 (the next Easter);
+  // the button then reads On display and Easter's line "· on display". Other stores are not touched.
+  await page.click('#pmActivate');
+  await settle(page);
+  screen = (await api('GET', '/api/screens/VIC-MP-001', { token: null })).body.promotions.occasions;
+  assert.deepEqual(screen.content.activation, { occasion: 'easter', until: '2027-03-29' });
+  assert.equal(await page.textContent('#pmActivate'), 'check_circleOn display');
+  assert.match((await seasonOpts())[5], /· on display$/);
+  assert.doesNotMatch((await seasonOpts())[0], /on display/);
+  assert.equal((await api('GET', '/api/screens/VIC-MP-002', { token: null })).body.promotions.occasions.content.activation, undefined);
   assert.equal(screen.content.occasions.easter.beats[1].text, 'Have a safe long weekend, everyone');
   assert.equal(screen.content.occasions.christmas.beats[1].text, 'from all of us at ${StoreName}', 'Christmas copy kept');
   assert.ok(!/StoreName/.test(JSON.stringify(screen.content.occasions.easter)), 'Easter: suburb only, no store-name sign-off');
@@ -437,10 +480,13 @@ test('seasonal: the Season drop-down picks what promo=occasions plays outside ev
   }
   await page.selectOption('#pmTpl', 'builtin-occasion-easter');
   await page.waitForFunction(() => { const b = document.querySelector('#screen .occ-easter .b2'); return b && /Have a safe long weekend, everyone/.test(b.textContent); }, null, { timeout: 5000 });
-  // Back to Christmas for the other tests.
-  await page.selectOption('#pmTpl', 'builtin-occasion-christmas');
+  // Activating the Fallback outside every season is what the schedule plays anyway: the activation is cleared.
+  await page.selectOption('#pmTpl', 'builtin-occasion-fallback');
+  await page.click('#pmActivate');
   await settle(page);
-  assert.equal((await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body.templateId, 'builtin-occasion-christmas');
+  assert.equal((await api('GET', '/api/screens/VIC-MP-001', { token: null })).body.promotions.occasions.content.activation, undefined);
+  assert.equal(await page.textContent('#pmActivate'), 'check_circleOn display');
+  assert.equal((await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body.templateId, 'builtin-occasion-christmas', 'the promotion itself is untouched');
   assert.deepEqual(errors, []);
   await ctx.close();
 });
@@ -949,6 +995,7 @@ test('pharmacy view: admin/?store=<code> shows only that pharmacy\'s promotions,
     await page.goto(dev.base + path);
     if (await page.isVisible('#gateTokenIn')) { await page.fill('#gateTokenIn', 'dev-admin'); await page.click('#gateToken button[type=submit]'); }
   };
+  await page.clock.setFixedTime(new Date('2026-07-01T12:00:00')); // outside every season's dates
   await signInAt('/admin/?store=vic-mp-005');
   await page.waitForFunction(() => window.pharmacyAdmin && window.pharmacyAdmin.ready, null, { timeout: 20000 });
   await page.click('#playBtn'); // pause
@@ -1017,25 +1064,25 @@ test('pharmacy view: admin/?store=<code> shows only that pharmacy\'s promotions,
   await page.click('#dpTabs button:has-text("Closed")');
   assert.equal(await page.isHidden('#h0dur'), true);
   await page.click('#dpTabs button:has-text("Morning")');
-  // Seasonal: only the Season drop-down (no promotion name, promo ID or promo= pill), and the season can be
-  // changed here; it is what the screen plays.
+  // Seasonal: only Currently active promotion and Activate on display (no promotion name, promo ID or promo= pill);
+  // activating here is what this pharmacy's screens play.
   await page.click('#dpTabs button:has-text("Seasonal")');
   assert.equal(await page.isVisible('#promoMeta'), true);
   for (const id of ['#pmName', '#pmToken', '#pmUrl', '#pmHtml', '#pmDel']) assert.equal(await page.isHidden(id), true, id);
   assert.equal(await page.isVisible('#pmTpl'), true);
-  assert.equal(await page.$eval('#pmTpl', (e) => e.closest('label').querySelector('span').textContent), 'Season');
+  assert.equal(await page.$eval('#pmTpl', (e) => e.closest('label').querySelector('span').textContent), 'Currently active promotion');
   assert.equal(await page.isDisabled('#pmTpl'), false);
+  assert.equal(await page.inputValue('#pmTpl'), 'builtin-occasion-fallback');
+  assert.equal(await page.isVisible('#pmActivate'), true);
+  await page.selectOption('#pmTpl', 'builtin-occasion-christmas');
   assert.equal(await page.isHidden('#o0dur'), true);
   assert.equal(await page.isVisible('#occDates'), true, 'the pharmacy view shows the season dates');
-  // The season picked here is this pharmacy's own: its screen plays it, the promotion and the other stores do not move.
-  await page.selectOption('#pmTpl', 'builtin-occasion-easter');
+  // Activated here, Christmas goes on this pharmacy's screens (to 27 Dec); the promotion and other stores do not move.
+  await page.click('#pmActivate');
   await settle(page);
   assert.equal((await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body.templateId, 'builtin-occasion-christmas');
-  assert.equal((await api('GET', '/api/screens/VIC-MP-005', { token: null })).body.promotions.occasions.template.occasion, 'easter');
-  assert.equal((await api('GET', '/api/screens/VIC-MP-001', { token: null })).body.promotions.occasions.template.occasion, 'christmas');
-  await page.selectOption('#pmTpl', 'builtin-occasion-christmas');
-  await settle(page);
-  assert.equal((await api('GET', '/api/screens/VIC-MP-005', { token: null })).body.promotions.occasions.template.occasion, 'christmas');
+  assert.deepEqual((await api('GET', '/api/screens/VIC-MP-005', { token: null })).body.promotions.occasions.content.activation, { occasion: 'christmas', until: '2026-12-27' });
+  assert.equal((await api('GET', '/api/screens/VIC-MP-001', { token: null })).body.promotions.occasions.content.activation, undefined);
   // The season's start and end dates are the pharmacy's own too: changed here, only its screen follows them.
   assert.equal(await page.isVisible('#occDates'), true, 'the pharmacy view shows the season dates');
   assert.match(await page.textContent('#occYearly'), /Every year:\d{1,2} [A-Z][a-z]{2}( to \d{1,2} [A-Z][a-z]{2})?$/);
@@ -1044,12 +1091,15 @@ test('pharmacy view: admin/?store=<code> shows only that pharmacy\'s promotions,
   assert.equal(await page.textContent('#occWhen'), '15 Dec to 24 Dec');
   await settle(page);
   assert.equal((await api('GET', '/api/screens/VIC-MP-005', { token: null })).body.promotions.occasions.content.occasions.christmas.to, '12-24');
+  // The activation still ends on Christmas's (new) end date.
+  assert.equal((await api('GET', '/api/screens/VIC-MP-005', { token: null })).body.promotions.occasions.content.activation.until, '2026-12-24');
   assert.notEqual((await api('GET', '/api/screens/VIC-MP-001', { token: null })).body.promotions.occasions.content.occasions.christmas.to, '12-24');
-  // The Season drop-down shows each season's dates after its name here too; the selected season's match its Dates card.
+  // The drop-down shows each season's dates after its name here too; the selected season's match its Dates card.
   const lockOpts = await page.$$eval('#pmTpl option', (o) => o.map((x) => x.textContent));
-  assert.equal(lockOpts.length, 6);
-  for (const t of lockOpts) assert.match(t, /^.+ \(\d{1,2} [A-Z][a-z]{2}( – \d{1,2} [A-Z][a-z]{2})?\)$/, t);
-  assert.equal(lockOpts[0], 'Christmas (15 Dec – 24 Dec)');
+  assert.equal(lockOpts.length, 7);
+  assert.equal(lockOpts[0], 'Fallback');
+  for (const t of lockOpts.slice(1)) assert.match(t, /^.+ \(\d{1,2} [A-Z][a-z]{2}( – \d{1,2} [A-Z][a-z]{2})?\)( · on display)?$/, t);
+  assert.equal(lockOpts[1], 'Christmas (15 Dec – 24 Dec) · on display');
   // Seasonal content is the pharmacy's own: no "Inherited from master", and Copy from master (asked twice) takes the
   // master's dates and copy for this season as they are now.
   assert.match(await page.textContent('.inh[data-sec="occasions"] .inh-pill'), /This pharmacy's own/);
@@ -1256,8 +1306,8 @@ test('+ Add token above every headline field lists the available tokens and inse
   await ctx.close();
 });
 
-test('seasonal master: editing its copy, dates, timings or season changes no store\'s screen; a store takes it only by Copy from master', async () => {
-  const { ctx, page, errors } = await open();
+test('seasonal master: editing its copy, dates or timings changes no store\'s screen; a store takes it only by Copy from master', async () => {
+  const { ctx, page, errors } = await open('dev-admin', { date: '2026-07-01T12:00:00' });
   const CODES = ['VIC-MP-001', 'VIC-MP-002', 'VIC-MP-003', 'VIC-MP-004', 'VIC-MP-005'];
   const seasonal = async (code) => { const p = (await api('GET', `/api/screens/${code}`, { token: null })).body.promotions.occasions; return { template: p.template, content: p.content }; };
   const before = {};
@@ -1268,8 +1318,11 @@ test('seasonal master: editing its copy, dates, timings or season changes no sto
   await page.click('#dpTabs button:has-text("Seasonal")');
   await page.click('#playBtn'); // pause
   const master = async () => (await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body;
-  const season = (await master()).templateId.replace('builtin-occasion-', '');
-  // Copy, a beat's seconds, the dates, then the season itself.
+  const templateId = (await master()).templateId, season = 'christmas';
+  // The master has no screens: no Activate on display; picking a season previews it.
+  assert.equal(await page.isHidden('#pmActivate'), true);
+  await page.selectOption('#pmTpl', `builtin-occasion-${season}`);
+  // Copy, a beat's seconds, the dates, then previewing another season.
   await page.fill('#o0text', 'Master edit that no store asked for');
   await page.fill('#o0dur', '9');
   if (await page.$('#occTod')) await page.selectOption('#occTod', '20');
@@ -1278,7 +1331,7 @@ test('seasonal master: editing its copy, dates, timings or season changes no sto
   await page.selectOption('#pmTpl', other);
   await settle(page);
   const m = await master();
-  assert.equal(m.templateId, other, 'the master itself did change');
+  assert.equal(m.templateId, templateId, 'picking in the drop-down saves nothing');
   assert.equal(m.master.occasions[season].beats[0].text, 'Master edit that no store asked for');
   assert.equal(m.master.occasions[season].beats[0].dur, 9);
   for (const c of CODES) assert.deepEqual(await seasonal(c), before[c], `${c}: its screen plays exactly what it played`);
@@ -1287,13 +1340,15 @@ test('seasonal master: editing its copy, dates, timings or season changes no sto
   await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-003');
   await page.waitForFunction(() => window.pharmacyAdmin.state.cur && window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-003');
   await page.click('#dpTabs button:has-text("Seasonal")');
-  assert.equal(await page.inputValue('#pmTpl'), `builtin-occasion-${season}`, 'the store still shows its own season');
+  assert.equal(await page.inputValue('#pmTpl'), 'builtin-occasion-fallback', 'the store shows what it plays');
+  await page.selectOption('#pmTpl', `builtin-occasion-${season}`);
   await page.click('#occCopyMaster');
   await page.click('#occCopyMaster');
   await settle(page);
   const copied = await seasonal('VIC-MP-003');
   assert.equal(copied.content.occasions[season].beats[0].text, 'Master edit that no store asked for');
-  assert.equal(copied.template.occasion, season, 'copying a season does not change which season the store plays');
+  assert.equal(copied.template.occasion, 'fallback', 'copying a season does not change what the store plays');
+  assert.equal(copied.content.activation, before['VIC-MP-003'].content.activation, 'nor activates it');
   for (const c of CODES.filter((x) => x !== 'VIC-MP-003')) assert.deepEqual(await seasonal(c), before[c], c);
   assert.deepEqual(errors, []);
   await ctx.close();

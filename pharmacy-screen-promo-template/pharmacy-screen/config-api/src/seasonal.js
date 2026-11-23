@@ -4,11 +4,12 @@
 //
 // For the Seasonal promotion (a promotion whose template is one of the
 // built-in season templates) a pharmacy never follows the master live. Its
-// season (which one plays outside every season's dates), and every season's
-// copy, dates and timings, are its own:
+// "Activate on display", and every season's copy, dates and timings (the
+// fallback's copy too), are its own:
 //
-//   content[<promotion id>].season     "christmas" | "new-year" | …
+//   content[<promotion id>].activation {occasion, until: "YYYY-MM-DD"}, one-off (cleanActivation)
 //   content[<promotion id>].occasions  {<season>: {beats, from?, to?}}
+//   content[<promotion id>].season     the old Season pick (before 23 Nov 2026); kept, no longer published
 //   detached[<promotion id>]           includes "occasions"
 //
 // The master (promotion.master, promotion.templateId) is only where that
@@ -73,4 +74,17 @@ function ownSeasonal(pharmacy, promotions) {
   return content ? { ...pharmacy, content, detached } : null;
 }
 
-module.exports = { SEASON_IDS, seasonOfPromotion, seasonFor, ownSeasonal };
+const YMD = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+/**
+ * A pharmacy's "Activate on display" (content[<promotion id>].activation): the
+ * promotion it pushed live and the last day it runs, {occasion, until:
+ * "YYYY-MM-DD"} (the scheduled end date of that season, worked out by the
+ * editor with js/render.js activationUntil()). A full date, so it ends and does
+ * not come back the next year. Anything malformed is treated as absent: null.
+ */
+function cleanActivation(a) {
+  if (!isObj(a) || !SEASON_IDS.includes(a.occasion) || !YMD.test(String(a.until || ""))) return null;
+  return { occasion: a.occasion, until: a.until };
+}
+
+module.exports = { SEASON_IDS, seasonOfPromotion, seasonFor, ownSeasonal, cleanActivation };

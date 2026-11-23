@@ -109,7 +109,7 @@
         <div class="meta-row">
           <label class="f"><span>Promotion name</span><input id="pmName"></label>
           <label class="f"><span>Promo ID <span class="ms" style="font-size:14px;cursor:help" title="Personalisation Hub Core plays this promotion with promo=&lt;ID&gt; in the campaign URL.">info</span></span><input id="pmToken"></label>
-          <label class="f"><span>Template</span><span class="tplpick"><select id="pmTpl" autocomplete="off"></select><button type="button" id="pmHtml" title="Edit or clone this template"><span class="ms">code</span><span class="tlb">Edit HTML</span></button></span></label>
+          <label class="f"><span>Template</span><span class="tplpick"><select id="pmTpl" autocomplete="off"></select><button type="button" id="pmHtml" title="Edit or clone this template"><span class="ms">code</span><span class="tlb">Edit HTML</span></button><button type="button" id="pmActivate" class="primary" hidden><span class="ms">cast</span>Activate on display</button></span></label>
         </div>
         <div class="grid3" id="pmSched"></div>
         <div class="pm-row"><code class="pill" id="pmUrl" style="font:12px ui-monospace,Menlo,Consolas,monospace"></code><span class="hint" id="pmErr" style="color:var(--err)" hidden></span>
@@ -179,15 +179,15 @@
 
   <div class="pv">
     <div class="tabs" role="tablist" id="orTabs" style="justify-self:center"><button role="tab" data-or="portrait" aria-selected="true"><span class="ms">stay_current_portrait</span>Portrait</button><button role="tab" data-or="landscape" aria-selected="false"><span class="ms">stay_current_landscape</span>Landscape</button></div>
-    <div class="pvnote">
-      <span class="pill" id="pvData">Sample opening hours</span>
-      <span class="infowrap"><span class="ms" id="pvInfo" tabindex="0" role="img" aria-label="About the sample opening hours" aria-describedby="pvTip">info</span><span class="infotip" id="pvTip" role="tooltip">The preview uses sample opening hours (Monday to Friday 9:00 am to 5:30 pm, Saturday 9:00 am to 1:00 pm). Each screen uses its own store's actual opening and closing hours from Personalisation Hub, for the day and time the promotion plays.</span></span>
-    </div>
     <div class="stage" id="stage"><div class="screen" id="screen"></div></div>
     <div class="tl" id="tl" role="tablist" aria-label="Scenes"></div>
+    <span class="tltime" id="tlTime"></span>
     <div class="controls">
       <button id="playBtn" class="primary"><span class="ms" id="playIc">pause</span><span id="playTx">Pause</span></button>
-      <span class="tltime" id="tlTime"></span>
+      <div class="pvnote">
+        <span class="pill" id="pvData">Sample opening hours</span>
+        <span class="infowrap"><span class="ms" id="pvInfo" tabindex="0" role="img" aria-label="About the sample opening hours" aria-describedby="pvTip">info</span><span class="infotip" id="pvTip" role="tooltip">The preview uses sample opening hours (Monday to Friday 9:00 am to 5:30 pm, Saturday 9:00 am to 1:00 pm). Each screen uses its own store's actual opening and closing hours from Personalisation Hub, for the day and time the promotion plays.</span></span>
+      </div>
     </div>
     <div class="cprow" id="cpRow">
       <div class="cpwrap"><button type="button" id="cpUrl" aria-describedby="cpTip"><span class="ms">link</span><span id="cpTx">Copy experience URL</span></button>

@@ -63,7 +63,7 @@ The site root redirects to the admin app. The API is served through the same Hos
 | `/api/health`, `/api/screens/**`, `/api/csp-report`, `/api/admin/**` | `pharmacyScreenConfigApi` (config API) |
 
 Both functions are Cloud Functions (2nd gen) in `australia-southeast1` (Sydney, next to the stores; they ran in
-`us-central1` until 23 Nov 2026, and the deploy removes the old copies), also reachable directly at
+`us-central1` until 23 Nov 2026; the old copies are gone and the deploy never deletes a function), also reachable directly at
 `https://australia-southeast1-rob-ph-demos.cloudfunctions.net/pharmacyScreenConfigApi` and `…/pharmacyScreenPhApi`.
 Neither keeps an instance warm (`PS_MIN_INSTANCES` / `PH_MIN_INSTANCES`, default 0), so the first request after a
 quiet spell has a cold start; keeping one warm is a monthly cost and the owner's decision
@@ -121,10 +121,14 @@ npm run deploy
 
 It installs the functions' dependencies, sets up the one-time infrastructure if it is missing (Google APIs,
 the Hosting site, the media bucket linked to Firebase Storage, the KMS key ring and key and the functions'
-right to use that key only, the site's domains as Auth authorized domains, an image cleanup policy), writes the
-admin editor's Firebase web app config into the staged `admin/config.js` (creating the web app on the first
-run; this step runs with `--skip-setup` too), then deploys Hosting, both functions, the Firestore rules and indexes and the media bucket's Storage rules in one
-`firebase deploy`, and prints the URLs above. Every setup step checks first, so running it again is safe.
+right to use that key only, the site's domains as Auth authorized domains, the function images' cleanup policy),
+writes the admin editor's Firebase web app config into the staged `admin/config.js` (creating the web app on the
+first run; this step runs with `--skip-setup` too), then deploys both functions on their own, then Hosting, the
+Firestore rules and indexes and the media bucket's Storage rules, checks that the site's API answers through
+Hosting, and prints the URLs above. A functions error stops the deploy before Hosting (so the site keeps the
+functions it had), except the "could not set up cleanup policy" message, which is passed with a warning; an API
+that does not answer afterwards fails the deploy. Every setup step checks first or is idempotent, so running it
+again is safe.
 
 - `npm run deploy:plan` prints every command without running anything.
 - `npm run deploy -- --skip-setup` deploys only (what CI runs).
@@ -153,7 +157,23 @@ shows `main`, not what is in testing. It signs in with the repository secret `FI
 a key for the rob-ph-demos service account `pharmacy-screen-ci` with the Firebase Admin, Cloud Functions Admin,
 Service Account User and Cloud Build Editor roles.
 
-Cloud Functions are always deployed by the command above or CI, never by hand.
+Those roles do not include setting the function images' Artifact Registry cleanup policy, so CI skips it (it is a
+setup step). **The project owner runs this once** (it is per region; again after any move to a new region):
+
+```bash
+npx firebase-tools@14.27.0 functions:artifacts:setpolicy --location australia-southeast1 --days 7 --force --project rob-ph-demos
+```
+
+`npm run deploy` without `--skip-setup` runs the same command. Until it has run, CI's "Deploy the functions" step
+ends in "Functions successfully deployed but could not set up cleanup policy"; the deploy passes that one message
+with a warning and carries on, and stops before Hosting on any other functions error. Granting `pharmacy-screen-ci`
+Artifact Registry Administrator (`roles/artifactregistry.admin`) would let it set the policy itself, but that role is
+broader than a deploy account needs, so the one-time owner command is the way
+([docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) → "Image cleanup policy").
+
+Cloud Functions are always deployed by the command above or CI, never by hand. The deploy never deletes a
+function; moving them to another region follows [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) → "Moving the functions to
+another region".
 
 ## miPharmacy's environment (AWS)
 

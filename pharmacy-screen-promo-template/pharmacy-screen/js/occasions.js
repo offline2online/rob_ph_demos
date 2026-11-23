@@ -1,4 +1,4 @@
-// The six Seasonal designs (internally "occasions") (approved 20 Nov 2026): standalone, full-screen animations, one per occasion, with no brand
+// The six Seasonal designs and the Fallback (internally "occasions") (approved 20 Nov 2026): standalone, full-screen animations, one per occasion, with no brand
 // panel, logo, brand colours, icon tiles or Open today bar. The source below is the approved prototype's template
 // definitions (board documents "Occasion template designs", parts 1 and 2), unchanged except that each template's
 // copy block (<div class="txt">) is left out: js/render.js draws the copy from each pharmacy's own content
@@ -204,6 +204,47 @@ T.push({
 @container occ (orientation:landscape){.occ-anzac .poppy{left:24%;top:30%;width:36cqmin;height:36cqmin;margin-left:-18cqmin}.occ-anzac .txt{inset:20% 8% 24% 42%}.occ-anzac .horizon{bottom:16%}}
 `});
 
+/* ---------- 7. Fallback ("Thank you"): the pharmacy's own brand colours, logo and name; 7 s, beats that build up ----------
+   Added 23 Nov 2026, last so the seeded scatter above is unchanged (it uses no random numbers). Unlike the seasons it
+   is branded: js/render.js sets --b-p (primary), --b-p2 (a brighter primary) and --b-a (accent) on .occ, and puts the
+   logo (.lg) above the name in beat 3. 0-2 s the brand colour fills the screen and "Thank you, ${Suburb}" fades and
+   slides up; 2-5 s "for supporting your local pharmacy" comes in beneath and holds; 5-7 s the logo and name settle in
+   at the bottom with a gentle scale and a shimmer. The beats stay on screen together (a column, so they never
+   overlap); on a loop (the editor) they all fade out in the last half second, played once (the player) they stay. */
+T.push({
+  id:'thankyou', name:'Fallback', when:'Whenever no season is on', uses:'Suburb + store name, logo, brand colours',
+  fx:`<div class="fx fill anim"></div><div class="fx glow"></div>`,
+  css:`
+.occ-thankyou{--display:Figtree,Roboto,'Helvetica Neue',Arial,sans-serif;--body:Figtree,Roboto,'Helvetica Neue',Arial,sans-serif;--from:translateY(6cqmin);--to:none;--ease:cubic-bezier(.22,1,.36,1);background:#f1f3f8;color:#fff}
+.occ-thankyou .fill{inset:0;background:linear-gradient(165deg,var(--b-p2,#2b2e9e) 0%,var(--b-p,#0f1050) 62%);animation:tyFill 7s cubic-bezier(.65,0,.35,1) infinite both}
+@keyframes tyFill{0%{clip-path:circle(0% at 50% 42%)}16%,100%{clip-path:circle(150% at 50% 42%)}}
+.occ-thankyou .glow{inset:0;background:radial-gradient(60% 40% at 50% 40%,rgba(255,255,255,.12),transparent 70%),radial-gradient(50% 30% at 50% 100%,color-mix(in srgb,var(--b-a,#5ee6b0) 28%,transparent),transparent 75%)}
+.occ-thankyou .txt{inset:12% 8% 7%;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;place-items:normal}
+.occ-thankyou .b{grid-area:auto;position:relative;width:100%;animation-duration:7s;animation-iteration-count:infinite}
+.occ-thankyou .b1{margin-top:auto;animation-name:tyB1}
+.occ-thankyou .b2{margin:3cqmin 0 auto;animation-name:tyB2}
+.occ-thankyou .b3{margin-top:4cqmin;animation-name:tyB3;overflow:hidden}
+@keyframes tyB1{0%{opacity:0;transform:var(--from)}11%,93%{opacity:1;transform:none}100%{opacity:0;transform:none}}
+@keyframes tyB2{0%,28.6%{opacity:0;transform:var(--from)}40%,93%{opacity:1;transform:none}100%{opacity:0;transform:none}}
+@keyframes tyB3{0%,71.4%{opacity:0;transform:scale(.9)}84%,93%{opacity:1;transform:none}100%{opacity:0;transform:none}}
+@keyframes tyB1Once{0%{opacity:0;transform:var(--from)}11%,100%{opacity:1;transform:none}}
+@keyframes tyB2Once{0%,28.6%{opacity:0;transform:var(--from)}40%,100%{opacity:1;transform:none}}
+@keyframes tyB3Once{0%,71.4%{opacity:0;transform:scale(.9)}84%,100%{opacity:1;transform:none}}
+.occ.occ-thankyou.once .b{animation-iteration-count:1}
+.occ.occ-thankyou.once .b1{animation-name:tyB1Once}.occ.occ-thankyou.once .b2{animation-name:tyB2Once}.occ.occ-thankyou.once .b3{animation-name:tyB3Once}
+.occ.occ-thankyou.once .fill{animation-iteration-count:1}
+.occ.occ-thankyou.hold .b.past{opacity:1}
+.occ-thankyou .b3::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(105deg,transparent 38%,rgba(255,255,255,.32) 50%,transparent 62%);transform:translateX(-130%);animation:tyShine 7s ease-in-out infinite}
+@keyframes tyShine{0%,80%{transform:translateX(-130%)}96%,100%{transform:translateX(130%)}}
+.occ-thankyou .hl{font:800 11cqmin/1.04 var(--display);letter-spacing:-.01em;text-shadow:0 .4cqmin 2.4cqmin rgba(0,0,0,.18)}
+.occ-thankyou .sub{font:500 6.4cqmin/1.18 var(--body);opacity:.94}
+.occ-thankyou .lg{display:flex;justify-content:center;margin-bottom:2.4cqmin}
+.occ-thankyou .lg img{height:15cqmin;width:auto;max-width:70%;object-fit:contain;padding:2cqmin 3.4cqmin;border-radius:2cqmin;background:#fff;box-shadow:0 1cqmin 4cqmin rgba(0,0,0,.18)}
+.occ-thankyou .nm{font:700 5cqmin/1.3 var(--body);letter-spacing:.02em;padding-bottom:.6cqmin}
+@container occ (orientation:landscape){.occ-thankyou .txt{inset:9% 12% 6%}.occ-thankyou .hl{font-size:12cqmin}.occ-thankyou .lg img{height:13cqmin}}
+@media (prefers-reduced-motion:reduce){.occ-thankyou .b3::after{animation:none;opacity:0}.occ-thankyou .fill{clip-path:none}}
+`});
+
 /** Design key ('christmas', 'newyear', …) -> {fx, css}: the decoration markup and the template's own CSS. */
 export const OCCASION_DESIGNS = Object.fromEntries(T.map((t) => [t.id, { fx: t.fx, css: t.css }]));
 
@@ -224,5 +265,5 @@ const HOLD = `
 // a copy of its design's keyframes that ends visible instead of fading out. The decorations (.fx) keep moving.
 // Reduced motion: COMMON stills .fx, .fx * and .anim but not their ::before/::after (New Year's flashes, Easter's egg
 // shadows), so the last rule above stills those too. The beats (.b) keep changing.
-/** All six templates' CSS: the shared base, each design, the held-beat and reduced-motion rules. Injected once per document. */
+/** All seven templates' CSS (six seasons and the fallback): the shared base, each design, the held-beat and reduced-motion rules. Injected once per document. */
 export const OCCASION_CSS = scaleFonts(COMMON + T.map((t) => t.css).join('')) + HOLD;
