@@ -11,7 +11,7 @@ import { createSaveQueue } from './save-queue.js';
 import { rt, bindRichText } from './rich-text.js';
 import { openPicker, closePicker } from './icon-picker.js';
 import * as M from './model.js';
-import { storeModel, resolvePromotion, sequence, sceneName, renderScene, renderMessage, DEFAULT_HTML, footerConfig, boost, tileTop, occasionOf, occasionFieldName, beatSeconds, seasonDates, seasonDatesOf, fmtMonthDay } from '../../js/render.js';
+import { storeModel, resolvePromotion, sequence, sceneName, renderScene, renderMessage, DEFAULT_HTML, footerConfig, boost, tileTop, occasionOf, occasionFieldName, beatSeconds, seasonDates, seasonDatesOf, fmtMonthDay, scheduledOccasion, activationUntil, activationOn, FALLBACK_OCCASION } from '../../js/render.js';
 import { esc, TEMPLATE_TOKENS } from '../../js/tokens.js';
 import { geom } from '../../js/fit-text.js';
 import { nowInState, storeNow } from '../../js/hours.js';
@@ -60,9 +60,15 @@ const promo = (id = S.dpTab) => S.promotions.find((p) => p.id === id) || S.promo
 const baseOf = (id = S.dpTab) => (promo(id) ? M.baseOfTemplate(S.templates, promo(id).templateId) : 'scenes');
 const isHours = (id = S.dpTab) => baseOf(id) === 'hours';
 const isOcc = (id = S.dpTab) => baseOf(id) === 'occasion';
-// The season on screen for a Seasonal promotion: the pharmacy's own (M.seasonOf); in the master template view, the
-// promotion's (where a new pharmacy starts).
-const seasonOf = (p = promo()) => M.seasonOf(p, S.cur && !S.cur.isMaster && S.cur.content ? S.cur.content[p.id] : null);
+// A Seasonal promotion's "Currently active promotion" drop-down (23 Nov 2026). liveSeasonOf: what this pharmacy's
+// screens play today (M.seasonOf, as the screen works it out: a running "Activate on display", else the season whose
+// dates hold today, else the Fallback; the master template has no screens, so just its dates). seasonOf: what the
+// editor shows and edits, the one picked in the drop-down to preview (occPick, never saved), else the live one.
+// Picking one previews it here only; "Activate on display" is what changes the screens.
+const occPick = {};
+const occPickKey = (p) => `${S.cur ? (S.cur.isMaster ? 'master' : S.cur.id || 'new') : ''}|${p.id}`;
+const liveSeasonOf = (p = promo()) => M.seasonOf(p, S.cur && S.cur.content ? S.cur.content[p.id] : null);
+const seasonOf = (p = promo()) => occPick[occPickKey(p)] || liveSeasonOf(p);
 const tmpl = (id) => M.findTemplate(S.templates, id);
 const curT = () => tmpl(promo().templateId);
 /** Templates are shared by every pharmacy: read-only for built-ins, and for everything in the pharmacy view. */
@@ -95,7 +101,8 @@ function previewModel() {
   const cfg = M.renderConfig({ pharmacies: [ph], promotions: S.promotions, templates: S.templates });
   content();
   const store = storeModel(M.campaignForPreview(null, previewCode(), ph.name), cfg);
-  const play = resolvePromotion(cfg, store, promo().promoId);
+  // A Seasonal promotion previews the one in the Currently active promotion drop-down.
+  const play = resolvePromotion(cfg, store, promo().promoId, isOcc() ? { occasion: seasonOf() } : {});
   return { cfg, store, play };
 }
 
@@ -637,16 +644,17 @@ function renderOccasion(B, d) {
   const o = d.occasions[occ.id];
   const f = (id, lab, val) => `<label class="f"><span>${lab}</span><input id="${id}" value="${esc(val)}"></label>`;
   const field = (layout, x, i, key) => (key === 'label' ? f(`o${i}label`, occasionFieldName(layout, 'label'), x.label) : rt(`o${i}text`, occasionFieldName(layout, 'text'), x.text));
+  if (occ.fallback) return renderFallback(B, occ, o, field);
   const year = new Date().getFullYear(), r = seasonDates(occ.id, o, year), movable = occ.season && occ.season.easter && !seasonDatesOf(o).from;
   const span = (from, to) => fmtMonthDay(from) + (to !== from ? ' to ' + fmtMonthDay(to) : '');
   // Both views show the start and end dates as a yearly schedule ("Every year: 15 Dec to 27 Dec"). The admin view can
   // change them; the pharmacy view shows them read-only (an administrator sets them, like the seconds on screen).
-  const datesHelp = `The screen plays ${occ.name} by itself from the start date to the end date every year, in the store's time zone. Outside every season's dates it plays the season picked above.`;
+  const datesHelp = `The screen plays ${occ.name} by itself from the start date to the end date every year, in the store's time zone. Outside every season's dates it plays the Fallback. Activate on display can start it early; it still ends on the end date.`;
   const pickers = movable ? `<span class="hint" id="occEaster">Good Friday to Easter Monday, worked out each year</span>`
     : `<div class="grid2">${monthDayPick('occFrom', 'Starts', r.from)}${monthDayPick('occTo', 'Ends', r.to)}</div>`;
   const dates = `<div class="slot" id="occDates"><div class="slot-h">Dates<span class="ms help" title="${esc(datesHelp)}">info</span><span class="pill" id="occYearly" style="margin-left:auto;font-weight:400"><span class="ms" style="font-size:14px" aria-hidden="true">event_repeat</span><span>Every year:</span><span id="occWhen">${esc(span(r.from, r.to))}${movable ? ' this year' : ''}</span></span></div>
     ${pickers}</div>`;
-  B.innerHTML = `<span class="pill" id="loopLen" style="justify-self:start">${loopText(M.loopSeconds(o))}</span>
+  B.innerHTML = `<span class="pill" id="loopLen" style="justify-self:start">${loopText(M.loopSeconds(o, undefined, occ.id))}</span>
    <div id="occList" style="display:grid;gap:12px">${dates}${occ.beats.map((layout, i) => {
     const x = o.beats[i], keys = layout.label ? (layout.label.pos === 'below' ? ['text', 'label'] : ['label', 'text']) : ['text'];
     return `<div class="slot" data-o="${i}"><div class="slot-h">Beat ${i + 1}${durInput(`o${i}dur`, beatSeconds(x, occ.beats.length))}</div>
@@ -656,8 +664,11 @@ function renderOccasion(B, d) {
     const setDates = () => {
       o.from = readMonthDay('occFrom'); o.to = readMonthDay('occTo');
       $('occWhen').textContent = span(o.from, o.to);
+      // An "Activate on display" of this season still ends on its (new) end date.
+      const a = d.activation;
+      if (a && a.occasion === occ.id) { const u = activationUntil(occ.id, d.occasions, M.localToday()); if (u) a.until = u; }
       relabelSeasons();
-      changed();
+      changed(); renderActivate();
     };
     ['occFromd', 'occFromm', 'occTod', 'occTom'].forEach((id) => { $(id).onchange = setDates; });
   }
@@ -668,9 +679,23 @@ function renderOccasion(B, d) {
     $(`o${i}dur`).oninput = (e) => {
       const v = M.clampDur(e.target.value);
       if (v === undefined) delete x.dur; else x.dur = v;
-      changed(); $('loopLen').textContent = loopText(M.loopSeconds(o));
+      changed(); $('loopLen').textContent = loopText(M.loopSeconds(o, undefined, occ.id));
     };
   });
+}
+
+/**
+ * The Fallback ("Thank you", what plays whenever no season is on): its copy, beat by beat, in the pharmacy's branding.
+ * It has no dates (a "When it plays" line says so instead) and fixed timings, exactly 7 s (2 + 3 + 2), so no seconds
+ * on screen can be set.
+ */
+function renderFallback(B, occ, o, field) {
+  const when = 'Plays whenever no season is on, in this pharmacy\'s colours with its logo and name. A season takes over on its start date, or when activated on display, and the screens come back here after its end date.';
+  B.innerHTML = `<span class="pill" id="loopLen" style="justify-self:start">${loopText(M.loopSeconds(o, undefined, occ.id))}</span>
+   <div id="occList" style="display:grid;gap:12px"><div class="slot" id="occDates"><div class="slot-h">When it plays<span class="ms help" title="${esc(when)}">info</span><span class="pill" style="margin-left:auto;font-weight:400"><span class="ms" style="font-size:14px" aria-hidden="true">event_busy</span><span>Whenever no season is on</span></span></div></div>
+   ${occ.beats.map((layout, i) => `<div class="slot" data-o="${i}"><div class="slot-h">Beat ${i + 1}<span class="hint" style="margin-left:auto">${occ.durs[i]} s</span></div>
+     <div class="stack">${field(layout, o.beats[i], i, 'text')}</div></div>`).join('')}</div>`;
+  occ.beats.forEach((_, i) => bindRt(`o${i}text`, (v) => { o.beats[i].text = v; }));
 }
 
 // ───────────────────────── promotions (shared) ─────────────────────────
@@ -721,13 +746,48 @@ function tplOptions(sel, withOccasions) {
 // of the pharmacy (or master template) on screen, the same ones as its Dates card, so they follow a change there.
 const seasonOccasions = () => (S.cur && isOcc() ? content().occasions : null);
 function occasionOptions(sel) {
-  const occs = seasonOccasions();
-  return M.OCCASION_CHOICES.map((o) => `<option value="${esc(o.templateId)}" ${o.templateId === sel ? 'selected' : ''}>${esc(M.seasonOptionLabel(o.id, occs))}</option>`).join('');
+  return M.OCCASION_CHOICES.map((o) => `<option value="${esc(o.templateId)}" ${o.templateId === sel ? 'selected' : ''}>${esc(occasionLabel(o.id))}</option>`).join('');
+}
+// A pharmacy's line for what its screens play now ends in " · on display".
+function occasionLabel(id) {
+  const live = S.cur && !S.cur.isMaster && isOcc() ? liveSeasonOf() : '';
+  return M.seasonOptionLabel(id, seasonOccasions()) + (id === live ? ' · on display' : '');
 }
 function relabelSeasons() {
-  const occs = seasonOccasions();
-  for (const opt of $('pmTpl').options) { const id = M.occasionOfTemplate(opt.value); if (id) opt.textContent = M.seasonOptionLabel(id, occs); }
+  for (const opt of $('pmTpl').options) { const id = M.occasionOfTemplate(opt.value); if (id) opt.textContent = occasionLabel(id); }
 }
+const dayText = (ymd) => { const [y, m, d] = String(ymd).split('-'); return `${fmtMonthDay(m + '-' + d)} ${y}`; };
+/**
+ * "Activate on display" beside the drop-down (a pharmacy's Seasonal promotion; not the master template, which has no
+ * screens): pushes the one picked in the drop-down to this pharmacy's screens. Shown as "On display" (disabled) when
+ * that is what they play already. Its tooltip says how long it runs.
+ */
+function renderActivate() {
+  const b = $('pmActivate'), p = promo();
+  const show = !!p && isOcc() && !!S.cur && !S.cur.isMaster;
+  b.hidden = !show;
+  if (!show) return;
+  const c = (S.cur.content && S.cur.content[p.id]) || {}, today = M.localToday();
+  const sel = seasonOf(p), live = liveSeasonOf(p), name = occasionOf(sel).name, act = activationOn(c.activation, today);
+  const on = sel === live;
+  b.disabled = on;
+  b.innerHTML = on ? '<span class="ms">check_circle</span>On display' : '<span class="ms">cast</span>Activate on display';
+  const until = on ? (act ? act.until : '') : activationUntil(sel, c.occasions, today);
+  b.title = on ? `${name} is playing on this pharmacy's screens${until ? ` until ${dayText(until)}, then the schedule carries on` : ''}.`
+    : sel === FALLBACK_OCCASION ? `Put the Fallback on this pharmacy's screens now. It plays until ${occasionOf(live).name} would have ended (${dayText(until)}), then the schedule carries on.`
+    : `Put ${name} on this pharmacy's screens now. It plays until its end date, ${dayText(until)}, then the screens go back to the Fallback. Next year it starts on its own dates again.`;
+  relabelSeasons();
+}
+$('pmActivate').onclick = () => {
+  const p = promo();
+  if (!p || !isOcc() || !S.cur || S.cur.isMaster) return;
+  const c = content(), today = M.localToday(), id = seasonOf(p);
+  // What the schedule plays anyway needs no activation; anything else runs to its end date (activationUntil).
+  const until = id === scheduledOccasion(c.occasions, today) ? '' : activationUntil(id, c.occasions, today);
+  if (until) c.activation = { occasion: id, until }; else delete c.activation;
+  delete occPick[occPickKey(p)];
+  changed(); renderActivate();
+};
 let pmArm = false;
 function renderPromoMeta() {
   const x = promo();
@@ -743,9 +803,10 @@ function renderPromoMeta() {
   $('pmName').readOnly = $('pmToken').readOnly = !!S.lock; $('pmTpl').disabled = !!S.lock && !occ;
   $('pmName').closest('label').hidden = $('pmToken').closest('label').hidden = $('pmUrl').hidden = occOnly;
   // A seasonal promotion picks its season here (read-only built-ins: nothing to edit or clone).
-  $('pmTpl').closest('label').querySelector('span').textContent = occ ? 'Season' : 'Template';
-  $('pmTpl').setAttribute('aria-label', occ ? 'Season' : 'Template');
+  $('pmTpl').closest('label').querySelector('span').textContent = occ ? 'Currently active promotion' : 'Template';
+  $('pmTpl').setAttribute('aria-label', occ ? 'Currently active promotion' : 'Template');
   $('pmHtml').hidden = occ;
+  renderActivate();
   // Schedule: not on Seasonal (its seasons have their own dates, in the Dates card).
   $('pmSched').hidden = occ;
   if (!occ) drawSchedule('pm', x.schedule, (sch) => { if (S.lock) return; const p = promo(); p.schedule = sch; savePromotion(p); });
@@ -780,11 +841,10 @@ $('pmHtml').onclick = () => openHtml();
 $('pmTpl').onchange = (e) => {
   if (S.lock && !isOcc()) return; // the pharmacy view changes only the Seasonal promotion's season
   const p = promo();
-  if (isOcc() && !S.cur.isMaster) {
-    // A pharmacy's season is its own: saved with its content, and only its screens follow.
-    content().season = M.occasionOfTemplate(e.target.value) || seasonOf(p);
-    changed();
-    scene = 0; elapsed = 0; renderDp(); renderJson();
+  if (isOcc()) {
+    // Currently active promotion: a preview only (nothing saved, the screens unchanged) until Activate on display.
+    occPick[occPickKey(p)] = M.occasionOfTemplate(e.target.value) || FALLBACK_OCCASION;
+    scene = 0; elapsed = 0; lastKey = ''; renderDp(); renderJson();
     return;
   }
   p.templateId = e.target.value;

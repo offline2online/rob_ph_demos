@@ -150,10 +150,11 @@ test('Copy experience URL copies the right URL in the PH frame: every promotion,
     await frame.click(`#dpTabs button:has-text("${tab}")`);
     for (const o of ['portrait', 'landscape']) await check(promo, o, tab);
   }
-  // Seasonal: one URL for every season (the screen plays the season whose dates hold the store's date).
+  // Seasonal: one URL for the Fallback and every season (the screen plays the season whose dates hold the store's
+  // date, else the Fallback).
   await frame.click('#dpTabs button:has-text("Seasonal")');
   const seasons = await frame.$$eval('#pmTpl option', (o) => o.map((x) => x.value));
-  assert.equal(seasons.length, 6);
+  assert.equal(seasons.length, 7, 'the Fallback and the six seasons');
   const was = await frame.inputValue('#pmTpl');
   for (const s of seasons) {
     await frame.selectOption('#pmTpl', s);

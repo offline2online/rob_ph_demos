@@ -106,14 +106,15 @@ test('the screen on a mock device plays every promotion in both orientations, ea
 });
 
 // The Season drop-down: a pharmacy's season is its own (config-api/src/seasonal.js), saved with its content.
-async function setSeason(season, pharmacyId = 'seed-pharmacy-vic-mp-001') {
-  const own = (await api('GET', `/api/admin/pharmacies/${pharmacyId}`)).body.content['seed-promotion-occasions'] || {};
-  return api('PUT', `/api/admin/pharmacies/${pharmacyId}/content/seed-promotion-occasions`, { body: { ...own, season } });
+// "Activate on display" as the editor saves it (content.activation); null clears it.
+async function setActivation(occasion, until = '2099-12-31', pharmacyId = 'seed-pharmacy-vic-mp-001') {
+  const { activation: _a, ...own } = (await api('GET', `/api/admin/pharmacies/${pharmacyId}`)).body.content['seed-promotion-occasions'] || {};
+  return api('PUT', `/api/admin/pharmacies/${pharmacyId}/content/seed-promotion-occasions`, { body: occasion ? { ...own, activation: { occasion, until } } : own });
 }
 
-test('Seasonal: promo=occasions plays the standalone Christmas design, signing off with the store name; the pharmacy picks Easter and the same URL plays Easter; in a season\'s dates the screen plays that season by itself', async () => {
-  // date=: a day outside every season's dates, so the season the promotion is set to plays (whatever today is).
-  const url = 'device=DEVICE-VIC-MP-001&promo=occasions&orientation=portrait&scene=1&now=wed-12:00&date=2026-07-01';
+test('Seasonal: promo=occasions plays the standalone Christmas design in its dates, signing off with the store name; outside every season the Fallback; Activate on display plays a season early and ends on its end date', async () => {
+  // date=: a day in Christmas's dates (whatever today is).
+  const url = 'device=DEVICE-VIC-MP-001&promo=occasions&orientation=portrait&scene=1&now=wed-12:00&date=2026-12-20';
   // Nothing at runtime leaves our own origin: fonts and the Christmas photo are self-hosted (no Google Fonts, no Unsplash).
   const outside = [];
   const ctx0 = await browser.newContext({ viewport: { width: 540, height: 960 } });
@@ -143,7 +144,7 @@ test('Seasonal: promo=occasions plays the standalone Christmas design, signing o
   // seconds (Christmas 3 s + 4 s, 7 s, the last beat ending visible); reduced motion stills the decorations and the
   // beats still change.
   const ctx1 = await browser.newContext({ viewport: { width: 960, height: 540 }, reducedMotion: 'reduce' });
-  s = await screen('device=DEVICE-VIC-MP-001&promo=occasions&orientation=landscape&now=wed-12:00&date=2026-07-01', { ctx: ctx1 });
+  s = await screen('device=DEVICE-VIC-MP-001&promo=occasions&orientation=landscape&now=wed-12:00&date=2026-12-20', { ctx: ctx1 });
   const motion = await s.page.evaluate(() => {
     const cs = (q) => getComputedStyle(document.querySelector('#screen ' + q));
     return { root: document.querySelector('#screen .occ').className, sparkle: cs('.gl i').animationName, photo: cs('.photo').animationName, beat: cs('.b1').animationName, loop: cs('.b1').animationDuration, gl: cs('.gl').display, gp: cs('.gp').display };
@@ -153,8 +154,8 @@ test('Seasonal: promo=occasions plays the standalone Christmas design, signing o
 
   // Every design under reduced motion: no decoration (or its ::before/::after) animates, the beats still do.
   try {
-    for (const id of ['christmas', 'new-year', 'australia-day', 'valentines-day', 'easter', 'anzac-day']) {
-      assert.equal((await setSeason(id)).status, 200, id);
+    for (const id of ['fallback', 'christmas', 'new-year', 'australia-day', 'valentines-day', 'easter', 'anzac-day']) {
+      assert.equal((await setActivation(id)).status, 200, id);
       for (const orientation of ['portrait', 'landscape']) {
         const ctx = await browser.newContext({ viewport: orientation === 'portrait' ? { width: 540, height: 960 } : { width: 960, height: 540 }, reducedMotion: 'reduce' });
         s = await screen(`device=DEVICE-VIC-MP-001&promo=occasions&orientation=${orientation}&now=wed-12:00&date=2026-07-01`, { ctx });
@@ -177,10 +178,30 @@ test('Seasonal: promo=occasions plays the standalone Christmas design, signing o
       }
     }
   } finally {
-    await setSeason('christmas');
+    await setActivation(null);
   }
 
-  assert.equal((await setSeason('easter')).status, 200);
+  // Outside every season's dates: the Fallback, in the pharmacy's own colours with its logo, name and suburb.
+  for (const orientation of ['portrait', 'landscape']) {
+    s = await screen(`device=DEVICE-VIC-MP-001&promo=occasions&orientation=${orientation}&scene=2&now=wed-12:00&date=2026-07-01`, { landscape: orientation === 'landscape' });
+    info = await s.page.evaluate(() => window.pharmacyScreen.info);
+    assert.deepEqual([info.occasion, info.scenes], ['fallback', ['Beat 1', 'Beat 2', 'Beat 3']]);
+    await s.page.evaluate(() => window.pharmacyScreen.settled());
+    const text = await screenText(s.page);
+    assert.match(text, /Thank you, \w/);
+    assert.match(text, /for supporting your local pharmacy/);
+    assert.ok(text.includes(name), 'signs off with the pharmacy name');
+    assert.ok(!text.includes('${'), 'no token shows as written');
+    const fb = await s.page.evaluate(() => ({ root: document.querySelector('#screen .occ').className, p: document.querySelector('#screen .occ').style.getPropertyValue('--b-p'), logo: document.querySelectorAll('#screen .occ .lg img').length }));
+    assert.equal(fb.root, 'occ occ-thankyou hold');
+    assert.match(fb.p, /^#[0-9a-f]{6}$/i, 'the brand colour');
+    assert.equal(fb.logo, 1, 'the pharmacy logo above its name');
+    assert.deepEqual(await s.page.evaluate(() => window.pharmacyScreen.audit()), [], `Fallback ${orientation}`);
+    await s.ctx.close();
+  }
+
+  // Activate on display: Easter early, until Easter Monday 2027.
+  assert.equal((await setActivation('easter', '2027-03-29')).status, 200);
   try {
     for (const orientation of ['portrait', 'landscape']) {
       s = await screen(url.replace('portrait', orientation).replace('scene=2', 'scene=0'), { landscape: orientation === 'landscape' });
@@ -194,9 +215,9 @@ test('Seasonal: promo=occasions plays the standalone Christmas design, signing o
       }
       await s.ctx.close();
     }
-    // Still set to Easter, but on a day in another season's dates the same URL plays that season, with nobody
-    // changing anything: Christmas (15-27 Dec), New Year's (28 Dec-5 Jan), Anzac Day (25 Apr).
-    for (const [date, want] of [['2026-12-20', 'christmas'], ['2027-01-02', 'new-year'], ['2027-04-25', 'anzac-day'], ['2027-03-26', 'easter']]) {
+    // Activated, Easter plays to its end date; the day after, the schedule again (the Fallback, then Anzac Day on its
+    // day), and the next year nothing is carried over: Christmas on its own dates.
+    for (const [date, want] of [['2026-12-20', 'easter'], ['2027-03-29', 'easter'], ['2027-03-30', 'fallback'], ['2027-04-25', 'anzac-day'], ['2027-12-20', 'christmas']]) {
       s = await screen(`device=DEVICE-VIC-MP-001&promo=occasions&orientation=portrait&scene=0&now=wed-12:00&date=${date}`);
       info = await s.page.evaluate(() => window.pharmacyScreen.info);
       assert.equal(info.occasion, want, date);
@@ -204,19 +225,20 @@ test('Seasonal: promo=occasions plays the standalone Christmas design, signing o
       await s.ctx.close();
     }
     // A playing screen switches by itself at the store's midnight: 23:58 on 14 Dec in Melbourne (UTC+11) plays
-    // Easter (no season's dates), and two minutes later, 15 Dec, Christmas, without a reload.
+    // the Fallback (no season's dates, no activation), and two minutes later, 15 Dec, Christmas, without a reload.
+    assert.equal((await setActivation(null)).status, 200);
     const cctx = await browser.newContext({ viewport: { width: 540, height: 960 } });
     const cpage = await cctx.newPage();
     await cpage.clock.install({ time: new Date('2026-12-14T12:58:00Z') });
     await cpage.goto(`${dev.base}/pharmacy-screen.html?device=DEVICE-VIC-MP-001&promo=occasions&orientation=portrait`);
     await cpage.waitForFunction(() => window.pharmacyScreen && window.pharmacyScreen.info, null, { timeout: 20000 });
-    assert.equal(await cpage.evaluate(() => window.pharmacyScreen.info.occasion), 'easter');
+    assert.equal(await cpage.evaluate(() => window.pharmacyScreen.info.occasion), 'fallback');
     await cpage.evaluate(() => { window.__marker = 1; });
     await pass(cpage, 3 * 60 * 1000);
     assert.deepEqual(await cpage.evaluate(() => [window.pharmacyScreen.info.occasion, window.pharmacyScreen.info.auto, window.__marker]), ['christmas', true, 1]);
     await cctx.close();
   } finally {
-    await setSeason('christmas');
+    await setActivation(null);
   }
 });
 

@@ -40,7 +40,7 @@ async function setup() {
 test("a store starts from the master, then nothing done to the master reaches it", async () => {
   const { ok, promo, screen } = await setup();
   const before = { a: (await screen("VIC-MP-001")).seasonal, b: (await screen("VIC-MP-003")).seasonal };
-  assert.equal(before.a.template.occasion, "christmas");
+  assert.equal(before.a.template.occasion, "fallback"); // outside every season's dates: the fallback
   assert.equal(before.a.content.occasions.christmas.beats[0].text, "Merry Christmas");
 
   // Copy, dates, timings and the season itself, all changed on the master.
@@ -81,16 +81,21 @@ test("each store picks its own season and dates; only its own screen follows", a
   mine.occasions.christmas.to = "12-26";
   await ok("PUT", `/api/admin/pharmacies/${ocean.id}/content/${promo.id}`, { as: "ocean", body: mine });
   const o = (await screen("VIC-MP-003")).seasonal, b = (await screen("VIC-MP-001")).seasonal;
-  assert.equal(o.template.occasion, "easter");
-  assert.equal(o.template.id, "builtin-occasion-easter");
+  // The old Season pick no longer changes what is published: both play the fallback outside their seasons.
+  assert.equal(o.template.occasion, "fallback");
+  assert.equal(o.template.id, "builtin-occasion-fallback");
   assert.equal(o.content.occasions.christmas.from, "12-10");
-  assert.equal(b.template.occasion, "christmas");
+  assert.equal(b.template.occasion, "fallback");
   assert.equal(b.content.occasions.christmas.from, undefined);
   // A store user still cannot touch the master.
   assert.equal((await call("PATCH", `/api/admin/promotions/${promo.id}`, { as: "ocean", body: { templateId: "builtin-occasion-easter" } })).status, 403);
-  // A season that does not exist falls back to the promotion's, never to nothing.
+  // A store user's "Activate on display" reaches only its own screen.
+  await ok("PUT", `/api/admin/pharmacies/${ocean.id}/content/${promo.id}`, { as: "ocean", body: { ...mine, activation: { occasion: "easter", until: "2027-03-29" } } });
+  assert.deepEqual((await screen("VIC-MP-003")).seasonal.content.activation, { occasion: "easter", until: "2027-03-29" });
+  assert.equal((await screen("VIC-MP-001")).seasonal.content.activation, undefined);
+  // Whatever is saved, the template published is the fallback, never nothing.
   await ok("PUT", `/api/admin/pharmacies/${ocean.id}/content/${promo.id}`, { as: "ocean", body: { ...mine, season: "halloween" } });
-  assert.equal((await screen("VIC-MP-003")).seasonal.template.occasion, "christmas");
+  assert.equal((await screen("VIC-MP-003")).seasonal.template.occasion, "fallback");
 });
 
 test("copy from master is the store's own act: clearing its seasonal content takes the master as it is now", async () => {
@@ -114,7 +119,7 @@ test("a pharmacy created later starts from the master as it is then; other promo
   const fresh = await ok("POST", "/api/admin/pharmacies", { body: { storeCode: "VIC-MP-009", name: "New", colours: COLOURS } });
   assert.equal(fresh.content[promo.id].season, "easter");
   const s = (await screen("VIC-MP-009")).seasonal;
-  assert.equal(s.template.occasion, "easter");
+  assert.equal(s.template.occasion, "fallback");
   assert.equal(s.content.occasions.christmas.beats[0].text, "This year's line");
   // Morning is untouched by any of this: a master edit reaches every store.
   await ok("PATCH", `/api/admin/promotions/${morning.id}`, { body: { master: { greeting: "G'day" } } });

@@ -162,12 +162,26 @@ pick the season and set **Starts** and **Ends** in its **Dates** card (above its
 the schedule as it repeats, for example **Every year: 15 Dec to 27 Dec** (Easter: this year's Good Friday to
 Easter Monday).
 
-In place of Template, the Seasonal promotion has a **Season** drop-down: Christmas, New Year's, Australia
-Day, Valentine's Day, Easter, Anzac Day. It picks the season you are editing and previewing, and the season the
-screens play outside every season's dates. Each line shows the season's start and end dates in brackets after its
+Outside every season's dates the screens play the **Fallback**: the pharmacy's brand colours fill the screen,
+"Thank you, ${Suburb}" slides up, "for supporting your local pharmacy" comes in beneath it, then the pharmacy's
+logo and name settle in at the bottom; exactly 7 seconds. A season takes over on its start date and the screens
+come back to the Fallback the day after its end date, so a screen is never empty. Which pharmacies show these
+promotions at all is set in Personalisation Hub: the campaign is targeted at the promotion store segment, and a
+pharmacy outside it shows none of them.
+
+In place of Template, the Seasonal promotion has a **Currently active promotion** drop-down: Fallback, Christmas,
+New Year's, Australia Day, Valentine's Day, Easter, Anzac Day. It opens on what the pharmacy's screens play today
+(the line ends in **· on display**). Picking another one previews and edits it here only: the screens do not
+change. **Activate on display**, beside it, puts the one picked on that pharmacy's screens now. It is a one-off:
+a season activated early still ends on its scheduled end date (the button's tooltip says which day), then the
+screens go back to the Fallback, and next year it starts on its own dates again. Activating the Fallback during a
+season shows the Fallback until that season would have ended. The button reads **On display** when the one picked
+is already playing. The master template has no screens, so it has no Activate on display. Each season's line
+shows its start and end dates in brackets after its
 name, for example **Christmas (15 Dec – 27 Dec)** (one date for a one-day season: **Australia Day (26 Jan)**;
 Easter shows this year's Good Friday to Easter Monday). They are the dates in the season's **Dates** card, and
-change as soon as you change them there. The Season drop-down and the **Dates** card save to the pharmacy on
+change as soon as you change them there. Dates changed in the **Dates** card are that pharmacy's schedule from
+then on, every year. The **Dates** card and **Activate on display** save to the pharmacy on
 screen: only that pharmacy's screens follow. With **Master template** on screen they change only the master, which
 is where a new pharmacy starts and reaches no live store. Each season is its own full-screen animation (Christmas: a lit tree; New Year's: fireworks;
 Australia Day: the flag; Valentine's Day: rising hearts; Easter: bouncing eggs; Anzac Day: a dawn glow and a
@@ -220,15 +234,16 @@ In the pharmacy view:
 - **Timings are set by an administrator only.** No scene shows its seconds on screen (greeting, promotion slots,
   walk-in close, opening-hours headlines, season beats); the screens play the timings set in the full editor.
 - **At most 3 promotion slots.** Add promotion is hidden once a promotion has 3 slots; delete one to add another.
-- **Seasonal is the pharmacy's own.** The Season drop-down picks the season this pharmacy's screens play outside
-  every season's dates, and the Dates card sets when each season plays by itself every year. Both, and the
+- **Seasonal is the pharmacy's own.** The Currently active promotion drop-down previews the Fallback or any
+  season, **Activate on display** puts it on this pharmacy's screens (until that season's end date), and the Dates
+  card sets when each season plays by itself every year. Both, and the
   season's copy, belong to this pharmacy: changing them changes only its screens, and nothing an administrator
   does to the master template changes them. **Copy from master** (click twice) replaces the copy and dates of
   the season on screen with the master's as they are now.
 - **No promotion settings on Morning, Afternoon or Closed.** The grey section with the promotion name, promo ID,
   template, **Edit HTML** and the `promo=` line is not shown on any promotion but Seasonal: they are shared by
   every pharmacy and only an administrator changes them, in the full editor.
-- **Not shown**: the promotion name, promo ID and template section (except the Season drop-down), scene timings, Promo preview, Settings (the pharmacy's details, tokens and branding, the other pharmacies and
+- **Not shown**: the promotion name, promo ID and template section (except the Currently active promotion drop-down and Activate on display), scene timings, Promo preview, Settings (the pharmacy's details, tokens and branding, the other pharmacies and
   the Personalisation Hub API settings), the master template, New promotion and Delete promotion, the
   "Use ${Suburb} in any line…" hint and "Remote config for this pharmacy" under the promotions, and **Copy experience
   URL** with the **Playback duration** and its info tooltip under the preview. An administrator sets the

@@ -33,6 +33,15 @@ const BT = (main, text, label) => ({ main, text, ...label });
 const ABOVE = (cls, value, span) => ({ label: { cls, pos: 'above', span: !!span, value } });
 const BELOW = (cls, value) => ({ label: { cls, pos: 'below', value } });
 export const OCCASIONS = [
+  // The fallback (23 Nov 2026): what the Seasonal promotion plays whenever no season is on (no dates of its own, so
+  // activeOccasion() never picks it; liveOccasion() falls back to it). Unlike the seasons it is drawn in the pharmacy's
+  // own brand colours with its logo and name: "Thank you, ${Suburb}" (0-2 s), "for supporting your local pharmacy"
+  // beneath it (2-5 s), then the logo and ${StoreName} at the bottom (5-7 s). Exactly 7 s: its timings are fixed (durs).
+  {
+    id: 'fallback', name: 'Fallback', fallback: true, branded: true, season: null, design: 'thankyou', durs: [2, 3, 2],
+    fonts: ['800 1em "Figtree"', '500 1em "Figtree"', '700 1em "Figtree"'],
+    beats: [BT('hl', 'Thank you, ${Suburb}'), BT('sub', 'for supporting your local pharmacy'), BT('nm', '${StoreName}')],
+  },
   {
     id: 'christmas', name: 'Christmas', season: { from: '12-15', to: '12-27' }, design: 'christmas',
     fonts: ['italic 600 1em "Playfair Display"', '500 1em "Playfair Display"', '500 1em "Outfit"'],
@@ -65,6 +74,9 @@ export const OCCASIONS = [
   },
 ];
 export const OCCASION_IDS = OCCASIONS.map((o) => o.id);
+/** The seasons proper: every occasion but the fallback (the ones with dates). */
+export const SEASON_IDS = OCCASIONS.filter((o) => !o.fallback).map((o) => o.id);
+export const FALLBACK_OCCASION = 'fallback';
 export const DEFAULT_OCCASION = 'christmas';
 /** One loop of an occasion's beats at their default timings, in seconds (the designs' CSS animations). */
 export const OCCASION_LOOP = 12;
@@ -77,7 +89,9 @@ export const defaultHeadlineSeconds = (n) => (n === 3 ? [2.7, 2.7, 2.6] : Array.
 
 /** One beat's seconds on screen: its `dur`, else its share of the design's default 12 s loop. */
 export const beatSeconds = (beat, count) => sceneSeconds(beat && beat.dur, OCCASION_LOOP / (count || 1));
-export const occasionOf = (id) => OCCASIONS.find((o) => o.id === id) || OCCASIONS[0];
+/** Beat i of occasion `id`: its fixed seconds where the design has them (the fallback: 2, 3, 2), else beatSeconds. */
+export const occasionBeatSeconds = (id, beat, i, count) => { const f = occasionOf(id).durs; return f ? f[i] || 0 : beatSeconds(beat, count); };
+export const occasionOf = (id) => OCCASIONS.find((o) => o.id === id) || OCCASIONS[0]; // unknown: the fallback
 /** The editor's name for each line of a beat: the label line by where the design puts it, and the main line. */
 export const occasionFieldName = (beat, key) => (key === 'label' ? (beat.label && beat.label.pos === 'below' ? 'Line below' : 'Small line above') : 'Main line');
 /** One occasion's default copy: {beats: [{label?, text}]}, a label only on the beats whose design has one. */
@@ -97,7 +111,7 @@ export const LEGACY_OCCASION_COPY = {
   'anzac-day': [OS('Anzac Day', '25 April', 'We pause to remember', 'All who served and sacrificed'), OS('We will<br>remember them', '', 'Honouring those who served', 'And those who serve today'), OS('Lest we forget,<br>${Suburb}', '', '', '')],
 };
 const sameCopy = (a, b) => ['title', 'sub', 'line1', 'line2'].every((k) => String((a && a[k]) || '') === String((b && b[k]) || ''));
-const isLegacyDefault = (id, scenes) => Array.isArray(scenes) && scenes.length === 3 && scenes.every((x, i) => sameCopy(x, LEGACY_OCCASION_COPY[id][i]) && !(x && x.dur));
+const isLegacyDefault = (id, scenes) => Array.isArray(scenes) && scenes.length === 3 && !!LEGACY_OCCASION_COPY[id] && scenes.every((x, i) => sameCopy(x, LEGACY_OCCASION_COPY[id][i]) && !(x && x.dur));
 
 // ---------- season dates ----------
 const MD = /^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
@@ -130,6 +144,7 @@ export function seasonDates(id, saved, y) {
   const own = seasonDatesOf(saved);
   if (own.from) return own;
   const s = occasionOf(id).season || {};
+  if (!occasionOf(id).season) return {};
   if (s.easter) { const e = easterSunday(y); return { from: shiftDay(y, e.m, e.d, -2), to: shiftDay(y, e.m, e.d, 1) }; }
   return { from: s.from, to: s.to };
 }
@@ -146,7 +161,7 @@ export function activeOccasion(occasions, today) {
   // How many days ago a range started (0: today), counting back over New Year.
   const since = (from) => { const [fm, fd] = from.split('-').map(Number); let a = Date.UTC(today.y, fm - 1, fd); const t = Date.UTC(today.y, today.m - 1, today.d); if (a > t) a = Date.UTC(today.y - 1, fm - 1, fd); return (t - a) / 864e5; };
   let best = '', bestSince = Infinity;
-  for (const id of OCCASION_IDS) {
+  for (const id of SEASON_IDS) {
     // A range that runs over New Year, seen in January, started last year: Easter's of this year is right either way.
     const r = seasonDates(id, occasions && occasions[id], today.y);
     if (!inSeason(md, r)) continue;
@@ -154,6 +169,48 @@ export function activeOccasion(occasions, today) {
     if (s < bestSince) { best = id; bestSince = s; }
   }
   return best;
+}
+const ymdOf = (t) => t.y + '-' + pad2(t.m) + '-' + pad2(t.d);
+const YMD = /^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+/**
+ * A pharmacy's one-off "Activate on display" (content.activation = {occasion, until: "YYYY-MM-DD"}), when it is
+ * well formed and still running on `today` (the store's date): {occasion, until}; else null. It ends at the end of
+ * its `until` day, so it never carries over into the next year.
+ */
+export function activationOn(activation, today) {
+  if (!activation || typeof activation !== 'object' || !today || !today.y) return null;
+  const { occasion, until } = activation;
+  if (!OCCASION_IDS.includes(occasion) || !YMD.test(String(until || ''))) return null;
+  return ymdOf(today) <= until ? { occasion, until } : null;
+}
+/** The season the schedule plays on `today` by the pharmacy's dates, else the fallback. */
+export const scheduledOccasion = (occasions, today) => activeOccasion(occasions, today) || FALLBACK_OCCASION;
+/**
+ * What a Seasonal promotion plays on `today` for one pharmacy's content ({occasions, activation}): a running
+ * activation, else the season whose dates hold today, else the fallback. No date known: the fallback.
+ */
+export function liveOccasion(content, today) {
+  const a = activationOn(content && content.activation, today);
+  return a ? a.occasion : scheduledOccasion(content && content.occasions, today);
+}
+/**
+ * The last day ("YYYY-MM-DD") an "Activate on display" of `id` on `today` runs to: the scheduled end date of that
+ * season's current run, or of its next one when it is not on yet (by the pharmacy's dates; Easter worked out for the
+ * year; a range over New Year ends in the next year). The fallback runs to the end of the season the schedule plays
+ * today. '' when there is nothing to run to (the fallback with no season on: the schedule already plays it).
+ */
+export function activationUntil(id, occasions, today) {
+  if (!today || !today.y || !OCCASION_IDS.includes(id)) return '';
+  if (occasionOf(id).fallback) { const on = activeOccasion(occasions, today); return on ? activationUntil(on, occasions, today) : ''; }
+  const md = pad2(today.m) + '-' + pad2(today.d);
+  const end = (y) => { const r = seasonDates(id, occasions && occasions[id], y); return r.from && r.to ? { ...r, y: r.from <= r.to ? y : y + 1 } : null; };
+  // Its run that started this year (or, over New Year, the one that started last year and ends this year).
+  const runs = [end(today.y - 1), end(today.y), end(today.y + 1)].filter(Boolean);
+  for (const r of runs) {
+    const stop = r.y + '-' + r.to;
+    if (today.y + '-' + md <= stop) return stop; // the first run not yet over: on now, or the next one
+  }
+  return '';
 }
 /** "15 Dec", for a "MM-DD". */
 export const fmtMonthDay = (md) => { const m = MD.exec(md || ''); return m ? `${+m[2]} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][+m[1] - 1]}` : ''; };
@@ -167,10 +224,12 @@ export function occasionCopy(id, saved) {
   const occ = occasionOf(id), def = defaultOccasion(occ.id);
   const str = (v, d) => (typeof v === 'string' ? v : d);
   if (saved && Array.isArray(saved.beats)) {
-    return { ...seasonDatesOf(saved), beats: def.beats.map((d, i) => {
+    // The fallback has no dates and fixed timings: only its copy is kept.
+    const fixed = !!occ.durs;
+    return { ...(fixed ? {} : seasonDatesOf(saved)), beats: def.beats.map((d, i) => {
       const v = saved.beats[i] && typeof saved.beats[i] === 'object' ? saved.beats[i] : {};
       const b = 'label' in d ? { label: str(v.label, d.label), text: str(v.text, d.text) } : { text: str(v.text, d.text) };
-      const dur = sceneSeconds(v.dur, undefined);
+      const dur = fixed ? undefined : sceneSeconds(v.dur, undefined);
       return dur === undefined ? b : { ...b, dur };
     }) };
   }
@@ -291,7 +350,9 @@ export function resolvePromotion(config, store, promoId, opts = {}) {
   // else the one it is set to. opts.occasion (the copy-fit audit, the editor's preview) wins over both.
   let auto = false;
   if (template.base === 'occasion') {
-    const pick = opts.occasion && OCCASION_IDS.includes(opts.occasion) ? opts.occasion : activeOccasion(content && content.occasions, opts.today);
+    // opts.today known (the player): a running "Activate on display", else the season whose dates hold it, else the
+    // fallback (liveOccasion). Without it, the season the template names (the fallback, as the config API publishes it).
+    const pick = opts.occasion && OCCASION_IDS.includes(opts.occasion) ? opts.occasion : opts.today ? liveOccasion(content, opts.today) : '';
     if (pick) { auto = !opts.occasion; template = BUILTIN_TEMPLATES.find((t) => t.occasion === pick); }
   }
   if (template.base === 'occasion') {
@@ -316,7 +377,7 @@ export function sequence(play) {
   }
   // An occasion's beats: each its own seconds, else an equal share of the design's 12 s loop (Christmas 6 s + 6 s,
   // the others 4 s each).
-  if (play.base === 'occasion') return d.beats.map((x, i) => ({ k: i, t: beatSeconds(x, d.beats.length) }));
+  if (play.base === 'occasion') return d.beats.map((x, i) => ({ k: i, t: occasionBeatSeconds(play.occasion, x, i, d.beats.length) }));
   return [{ k: 'intro', t: +d.introDur || 3 }, ...d.slots.map((x, i) => ({ k: i, t: +x.dur || 2 })), { k: 'close', t: +(d.close && d.close.dur) || 2 }];
 }
 
@@ -598,11 +659,26 @@ export function renderOccasion(el, opts) {
   // Played once (opts.once): the beats run one time and the last stays; opts.at (seconds) carries on from where a
   // redraw caught it (new data, late fonts) instead of starting the beats again.
   const once = !!(opts.loop && opts.once);
-  const timing = opts.loop ? occasionTiming(occ.beats.map((_, i) => beats[i] || {}), { once }) : { custom: false };
+  // The fallback's timings are fixed (2 + 3 + 2 s): its design's own 7 s loop always plays.
+  const timing = opts.loop && !occ.durs ? occasionTiming(occ.beats.map((_, i) => beats[i] || {}), { once }) : { custom: false };
   const at = once && opts.at > 0 ? `animation-delay:-${(+opts.at).toFixed(3)}s` : '';
   const style = (i) => [timing.custom ? timing.style(i) : '', at].filter(Boolean).join(';');
-  const copy = occ.beats.map((layout, i) => beatHtml(layout, beats[i] || {}, i, !opts.loop && i === scene, R, P, style(i))).join('');
-  el.innerHTML = `${timing.custom ? `<style>${timing.css}</style>` : ''}<div class="occ occ-${occ.design}${opts.loop ? (once ? ' once' : '') : ' hold'}">${design.fx}<div class="txt">${copy}</div></div>`;
+  let copy = occ.beats.map((layout, i) => beatHtml(layout, beats[i] || {}, i, !opts.loop && i === scene, R, P, style(i))).join('');
+  // The fallback is the one design in the pharmacy's own branding: its colours fill the screen, and the last beat
+  // carries its logo above its name (the name alone when it has no logo). Its beats build up rather than replace each
+  // other, so a held beat (the editor's paused preview) shows the ones before it too (.past).
+  let brand = '';
+  if (occ.branded) {
+    const b = store.brand || DEFAULT_BRAND, logo = safeUrl(store.logo);
+    brand = ` style="--b-p:${esc(b.p)};--b-p2:${esc(boost(b.p, 1.5))};--b-a:${esc(b.a)}"`;
+    copy = occ.beats.map((layout, i) => {
+      const x = beats[i] || {}, on = !opts.loop && i === scene, past = !opts.loop && i < scene;
+      const main = R(x.text);
+      const inner = i === occ.beats.length - 1 ? `${logo ? `<div class="lg"><img src="${esc(logo)}" alt=""></div>` : ''}${main ? `<div class="${layout.main}">${main}</div>` : ''}` : (main ? `<div class="${layout.main}">${main}</div>` : '');
+      return `<div class="b b${i + 1}${on ? ' on' : ''}${past ? ' past' : ''}"${style(i) ? ` style="${style(i)}"` : ''}>${inner}</div>`;
+    }).join('');
+  }
+  el.innerHTML = `${timing.custom ? `<style>${timing.css}</style>` : ''}<div class="occ occ-${occ.design}${opts.loop ? (once ? ' once' : '') : ' hold'}"${brand}>${design.fx}<div class="txt">${copy}</div></div>`;
   const G = { W: land ? 1920 : 1080, H: land ? 1080 : 1920, inside: () => true };
   const fit = fitOccasion(el, G);
   const root = el.querySelector('.occ');

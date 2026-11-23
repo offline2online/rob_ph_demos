@@ -115,14 +115,14 @@ test("templates: built-ins listed and read-only; custom clone, edit, delete", as
   const { call } = setup();
   const list = (await call("GET", "/api/admin/templates")).body;
   assert.deepEqual(list.map((t) => [t.id, t.builtIn]), [["builtin-promotion-scenes", true], ["builtin-opening-hours", true],
-    ...["christmas", "new-year", "australia-day", "valentines-day", "easter", "anzac-day"].map((o) => [`builtin-occasion-${o}`, true])]);
+    ...["fallback", "christmas", "new-year", "australia-day", "valentines-day", "easter", "anzac-day"].map((o) => [`builtin-occasion-${o}`, true])]);
   assert.deepEqual(list.filter((t) => t.kind === "occasion").map((t) => [t.name, t.occasion]), [
-    ["Christmas", "christmas"], ["New Year's", "new-year"], ["Australia Day", "australia-day"], ["Valentine's Day", "valentines-day"], ["Easter", "easter"], ["Anzac Day", "anzac-day"]]);
+    ["Fallback", "fallback"], ["Christmas", "christmas"], ["New Year's", "new-year"], ["Australia Day", "australia-day"], ["Valentine's Day", "valentines-day"], ["Easter", "easter"], ["Anzac Day", "anzac-day"]]);
   // Occasion templates are read-only and can't be cloned (there is no HTML version of an occasion).
   assert.equal((await call("PATCH", "/api/admin/templates/builtin-occasion-easter", { body: { name: "Mine" } })).status, 403);
   const occClone = await call("POST", "/api/admin/templates/builtin-occasion-easter/clone", { body: { name: "Easter copy" } });
   assert.equal(occClone.status, 400);
-  assert.match(occClone.body.error.message || JSON.stringify(occClone.body), /seasonal template: it has no editable HTML.*Season drop-down/);
+  assert.match(occClone.body.error.message || JSON.stringify(occClone.body), /seasonal template: it has no editable HTML.*Currently active promotion drop-down/);
 
   assert.equal((await call("PATCH", "/api/admin/templates/builtin-promotion-scenes", { body: { name: "Mine" } })).status, 403);
   assert.equal((await call("DELETE", "/api/admin/templates/builtin-opening-hours")).status, 403);
@@ -151,7 +151,7 @@ test("templates: built-ins listed and read-only; custom clone, edit, delete", as
 
   assert.equal((await call("DELETE", `/api/admin/templates/${tid}`)).status, 200);
   assert.equal((await call("GET", `/api/admin/templates/${tid}`)).status, 404);
-  assert.equal((await call("GET", "/api/admin/templates")).body.length, 10, "eight built-ins and the two customs left");
+  assert.equal((await call("GET", "/api/admin/templates")).body.length, 11, "nine built-ins and the two customs left");
 });
 
 test("services: create, read, list, update, delete", async () => {
@@ -493,17 +493,30 @@ test("an Occasions promotion: picking an occasion is its template, and the publi
   const copy = { occasions: { easter: { scenes: [{ title: "Happy Easter,<br>${Suburb}" }, { title: "M" }, { title: "S" }] } } };
   assert.equal((await call("PUT", `/api/admin/pharmacies/${ph.id}/content/${occ.id}`, { body: copy })).status, 200);
   let cfg = (await call("GET", "/api/screens/VIC-MP-001", { auth: null })).body;
-  assert.deepEqual([cfg.promotions.occasions.template.id, cfg.promotions.occasions.template.kind, cfg.promotions.occasions.template.occasion], ["builtin-occasion-christmas", "occasion", "christmas"]);
-  // The editor's Season drop-down saves the pharmacy's own season (src/seasonal.js; test/seasonal.test.js).
+  // Published as the fallback: the screen plays a running "Activate on display", else the season whose dates hold
+  // the store's date, else the fallback (js/render.js liveOccasion).
+  assert.deepEqual([cfg.promotions.occasions.template.id, cfg.promotions.occasions.template.kind, cfg.promotions.occasions.template.occasion], ["builtin-occasion-fallback", "occasion", "fallback"]);
+  // The old Season pick no longer moves a screen, and is not published.
   const mine = (await call("GET", `/api/admin/pharmacies/${ph.id}`)).body.content[occ.id];
   assert.equal((await call("PUT", `/api/admin/pharmacies/${ph.id}/content/${occ.id}`, { body: { ...mine, season: "easter" } })).status, 200);
   cfg = (await call("GET", "/api/screens/VIC-MP-001", { auth: null })).body;
-  assert.equal(cfg.promotions.occasions.template.occasion, "easter");
+  assert.equal(cfg.promotions.occasions.template.occasion, "fallback");
+  assert.equal(cfg.promotions.occasions.content.season, undefined);
   assert.equal(cfg.promotions.occasions.content.occasions.easter.scenes[0].title, "Happy Easter,<br>${Suburb}");
-  // The promotion's own season is only where a new pharmacy starts: changing it moves no existing store.
+  // "Activate on display" is published with the content; a malformed one is left out.
+  const act = { occasion: "christmas", until: "2026-12-27" };
+  assert.equal((await call("PUT", `/api/admin/pharmacies/${ph.id}/content/${occ.id}`, { body: { ...mine, activation: act } })).status, 200);
+  cfg = (await call("GET", "/api/screens/VIC-MP-001", { auth: null })).body;
+  assert.deepEqual(cfg.promotions.occasions.content.activation, act);
+  for (const bad of [{ occasion: "halloween", until: "2026-12-27" }, { occasion: "christmas", until: "12-27" }, "christmas"]) {
+    assert.equal((await call("PUT", `/api/admin/pharmacies/${ph.id}/content/${occ.id}`, { body: { ...mine, activation: bad } })).status, 200);
+    cfg = (await call("GET", "/api/screens/VIC-MP-001", { auth: null })).body;
+    assert.equal(cfg.promotions.occasions.content.activation, undefined, JSON.stringify(bad));
+  }
+  // The promotion's own template moves no existing store either.
   assert.equal((await call("PATCH", `/api/admin/promotions/${occ.id}`, { body: { templateId: "builtin-occasion-anzac-day" } })).status, 200);
   cfg = (await call("GET", "/api/screens/VIC-MP-001", { auth: null })).body;
-  assert.equal(cfg.promotions.occasions.template.occasion, "easter");
+  assert.equal(cfg.promotions.occasions.template.occasion, "fallback");
 });
 
 test("master template: a promotion's master is inherited section by section; detached sections are the pharmacy's own", async () => {

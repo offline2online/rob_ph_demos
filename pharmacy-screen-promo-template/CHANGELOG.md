@@ -8,6 +8,22 @@ release handed to miPharmacy is tagged and packaged with this file and the `docs
 Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 ([docs/RELEASING.md](docs/RELEASING.md)).
 
+### Added
+
+- **Fallback promotion, and "Currently active promotion" in place of the Season drop-down.** Outside every season's
+  dates the Seasonal promotion (`promo=occasions`) now plays a **Fallback**: the pharmacy's own brand colours fill the
+  screen, "Thank you, ${Suburb}" slides up (0–2 s), "for supporting your local pharmacy" comes in beneath (2–5 s),
+  then the logo and pharmacy name settle in at the bottom with a gentle scale and shimmer (5–7 s); exactly 7 s
+  (playback duration 8 s), copy editable per pharmacy. Seasons still start and end by themselves on their dates;
+  the screen is never empty. The old **Season** drop-down (which season played outside every season's dates) is
+  now **Currently active promotion**: it opens on what this pharmacy's screens play today (Fallback, or a season),
+  lists the Fallback and every season, and picking one only previews it. **Activate on display** puts it on the
+  pharmacy's screens now, as a one-off (`content[<promotion id>].activation = {occasion, until}`): it ends on that
+  season's scheduled end date and does not carry into next year. A pharmacy's own dates in the Dates card stay its
+  schedule every year. The config API publishes the Seasonal promotion's template as the Fallback (the old
+  `content.season` is kept but no longer published). Which pharmacies show promotions at all is the campaign's
+  store segment targeting in Personalisation Hub ([docs/DATA-CONTRACT.md](docs/DATA-CONTRACT.md)).
+
 ### Fixed
 
 - **Preview: "Sample opening hours" is under the preview, beside Pause.** The label and its info tooltip have moved

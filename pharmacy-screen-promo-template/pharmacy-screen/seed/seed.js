@@ -4,8 +4,8 @@
 // Seed the Pharmacy Screen config store with what the concept prototype
 // holds: the five launch pharmacies (branding, logo, morning / afternoon /
 // closed / occasions content), the four default promotions, the 28-service
-// library, and a check that the eight read-only built-in templates (Promotion
-// scenes, Opening hours, six occasions) are there (they live in code,
+// library, and a check that the nine read-only built-in templates (Promotion
+// scenes, Opening hours, the Fallback and six occasions) are there (they live in code,
 // config-api/src/builtins.js, so there is nothing to write for them).
 //
 // Every write goes through the config service (../config-api/src/service.js),

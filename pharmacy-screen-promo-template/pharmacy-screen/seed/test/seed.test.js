@@ -2,7 +2,7 @@
 
 // The seed against the in-memory adapters (no network). Covers the ticket's
 // test steps:
-//   1. an empty store gets five pharmacies, four promotions (Occasions on Christmas), eight built-in
+//   1. an empty store gets five pharmacies, four promotions (Occasions on Christmas), nine built-in
 //      templates (two plus six occasions) and 28 services
 //   2. a second run creates no duplicates and changes nothing
 //   3. an edited pharmacy survives a re-run without --reset (and --reset puts it back)
@@ -30,13 +30,13 @@ function setup() {
   return { store, blobs, now, svc, seed: (opts = {}) => seedConfig({ store, blobs, now, ...opts }) };
 }
 
-test("step 1: an empty store gets 5 pharmacies, 4 promotions, 8 templates, 28 services", async () => {
+test("step 1: an empty store gets 5 pharmacies, 4 promotions, 9 templates, 28 services", async () => {
   const { store, blobs, svc, seed } = setup();
   const report = await seed();
   assert.deepEqual(report.pharmacies.created.sort(), CODES);
   assert.deepEqual(report.promotions.created, ["morning", "afternoon", "closed", "occasions"]);
   assert.equal(report.services.created.length, 28);
-  assert.deepEqual(report.templates.builtIn, ["builtin-promotion-scenes", "builtin-opening-hours", ...["builtin-occasion-christmas", "builtin-occasion-new-year", "builtin-occasion-australia-day", "builtin-occasion-valentines-day", "builtin-occasion-easter", "builtin-occasion-anzac-day"]]);
+  assert.deepEqual(report.templates.builtIn, ["builtin-promotion-scenes", "builtin-opening-hours", ...["builtin-occasion-fallback", "builtin-occasion-christmas", "builtin-occasion-new-year", "builtin-occasion-australia-day", "builtin-occasion-valentines-day", "builtin-occasion-easter", "builtin-occasion-anzac-day"]]);
 
   const pharmacies = await svc.listPharmacies();
   assert.deepEqual(pharmacies.map((p) => p.storeCode), CODES);
@@ -55,7 +55,7 @@ test("step 1: an empty store gets 5 pharmacies, 4 promotions, 8 templates, 28 se
     ["occasions", "Seasonal", "builtin-occasion-christmas"],
   ]);
   const templates = await svc.listTemplates();
-  assert.deepEqual(templates.map((t) => [t.name, t.builtIn]), [["Promotion scenes", true], ["Opening hours", true],
+  assert.deepEqual(templates.map((t) => [t.name, t.builtIn]), [["Promotion scenes", true], ["Opening hours", true], ["Fallback", true],
     ["Christmas", true], ["New Year's", true], ["Australia Day", true], ["Valentine's Day", true], ["Easter", true], ["Anzac Day", true]]);
   assert.equal((await svc.listServices()).length, 28);
 
@@ -69,7 +69,7 @@ test("step 1: an empty store gets 5 pharmacies, 4 promotions, 8 templates, 28 se
     const screen = await svc.getScreenConfig(p.storeCode);
     assert.equal(screen.logo, p.logo.url);
     assert.deepEqual(Object.keys(screen.promotions), ["afternoon", "closed", "morning", "occasions"]);
-    assert.deepEqual([screen.promotions.occasions.template.kind, screen.promotions.occasions.template.occasion], ["occasion", "christmas"]);
+    assert.deepEqual([screen.promotions.occasions.template.kind, screen.promotions.occasions.template.occasion], ["occasion", "fallback"]); // published as the Fallback: the screen picks the season by date
     assert.deepEqual(screen.promotions.occasions.content.occasions.christmas.beats[1], { label: "With warm wishes", text: "from the whole ${StoreName} team", dur: 4 });
     assert.ok(!/StoreName/.test(JSON.stringify(screen.promotions.occasions.content.occasions.easter)), "Easter signs off with the suburb only");
     assert.equal(screen.promotions.closed.template.kind, "opening-hours");
@@ -208,7 +208,7 @@ test("a store seeded before Occasions existed gets the Occasions promotion and i
   assert.equal(occ.templateId, "builtin-occasion-christmas");
   for (const p of await svc.listPharmacies()) {
     const screen = await svc.getScreenConfig(p.storeCode);
-    assert.equal(screen.promotions.occasions.template.occasion, "christmas");
+    assert.equal(screen.promotions.occasions.template.occasion, "fallback"); // outside every season: the fallback
     assert.ok(screen.promotions.occasions.content.occasions.christmas, `${p.storeCode} has occasions content`);
   }
   assert.equal((await svc.getPharmacy(ids.pharmacy("vic-mp-001"))).content[morningId].greeting, "Edited greeting", "other content untouched");

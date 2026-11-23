@@ -132,22 +132,23 @@ test('editsSince finds the edits made while a new pharmacy was being created', (
 });
 
 test('occasions: the Occasion drop-down is the promotion template, content keeps every occasion, defaults follow the sign-off rule', () => {
-  assert.deepEqual(M.OCCASION_CHOICES.map((o) => o.name), ['Christmas', "New Year's", 'Australia Day', "Valentine's Day", 'Easter', 'Anzac Day']);
+  assert.deepEqual(M.OCCASION_CHOICES.map((o) => o.name), ['Fallback', 'Christmas', "New Year's", 'Australia Day', "Valentine's Day", 'Easter', 'Anzac Day']);
   assert.equal(M.BUILTIN_OCCASION, 'builtin-occasion-christmas');
   assert.equal(M.baseOfTemplate([], 'builtin-occasion-easter'), 'occasion');
   assert.equal(M.occasionOfTemplate('builtin-occasion-anzac-day'), 'anzac-day');
   assert.equal(M.occasionOfTemplate(M.BUILTIN_SCENES), '');
   // Christmas and New Year's sign off with ${StoreName}; the rest use ${Suburb} only.
-  assert.deepEqual(M.OCCASION_CHOICES.filter((o) => o.signOff).map((o) => o.id), ['christmas', 'new-year']);
+  assert.deepEqual(M.OCCASION_CHOICES.filter((o) => o.signOff).map((o) => o.id), ['fallback', 'christmas', 'new-year']);
   const c = M.newContentFor({ promoId: 'occasions' }, 'occasion');
-  assert.deepEqual(Object.keys(c.occasions), ['christmas', 'new-year', 'australia-day', 'valentines-day', 'easter', 'anzac-day']);
+  assert.deepEqual(Object.keys(c.occasions), ['fallback', 'christmas', 'new-year', 'australia-day', 'valentines-day', 'easter', 'anzac-day']);
   for (const [id, o] of Object.entries(c.occasions)) {
     assert.equal(o.beats.length, id === 'christmas' ? 2 : 3, id);
     assert.ok(o.beats.some((x) => /\$\{Suburb\}/.test(x.text)), `${id} uses \${Suburb}`);
-    assert.equal(/StoreName/.test(JSON.stringify(o)), ['christmas', 'new-year'].includes(id), `${id} store-name rule`);
+    assert.equal(/StoreName/.test(JSON.stringify(o)), ['fallback', 'christmas', 'new-year'].includes(id), `${id} store-name rule`);
   }
   // The approved default copy, beat by beat (label line / main line).
   const lines = (id) => c.occasions[id].beats.map((b) => [b.label, b.text].filter((x) => x !== undefined).join(' / '));
+  assert.deepEqual(lines('fallback'), ['Thank you, ${Suburb}', 'for supporting your local pharmacy', '${StoreName}']);
   assert.deepEqual(lines('christmas'), ['Merry Christmas, ${Suburb}', 'With warm wishes / from the whole ${StoreName} team']);
   assert.deepEqual(lines('new-year'), ['Happy<br>New Year', 'Thank you for a great year, ${Suburb}', "Here's to a healthy year ahead / from the whole ${StoreName} team"]);
   assert.deepEqual(lines('australia-day'), ['26 January / Happy Australia Day, ${Suburb}', 'Enjoy the sunshine', 'Stay sun safe this summer / Slip, slop, slap']);
@@ -348,6 +349,24 @@ test('seasons: each Season drop-down line shows its start and end dates after th
   assert.equal(M.seasonOptionLabel('easter', occs, 2026), 'Easter (1 Apr – 10 Apr)');
   assert.equal(M.seasonOptionLabel('anzac-day', occs, 2026), 'Anzac Day (25 Apr)');
   assert.equal(M.seasonOptionLabel('nope', occs, 2026), '');
-  // Every line of the drop-down, in order, ends in its dates in brackets.
-  for (const o of M.OCCASION_CHOICES) assert.match(M.seasonOptionLabel(o.id, {}, 2026), /^.+ \(\d{1,2} [A-Z][a-z]{2}( – \d{1,2} [A-Z][a-z]{2})?\)$/, o.id);
+  // The Fallback has no dates: it says when it plays.
+  assert.equal(M.seasonOptionLabel('fallback', occs, 2026), 'Fallback');
+  // Every season's line of the drop-down, in order, ends in its dates in brackets.
+  for (const o of M.OCCASION_CHOICES.filter((x) => x.id !== 'fallback')) assert.match(M.seasonOptionLabel(o.id, {}, 2026), /^.+ \(\d{1,2} [A-Z][a-z]{2}( – \d{1,2} [A-Z][a-z]{2})?\)$/, o.id);
+});
+
+test('Currently active promotion: what the screens play today (activation, else the season by date, else the Fallback)', () => {
+  const day = (y, m, d) => ({ y, m, d });
+  assert.equal(M.seasonOf(null, {}, day(2026, 3, 15)), 'fallback');
+  assert.equal(M.seasonOf(null, {}, day(2026, 12, 20)), 'christmas');
+  // The old Season pick (content.season) no longer counts.
+  assert.equal(M.seasonOf(null, { season: 'easter' }, day(2026, 7, 1)), 'fallback');
+  // A running activation wins; once its day has passed it is ignored.
+  const act = { activation: { occasion: 'christmas', until: '2026-12-27' } };
+  assert.equal(M.seasonOf(null, act, day(2026, 11, 23)), 'christmas');
+  assert.equal(M.seasonOf(null, act, day(2026, 12, 28)), 'new-year');
+  assert.equal(M.seasonOf(null, act, day(2027, 11, 23)), 'fallback');
+  // The Fallback plays for exactly 7 s whatever is saved on its beats.
+  assert.equal(M.loopSeconds({ beats: [{ dur: 9 }, {}, {}] }, undefined, 'fallback'), 7);
+  assert.equal(M.loopSeconds({ beats: [{}, {}, {}] }, undefined, 'easter'), 12);
 });

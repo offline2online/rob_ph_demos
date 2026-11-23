@@ -142,7 +142,7 @@ test('1. promo=morning plays each scene once, then stays on the last scene, full
 test('2. promo=occasions: the beats play once, the last beat stays visible (default and custom timings), decorations keep moving', async () => {
   // Christmas (two beats, the design's own keyframes), default timings.
   let api = { config: defaults() };
-  let { page, ctx, errors } = await open('promo=occasions&date=2026-07-01', api);
+  let { page, ctx, errors } = await open('promo=occasions&date=2026-12-20', api);
   let s = await beatsAtEnd(page);
   assert.equal(s.root, 'occ occ-christmas once');
   assert.deepEqual(s.timing, [{ name: 'xmasB1', iterations: 1 }, { name: 'xmasB2Once', iterations: 1 }]);
@@ -153,6 +153,19 @@ test('2. promo=occasions: the beats play once, the last beat stays visible (defa
   assert.equal((await info(page)).held, true, 'held once 12 s have played');
   await pass(page, 30000);
   assert.equal((await info(page)).held, true);
+  await ctx.close();
+
+  // The Fallback, outside every season's dates: exactly 7 s, its three beats build up and all stay on screen.
+  ({ page, ctx, errors } = await open('promo=occasions&date=2026-07-01', api));
+  s = await beatsAtEnd(page);
+  assert.equal(s.root, 'occ occ-thankyou once');
+  assert.deepEqual(s.timing.map((t) => [t.name, t.iterations]), [['tyB1Once', 1], ['tyB2Once', 1], ['tyB3Once', 1]]);
+  assert.deepEqual(s.end, [1, 1, 1], 'thank-you line, message, then logo and name: all on screen at the end');
+  assert.equal((await info(page)).occasion, 'fallback');
+  assert.deepEqual((await info(page)).scenes, ['Beat 1', 'Beat 2', 'Beat 3']);
+  await pass(page, 7000);
+  assert.equal((await info(page)).held, true, 'held once its 7 s have played');
+  assert.deepEqual(errors, []);
   await ctx.close();
 
   // A three-beat design (Valentine's Day, in its dates), default timings.
@@ -166,7 +179,7 @@ test('2. promo=occasions: the beats play once, the last beat stays visible (defa
 
   // Custom beat seconds (3 s + 4 s): the generated keyframes end with the last beat visible.
   api = { config: withBeats({ christmas: [{ dur: 3 }, { dur: 4 }] }) };
-  ({ page, ctx, errors } = await open('promo=occasions&date=2026-07-01', api));
+  ({ page, ctx, errors } = await open('promo=occasions&date=2026-12-20', api));
   s = await beatsAtEnd(page);
   assert.equal(s.root, 'occ occ-christmas once');
   assert.deepEqual(s.timing, [{ name: 'occTo3_4B1', iterations: 1 }, { name: 'occTo3_4B2', iterations: 1 }]);
@@ -213,7 +226,7 @@ test('3. shown again after being hidden, restored from the back-forward cache, o
   assert.deepEqual([i.scene, i.held], [0, false], 'reloaded: from the first scene');
 
   // A Seasonal promotion: its beats start again from the first.
-  await page.goto(`${base}?mockapi=1&device=TEST&promo=occasions&date=2026-07-01`);
+  await page.goto(`${base}?mockapi=1&device=TEST&promo=occasions&date=2026-12-20`);
   await until(page, () => window.pharmacyScreen && window.pharmacyScreen.ready && window.pharmacyScreen.info);
   await pass(page, 13000);
   assert.equal((await info(page)).held, true);
@@ -291,7 +304,7 @@ test('5. loop=1 loops as before', async () => {
   assert.equal((await info(page)).held, false);
   await ctx.close();
 
-  ({ page, ctx, errors } = await open('promo=occasions&date=2026-07-01&loop=1', api));
+  ({ page, ctx, errors } = await open('promo=occasions&date=2026-12-20&loop=1', api));
   const s = await page.evaluate(() => ({ root: document.querySelector('#screen .occ').className, it: [...document.querySelectorAll('#screen .txt .b')].map((b) => b.getAnimations()[0].effect.getComputedTiming().iterations) }));
   assert.deepEqual(s, { root: 'occ occ-christmas', it: [Infinity, Infinity] });
   await pass(page, 40000);
