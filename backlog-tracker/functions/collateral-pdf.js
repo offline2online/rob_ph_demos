@@ -52,12 +52,17 @@ function stopBrowser(browser) {
 }
 
 // html -> { pdf: Buffer, pages }. One render at a time per instance: Chromium is heavy.
+// `fit` (a one-pager, Ebq2oqSH3Lp1UrHWnfgJ): { maxPages, steps: [{ html, scale }] }.
+// When the first print runs over `maxPages`, each step is printed in turn in
+// the same page (no second browser) until one fits; the result then carries
+// `fit: { step, scale, tight, fitted }` (fitted false: none of them fitted,
+// and the last step's PDF is returned so the caller can decide).
 // The browser handle is held here, outside render(), so that when the print
 // takes longer than `timeoutMs` the browser is stopped BEFORE the promise
 // rejects: a hung print never keeps Chromium alive in the function, and the
 // next render never starts a second one beside it. `launch` is for tests.
 let chain = Promise.resolve();
-function renderPdf(html, { format = cc.FORMATS.overview, timeoutMs = 60000, launch = launchBrowser } = {}) {
+function renderPdf(html, { format = cc.FORMATS.overview, timeoutMs = 60000, launch = launchBrowser, fit = null } = {}) {
   const run = chain.then(() => {
     const job = { browser: null, stopped: false };
     let timer = null;
@@ -68,14 +73,14 @@ function renderPdf(html, { format = cc.FORMATS.overview, timeoutMs = 60000, laun
       }, timeoutMs);
       if (timer.unref) timer.unref();
     });
-    const printed = render(html, format, launch, job);
+    const printed = render(html, format, launch, job, fit);
     printed.catch(() => {}); // a print stopped by the timeout rejects later, unheard
     return Promise.race([printed, timedOut]).finally(() => clearTimeout(timer));
   });
   chain = run.catch(() => {});
   return run;
 }
-async function render(html, format, launch, job) {
+async function render(html, format, launch, job, fit = null) {
   const browser = await launch();
   job.browser = browser;
   // Launched after the timeout already fired: stopped straight away, never used.
@@ -85,12 +90,29 @@ async function render(html, format, launch, job) {
     await page.setJavaScriptEnabled(false);
     await page.setRequestInterception(true);
     page.on("request", (req) => (allowedRequest(req.url()) ? req.continue() : req.abort("blockedbyclient")));
-    await page.setContent(html, { waitUntil: "load", timeout: 30000 });
-    // The brand font when it arrives in time; the fallback stack otherwise.
-    await withTimeout(page.evaluateHandle("document.fonts.ready"), FONT_WAIT_MS, "The font").catch(() => {});
-    const pdf = Buffer.from(await page.pdf(cl.PDF_OPTIONS(format)));
-    if (!cc.isPdf(pdf)) throw new Error("the printer returned no PDF");
-    return { pdf, pages: cc.pdfPageCount(pdf) };
+    let shown = null;
+    const print = async (content, scale) => {
+      if (content !== shown) {
+        await page.setContent(content, { waitUntil: "load", timeout: 30000 });
+        // The brand font when it arrives in time; the fallback stack otherwise.
+        await withTimeout(page.evaluateHandle("document.fonts.ready"), FONT_WAIT_MS, "The font").catch(() => {});
+        shown = content;
+      }
+      const pdf = Buffer.from(await page.pdf(cl.PDF_OPTIONS(format, { scale })));
+      if (!cc.isPdf(pdf)) throw new Error("the printer returned no PDF");
+      return { pdf, pages: cc.pdfPageCount(pdf) };
+    };
+    let out = await print(html, 1);
+    const maxPages = fit && Number(fit.maxPages) > 0 ? Number(fit.maxPages) : 0;
+    if (!maxPages) return out;
+    if (out.pages <= maxPages) return Object.assign(out, { fit: { step: 0, scale: 1, tight: false, fitted: true } });
+    const steps = Array.isArray(fit.steps) ? fit.steps : [];
+    for (let i = 0; i < steps.length; i++) {
+      if (job.stopped) throw new Error("Printing the PDF was stopped by its time limit");
+      out = await print(steps[i].html || html, steps[i].scale || 1);
+      if (out.pages <= maxPages) return Object.assign(out, { fit: { step: i + 1, scale: steps[i].scale || 1, tight: Boolean(steps[i].tight), fitted: true } });
+    }
+    return Object.assign(out, { fit: { step: steps.length, scale: steps.length ? steps[steps.length - 1].scale || 1 : 1, tight: Boolean(steps.length && steps[steps.length - 1].tight), fitted: false } });
   } finally {
     if (!job.stopped) await browser.close().catch(() => {});
   }
