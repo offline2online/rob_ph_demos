@@ -4,6 +4,7 @@
    - display counts come from an aggregate, never the display rows;
    - the estate's positions are indexed once per display-type snapshot;
    - the inventory's status filter reads what is taken in one query;
+   - an inventory request reads each buyers list once, not per position;
    - billing reads only what it can bill now, and counts plays in SQL;
    - which process clears a window's auction is settled in the database;
    - settled bids are deleted after their retention;
@@ -87,6 +88,45 @@ describe('the inventory status filter', () => {
     /* Meaningful: the sample bookings sold some windows in that range. */
     expect(counts.sold).toBeGreaterThan(0)
     expect(counts.available).toBeGreaterThan(0)
+  })
+})
+
+describe('buyers lists on an inventory read', () => {
+  it('reads each list once per request, and sees exactly what a fresh check per position sees', async () => {
+    const ctx = await testContext({ clock: () => NOW, demo: true })
+    const app = buildApp(ctx)
+    const seats = (await ctx.partners.get('p_google'))!.seats
+    const base = { description: '', activeFrom: null, activeTo: null, auctionCloses: null }
+    await ctx.buyersLists.insert({ id: 'bl_all', name: 'Every seat', ...base, invitedBuyers: seats.map((s) => ({ partnerId: 'p_google', seatId: s.id })) })
+    await ctx.buyersLists.insert({ id: 'bl_none', name: 'Another DSP only', ...base, invitedBuyers: [{ partnerId: 'p_ttd', seatId: 'x' }] })
+    /* Every advertiser slot of every type on a deal: two lists over many positions, as shape T's estate is one list over 60. */
+    for (const dt of await ctx.displayTypes.list()) {
+      const ext = dt.phExtensions
+      if (!ext?.slots?.length) continue
+      await ctx.displayTypes.saveExtensions(dt.id, { ...ext, slots: ext.slots.map((s, i) => (s.owner !== 'advertiser' ? s : { ...s, listMode: 'deal', buyersListId: i % 3 ? 'bl_all' : 'bl_none', buyersListIds: [i % 3 ? 'bl_all' : 'bl_none'], partnerIds: [], advertisers: [] })) })
+    }
+    const c = callerOf((await ctx.partners.get('p_google'))!, undefined)
+    const positions = await allPositions(ctx)
+    expect(positions.length).toBeGreaterThan(4)
+    /* A fresh visibility per position shares nothing between positions: the answer before the per-request read. */
+    const expected: string[] = []
+    for (const p of positions) if (await (await visibilityFor(ctx, c))(p)) expected.push(p.positionId)
+    const reads: string[] = []
+    const get = ctx.buyersLists.get
+    ctx.buyersLists.get = (id) => (reads.push(id), get(id))
+    const see = await visibilityFor(ctx, c)
+    const shared: string[] = []
+    for (const p of positions) if (await see(p)) shared.push(p.positionId)
+    expect(shared).toEqual(expected)
+    expect(reads.sort()).toEqual(['bl_all', 'bl_none'])
+    /* Meaningful: some positions are visible, some hidden by the other DSP's deal. */
+    expect(expected.length).toBeGreaterThan(0)
+    expect(expected.length).toBeLessThan(positions.length)
+    reads.length = 0
+    const page = (await app.inject({ url: '/api/v1/inventory?limit=200', headers: GOOGLE })).json().items as { positionId: string }[]
+    expect(page.map((i) => i.positionId)).toEqual(expected)
+    expect(reads.sort()).toEqual(['bl_all', 'bl_none'])
+    ctx.buyersLists.get = get
   })
 })
 
