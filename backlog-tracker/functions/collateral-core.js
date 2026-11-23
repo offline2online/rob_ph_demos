@@ -231,8 +231,7 @@ function collateralSystem({ format, industry = "", prospect = null, internalName
     "Write documentMd as Markdown that the branded layout understands: one `# ` title (sentence case, at most six words), an opening paragraph of one or two sentences, then `## ` sections with short paragraphs, `-` bullet lists and, where it helps, one table. A `> ` line is a highlighted callout. No HTML, no images, no code, no long dashes (em or en dashes).",
     f.pageBreaks ? "Each `## ` section is its own page: one idea per page, a short headline and at most five bullets." : "",
     "Do not write a call to action, contact details or a sign-off: the layout adds the call to action (the free trial on AWS Marketplace, then booking a demo at personalisationhub.com).",
-    "replyText says that the collateral is attached as a branded PDF. Never mention Markdown: only the PDF is sent. When the instruction asks for another file type (Word, PowerPoint …), replyText says plainly that it is attached as a PDF, and never says or implies that another type is attached.",
-    f.key === "one-pager" ? "It must print on exactly one A4 page, the call to action included: keep to the word count, at most three `## ` sections and no more than one short list or table." : "",
+    "replyText says that the collateral is attached as a branded PDF with its Markdown source for editing.",
   ].filter((l) => l !== "").join("\n");
 }
 

@@ -59,7 +59,7 @@
 //     industry and country from Prospects (TAM) / Leads (nothing else from the
 //     console), cleaned of Australian positioning and internal names, printed
 //     to a branded PDF on the server (collateral-pdf.js) and sent by reply-all
-//     with the PDF attached, never its Markdown (`collateralAndReply`). It
+//     with the PDF and the Markdown source attached (`collateralAndReply`). It
 //     is filed on the ticket and kept as a reference example for the skill.
 //   • Spam (mMQ4yBYu4uwvOSHK9WlA): marking a thread as spam, from any tab,
 //     cancels a queued run (`markSpam`), and a run already working sends
@@ -105,7 +105,7 @@
 //     attached document. No aside on a complaint, an outage, a fault or
 //     anything commercial, and none when the voice can't be reached: the
 //     reply is sent plain. Asked whether he is a bot or an AI, he says yes
-//     (`ensureAiDisclosure`). Signed "<sender name>, Personalisation Hub" ("Aidan H" by default), with the
+//     (`ensureAiDisclosure`). Signed "<sender name>, Personalisation Hub" ("Aidan Hubbot" by default), with the
 //     optional signature line from Settings when it is switched on.
 //   • The allowed senders are configuration: supportSecrets/aidan, closed to
 //     every client by firestore.rules, written only by an admin through
@@ -157,11 +157,6 @@ const ANSWER_EMAIL_MAX = 60000;          // characters of the email (with the th
 const CONSOLE_PLAN_TIMEOUT_MS = 25000;
 // Printing collateral to PDF: Chromium's start, the brand font and the print.
 const COLLATERAL_RENDER_TIMEOUT_MS = 60000;
-// A one-pager that still runs over one page at the tightest print is written
-// once more, shorter, and re-printed, but only when the run has used less than
-// this much of its time: a second write (DOC_TIMEOUT_MS) and print still fit
-// the function's 540 s then. Later than that it goes to a person.
-const ONE_PAGER_SHORTEN_BEFORE_MS = 180000;
 // The voice's one sentence: a small call, never retried.
 const VOICE_TIMEOUT_MS = 20000;
 const STALE_MS = 15 * 60 * 1000;
@@ -723,30 +718,28 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     // The cover note in Aidan's voice; the document is never passed to it.
     const voiced = await inVoice({ ticketId, kind: "generate", body: doc.replyText, instruction, msg, ticket, voiceSkill, content });
     const text = ac.composeAidanReply({ firstName: ac.greetingName(msg.fromName), replyText: voiced.text, fromName: config.fromName, signatureLine: ac.signatureLineOf(config) });
-    // The document goes as a PDF, never as Markdown (Ebq2oqSH3Lp1UrHWnfgJ). No PDF, no email.
-    const pdfName = ac.pdfFileName(doc.fileName);
+    const raw = ac.buildMultipartRaw({
+      fromName: config.fromName, fromEmail: settings.connectedEmail, to: recipients.to, cc: recipients.cc, subject: msg.subject || ticket.subject, text,
+      inReplyTo: msg.messageId, references: msg.references, attachments: [{ name: doc.fileName, type: "text/markdown; charset=UTF-8", content: doc.documentMd }],
+    });
+    await stopIfSpam(ticketId);
+    const sent = await gmail("messages/send", { method: "POST", body: { raw, threadId: ticket.threadId || ticketId } });
+    const sentId = String((sent && sent.id) || `aidan-${now().getTime()}`);
     const size = Buffer.byteLength(doc.documentMd, "utf8");
-    const { printed, failure } = await printDocument({ documentMd: doc.documentMd, title: doc.title });
-    if (!printed) {
-      await tickets().doc(ticketId).collection("messages").doc(`aidan-draft-${now().getTime()}`).set({ direction: "note", by: "aidan", at: now(),
-        text: core.clip(`Aidan's document (${pdfName}), not sent because the PDF couldn't be made:\n\n${doc.documentMd}`, 100000) });
-      return finish({ aidan: Object.assign({ status: "needs-person", kind: "generate", skillId: skill.id, skillName: skill.name || skill.slug, client,
-        reason: `The PDF couldn't be made (${core.clip(failure, 200)}), so nothing was sent. The document is on the thread as an internal note.`,
-        document: { name: pdfName, title: doc.title, size } }, fromConsole ? { console: consoleFacts(consoleData) } : {}), needsHuman: true },
-      "Aidan wrote the document but couldn't make the PDF, so a person takes it.");
-    }
-    const sentId = await sendOnThread({ ticketId, ticket, msg, config, settings, recipients, text,
-      attachments: [{ name: pdfName, type: "application/pdf", content: printed.pdf }],
-      fields: Object.assign({ kind: "generate", skillId: skill.id, skillName: skill.name || skill.slug },
-        // Restricted to the allowed senders: never read as thread content later (ac.sharedEarlier).
-        fromConsole ? { console: true } : {}) });
+    await tickets().doc(ticketId).collection("messages").doc(sentId).set({
+      direction: "out", from: settings.connectedEmail, fromName: config.fromName, to: recipients.to, cc: recipients.cc, subject: core.replySubject(msg.subject || ticket.subject),
+      text, snippet: core.clip(text.replace(/\s+/g, " "), 240), at: now(), gmailId: sentId, auto: false, sentBy: "aidan", source: "aidan", kind: "generate",
+      attachments: [{ name: doc.fileName, type: "text/markdown", size }], skillId: skill.id, skillName: skill.name || skill.slug,
+      // Restricted to the allowed senders: never read as thread content later (ac.sharedEarlier).
+      ...(fromConsole ? { console: true } : {}),
+    });
     const n = recipients.to.length + recipients.cc.length;
     return finish({
-      aidan: Object.assign({ status: "replied", kind: "generate", skillId: skill.id, skillName: skill.name || skill.slug, client, document: { name: pdfName, title: doc.title, size: printed.pdf.length, pages: printed.pages || 0 }, recipients: n, sentId },
+      aidan: Object.assign({ status: "replied", kind: "generate", skillId: skill.id, skillName: skill.name || skill.slug, client, document: { name: doc.fileName, title: doc.title, size }, recipients: n, sentId },
         fromConsole ? { console: consoleFacts(consoleData) } : {}, voiceFact(voiced.voice)),
       status: "resolved", resolvedBy: "aidan", resolvedAt: now(), needsHuman: false, firstResponseAt: ticket.firstResponseAt || now(), lastReplyAt: now(), lastMessageAt: now(),
       messageCount: (ticket.messageCount || 0) + 1, snippet: core.clip(text.replace(/\s+/g, " "), 240),
-    }, `Aidan wrote ${pdfName} with the ${skill.name || skill.slug} skill${fromConsole ? " and the console's data" : ""} and replied to ${n} ${n === 1 ? "person" : "people"}.${fromConsole ? leftOffNote(recipients.leftOff) : ""}`);
+    }, `Aidan wrote ${doc.fileName} with the ${skill.name || skill.slug} skill${fromConsole ? " and the console's data" : ""} and replied to ${n} ${n === 1 ? "person" : "people"}.${fromConsole ? leftOffNote(recipients.leftOff) : ""}`);
   }
 
   // ── Branded sales collateral (JtkLrEG0aTnC5JfkdPA1) ──
@@ -821,33 +814,16 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     const guard = { internalNames, prospectCountry: prospect ? prospect.country : "" };
     const docMd = cc.guardCollateral(written.documentMd, guard);
     const title = cc.guardCollateral(written.title, guard).text || format.label;
-    const replyText = cc.guardCollateral(written.replyText, guard).text || `Please find attached the ${format.label.toLowerCase()} as a branded PDF.`;
+    const replyText = cc.guardCollateral(written.replyText, guard).text || `Please find attached the ${format.label.toLowerCase()} as a branded PDF, with its Markdown source for editing.`;
     return { title, replyText, docMd, files: cc.fileNames(written.fileName, title), industry, prospect, hasCollateralSkill, market, missingMarket: missing };
   }
   // Print: the branded page, printed on the server. -> { printed, failure }:
   // `printed` is { pdf, pages } or null, and then `failure` says why.
-  // A one-pager is printed through the fit steps (collateral-layout.js →
-  // FIT_STEPS: the tight page, then scaled) until it is one page.
   async function printCollateral({ docMd, title, format, industry, prospect, brand }) {
     if (!pdfRenderer) return { printed: null, failure: "the PDF printer isn't available on the server" };
     try {
-      const page = (tight) => cl.collateralHtml({ documentMd: docMd.text, title, format, industry, prospect, brand, tight });
-      const html = page(false);
-      const fit = format.key === "one-pager" ? { maxPages: 1, steps: cl.FIT_STEPS.slice(1).map((st) => ({ html: page(st.tight), scale: st.scale, tight: st.tight })) } : null;
-      const printed = await pdfRenderer(html, Object.assign({ format, timeoutMs: COLLATERAL_RENDER_TIMEOUT_MS }, fit ? { fit } : {}));
-      if (!printed || !cc.isPdf(printed.pdf)) return { printed: null, failure: "the printer returned no PDF" };
-      return { printed, failure: "" };
-    } catch (err) { return { printed: null, failure: errText(err) }; }
-  }
-  // Any other document Aidan sends (a written document, a long answer): the
-  // same branded page without the sales call to action, as a PDF. Aidan never
-  // sends Markdown (Ebq2oqSH3Lp1UrHWnfgJ). -> { printed, failure }, as above.
-  async function printDocument({ documentMd, title }) {
-    if (!pdfRenderer) return { printed: null, failure: "the PDF printer isn't available on the server" };
-    try {
-      const format = Object.assign({}, cc.FORMATS.overview, { label: "Document" });
-      const html = cl.collateralHtml({ documentMd, title, format, cta: false });
-      const printed = await pdfRenderer(html, { format, timeoutMs: COLLATERAL_RENDER_TIMEOUT_MS, document: true });
+      const html = cl.collateralHtml({ documentMd: docMd.text, title, format, industry, prospect, brand });
+      const printed = await pdfRenderer(html, { format, timeoutMs: COLLATERAL_RENDER_TIMEOUT_MS });
       if (!printed || !cc.isPdf(printed.pdf)) return { printed: null, failure: "the printer returned no PDF" };
       return { printed, failure: "" };
     } catch (err) { return { printed: null, failure: errText(err) }; }
@@ -877,71 +853,47 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
   }
   // The whole run: write, print, send (reply-all with the PDF and the
   // Markdown), keep the example, file it on the ticket. No PDF, no email.
-  async function collateralAndReply({ ticketId, ticket, msg, config, skill, brand, format, client, instruction, email, inputs, skipped, finish, content = null, voiceSkill = null, signals = null, job = null }) {
-    // The run's start (the job's, when it has one), for the one-pager's shorten budget.
-    const startedAt = (job && job.startedAt && tsMs(job.startedAt)) || now().getTime();
+  async function collateralAndReply({ ticketId, ticket, msg, config, skill, brand, format, client, instruction, email, inputs, skipped, finish, content = null, voiceSkill = null, signals = null }) {
     const settings = await readSettings();
     if (!settings.connectedEmail) throw new Error("The mailbox isn't connected.");
-    let written = await writeCollateral({ ticket, msg, skill, brand, format, client, instruction, email, inputs, skipped, content });
-    // The branded PDF, printed on the server. Without it nothing is sent.
-    let { printed, failure } = await printCollateral({ docMd: written.docMd, title: written.title, format, industry: written.industry, prospect: written.prospect, brand });
-    // A one-pager must print on one page (Ebq2oqSH3Lp1UrHWnfgJ): still over at
-    // the tightest print, it is written once more, shorter, while time allows.
-    const overOnePage = (p) => format.key === "one-pager" && Boolean(p) && p.pages !== 1;
-    let shortened = false;
-    if (overOnePage(printed) && now().getTime() - startedAt < ONE_PAGER_SHORTEN_BEFORE_MS) {
-      const over = printed.pages;
-      const shorter = `${instruction}\n\n(The last version ran to ${over} pages even printed at its tightest. Cut it by about a third so it prints on exactly one A4 page: fewer sections, shorter paragraphs.)`;
-      written = await writeCollateral({ ticket, msg, skill, brand, format, client, instruction: shorter, email, inputs, skipped, content });
-      ({ printed, failure } = await printCollateral({ docMd: written.docMd, title: written.title, format, industry: written.industry, prospect: written.prospect, brand }));
-      shortened = true;
-    }
-    const { title, replyText, docMd, files, industry, prospect, hasCollateralSkill, market, missingMarket } = written;
+    const { title, replyText, docMd, files, industry, prospect, hasCollateralSkill, market, missingMarket } = await writeCollateral({ ticket, msg, skill, brand, format, client, instruction, email, inputs, skipped, content });
     const removed = docMd.changes;
     // Which market page it followed, or the country no page covers (the default guidelines were used).
     const marketFact = market ? { market: { slug: market.slug, name: market.name } } : missingMarket ? { market: { missing: missingMarket } } : {};
     if (signals && missingMarket) signals.missingMarket = { country: missingMarket, format: format.label };
     const collateralFacts = Object.assign({ format: format.key, formatLabel: format.label, industry, prospect: prospect ? { name: prospect.name, source: prospect.source } : null }, marketFact);
     const mdSize = Buffer.byteLength(docMd.text, "utf8");
-    if (overOnePage(printed)) {
-      // Never sent over one page: a person takes it, with the document as an internal note.
-      await tickets().doc(ticketId).collection("messages").doc(`aidan-draft-${now().getTime()}`).set({ direction: "note", by: "aidan", at: now(),
-        text: core.clip(`Aidan's one-pager (${files.pdf}), not sent because it printed on ${printed.pages} pages${shortened ? " even after it was shortened" : ""}:\n\n${docMd.text}`, 100000) });
-      return finish({ aidan: { status: "needs-person", kind: "generate", skillId: skill.id, skillName: skill.name || skill.slug, client,
-        reason: `The one-pager printed on ${printed.pages} pages${shortened ? " even after it was shortened" : ""}, so nothing was sent. The document is on the thread as an internal note.`,
-        document: { name: files.pdf, title, size: mdSize }, collateral: Object.assign({}, collateralFacts, { pdf: { name: files.pdf, size: printed.pdf.length, pages: printed.pages }, removed, shortened }) }, needsHuman: true },
-      "Aidan's one-pager didn't fit on one page, so a person takes it.");
-    }
+    // The branded PDF, printed on the server. Without it nothing is sent.
+    const { printed, failure } = await printCollateral({ docMd, title, format, industry, prospect, brand });
     if (!printed) {
       // The Markdown is kept on the thread as an internal note, so a person can finish it.
       await tickets().doc(ticketId).collection("messages").doc(`aidan-draft-${now().getTime()}`).set({ direction: "note", by: "aidan", at: now(),
-        text: core.clip(`Aidan's ${format.label.toLowerCase()} (${files.pdf}), not sent because the PDF couldn't be made:\n\n${docMd.text}`, 100000) });
+        text: core.clip(`Aidan's ${format.label.toLowerCase()} (${files.md}), not sent because the PDF couldn't be made:\n\n${docMd.text}`, 100000) });
       return finish({ aidan: { status: "needs-person", kind: "generate", skillId: skill.id, skillName: skill.name || skill.slug, client,
-        reason: `The branded PDF couldn't be made (${core.clip(failure, 200)}), so nothing was sent. The document is on the thread as an internal note.`,
-        document: { name: files.pdf, title, size: mdSize }, collateral: Object.assign({}, collateralFacts, { pdf: null, removed }) }, needsHuman: true },
+        reason: `The branded PDF couldn't be made (${core.clip(failure, 200)}), so nothing was sent. The Markdown is on the thread as an internal note.`,
+        document: { name: files.md, title, size: mdSize }, collateral: Object.assign({}, collateralFacts, { pdf: null, markdown: { name: files.md, size: mdSize }, removed }) }, needsHuman: true },
       "Aidan wrote the collateral but couldn't make the PDF, so a person takes it.");
     }
     const recipients = ac.replyAllRecipients({ from: msg.from, to: msg.to || [], cc: msg.cc || [] }, { mailbox: settings.connectedEmail });
     if (!recipients.to.length) throw new Error("There is no one to reply to.");
-    // The cover note in Aidan's voice. The collateral itself (the PDF) is the
-    // brand voice's alone and is never passed to it.
+    // The cover note in Aidan's voice. The collateral itself (the PDF and its
+    // Markdown) is the brand voice's alone and is never passed to it.
     const voiced = await inVoice({ ticketId, kind: "generate", body: replyText, instruction, msg, ticket, voiceSkill, content });
     const text = ac.composeAidanReply({ firstName: ac.greetingName(msg.fromName), replyText: voiced.text, fromName: config.fromName, signatureLine: ac.signatureLineOf(config) });
     const pdfSize = printed.pdf.length;
     const sentId = await sendOnThread({ ticketId, ticket, msg, config, settings, recipients, text,
-      // The PDF only: Aidan never sends a Markdown file (Ebq2oqSH3Lp1UrHWnfgJ).
-      attachments: [{ name: files.pdf, type: "application/pdf", content: printed.pdf }],
+      attachments: [{ name: files.pdf, type: "application/pdf", content: printed.pdf }, { name: files.md, type: "text/markdown; charset=UTF-8", content: docMd.text }],
       fields: { kind: "generate", collateral: true, skillId: skill.id, skillName: skill.name || skill.slug } });
     const { referenceId, storagePath } = await keepCollateralExample({ ticketId, skill, format, industry, title, docMd, files, printed, sentId, mdSize });
     const n = recipients.to.length + recipients.cc.length;
     const pages = printed.pages || 0;
     const skillName = skill.name || skill.slug;
     return finish({
-      aidan: Object.assign({ status: "replied", kind: "generate", skillId: skill.id, skillName, client, document: { name: files.pdf, title, size: pdfSize }, recipients: n, sentId,
-        collateral: Object.assign({}, collateralFacts, { pdf: Object.assign({ name: files.pdf, size: pdfSize, pages }, storagePath ? { storagePath } : {}, printed.fit ? { fit: printed.fit } : {}), referenceId, removed }, shortened ? { shortened } : {}) }, voiceFact(voiced.voice)),
+      aidan: Object.assign({ status: "replied", kind: "generate", skillId: skill.id, skillName, client, document: { name: files.md, title, size: mdSize }, recipients: n, sentId,
+        collateral: Object.assign({}, collateralFacts, { pdf: Object.assign({ name: files.pdf, size: pdfSize, pages }, storagePath ? { storagePath } : {}), markdown: { name: files.md, size: mdSize }, referenceId, removed }) }, voiceFact(voiced.voice)),
       status: "resolved", resolvedBy: "aidan", resolvedAt: now(), needsHuman: false, firstResponseAt: ticket.firstResponseAt || now(), lastReplyAt: now(), lastMessageAt: now(),
       messageCount: (ticket.messageCount || 0) + 1, snippet: core.clip(text.replace(/\s+/g, " "), 240),
-    }, `Aidan wrote the branded ${format.label.toLowerCase()} ${files.pdf}${pages ? ` (${pages} page${pages === 1 ? "" : "s"})` : ""}${shortened ? ", shortened once to fit one page," : ""} using the ${skillName} skill${hasCollateralSkill ? ` and the ${brand.name || brand.slug} brand` : ""}${market ? `, tailored to the ${market.name} market page` : missingMarket ? ` (no market page for ${missingMarket}, so the default brand guidelines)` : ""}, and replied to ${n} ${n === 1 ? "person" : "people"}.${referenceId ? ` Kept as a reference example for the ${skillName} skill.` : ""}${cc.guardLine(removed) ? ` ${cc.guardLine(removed)}` : ""}`);
+    }, `Aidan wrote the branded ${format.label.toLowerCase()} ${files.pdf}${pages ? ` (${pages} page${pages === 1 ? "" : "s"})` : ""} with its Markdown source, using the ${skillName} skill${hasCollateralSkill ? ` and the ${brand.name || brand.slug} brand` : ""}${market ? `, tailored to the ${market.name} market page` : missingMarket ? ` (no market page for ${missingMarket}, so the default brand guidelines)` : ""}, and replied to ${n} ${n === 1 ? "person" : "people"}.${referenceId ? ` Kept as a reference example for the ${skillName} skill.` : ""}${cc.guardLine(removed) ? ` ${cc.guardLine(removed)}` : ""}`);
   }
 
   // An "answer" run: reply to everyone on the email (the same recipients as a
@@ -954,7 +906,7 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
   // With console data (`consoleData.used`, readConsole) the answer is written
   // from it too, and then: the reply goes only to the allowed senders on the
   // email; ids are replaced by titles unless the instruction asks for ids; and
-  // a long answer (over roughly a page) is attached as a PDF (never Markdown) with a
+  // a long answer (over roughly a page) is attached as Markdown with a
   // two-line summary in the body.
   // With thread `content` (the instruction refers to the thread), the email
   // block is the sender's new text only and the content is its own block,
@@ -999,27 +951,20 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     }
     let body = answer.replyText;
     let attachment = null;
-    let printedAnswer = null;
     if (fromConsole) {
       const shaped = consoleReply(answer, consoleData, instruction);
       body = shaped.inline;
       attachment = shaped.attachment;
-      // The long answer as a PDF (Ebq2oqSH3Lp1UrHWnfgJ); with no PDF, the whole answer goes in the body.
-      if (attachment) {
-        const { printed } = await printDocument({ documentMd: attachment.content, title: attachment.title || answer.title });
-        if (printed) printedAnswer = printed;
-        else { body = shaped.full; attachment = null; }
-      }
     }
     // The voice: "are you a bot?" answered yes, or at most one aside after
     // the body; an attached answer is never passed to it.
     const voiced = await inVoice({ ticketId, kind: "answer", body, instruction, msg, ticket, voiceSkill, content });
     const text = ac.composeAidanAnswer({ replyText: voiced.text, fromName: config.fromName, signatureLine: ac.signatureLineOf(config) });
-    const attachments = attachment ? [{ name: attachment.name, type: "application/pdf", content: printedAnswer.pdf }] : [];
+    const attachments = attachment ? [{ name: attachment.name, type: "text/markdown; charset=UTF-8", content: attachment.content }] : [];
     const named = skill ? { skillId: skill.id, skillName: skill.name || skill.slug } : {};
     const sentId = await sendOnThread({ ticketId, ticket, msg, config, settings, recipients, text, attachments, fields: Object.assign({ kind: "answer" }, named, fromConsole ? { console: true } : {}) });
     const extra = Object.assign(fromConsole ? { console: consoleFacts(consoleData) } : {}, voiceFact(voiced.voice));
-    if (attachment) extra.document = { name: attachment.name, title: answer.title || attachment.name, size: printedAnswer.pdf.length, pages: printedAnswer.pages || 0 };
+    if (attachment) extra.document = { name: attachment.name, title: answer.title || attachment.name, size: Buffer.byteLength(attachment.content, "utf8") };
     return finish({
       aidan: Object.assign({ status: "replied", kind: "answer", recipients: n, sentId }, named, extra),
       status: "resolved", resolvedBy: "aidan", resolvedAt: now(), needsHuman: false, firstResponseAt: ticket.firstResponseAt || now(), lastReplyAt: now(), lastMessageAt: now(),

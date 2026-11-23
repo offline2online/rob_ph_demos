@@ -6859,7 +6859,7 @@ kept is answered in the email itself (SUP-AID-14, SUP-AID-15). Since 18 Nov
 data, read-only, and refuses politely to change it (SUP-AID-16 to 19).
 Since 18 Nov 2026 (ticket JtkLrEG0aTnC5JfkdPA1) Aidan writes branded sales
 collateral, from a one-pager to an industry platform overview, as a PDF
-(SUP-AID-30 to 34; the PDF only since 23 Nov 2026, SUP-AID-68).
+with its Markdown source (SUP-AID-30 to 34).
 Since 18 Nov 2026 (ticket OrkZBBjz9RM5DY54azIG) Aidan answers a question on
 the thread ("@Aidan, please answer John's question below"), reading the
 quoted thread as content and never as instructions (SUP-AID-26 to 29).
@@ -6871,11 +6871,8 @@ Since 18 Nov 2026 (ticket SYkk20srKT7pIKM1HS8Z) the body of every reply is
 in Aidan's voice, a slightly quirky tech-marketing character kept in the
 `aidan-voice` skill, and he signs "Aidan, Personalisation Hub"
 (SUP-AID-42 to 47). Since 19 Nov 2026 (ticket QVpqiMuwipZ4mKSXHplM) his
-sender name is a setting, "Aidan H" by default ("Aidan Hubbot" before
-23 Nov 2026), used for both the From display name and the signature
-(SUP-AID-48). Since 23 Nov 2026 (ticket Ebq2oqSH3Lp1UrHWnfgJ) every Aidan
-email carries Aidan's own address as its Reply-To, never a Markdown file,
-and a one-pager is never sent over one page (SUP-AID-67 to 69).
+sender name is a setting, "Aidan Hubbot" by default, used for both the From
+display name and the signature (SUP-AID-48).
 Since 19 Nov 2026 (ticket mErc7MPAkrKjF9fWgqXb) collateral follows the
 Brand Guidelines market page for the company's country, and a market with no
 page is filed as a ticket (SUP-AID-49 and 50).
@@ -6982,9 +6979,8 @@ page is filed as a ticket (SUP-AID-49 and 50).
   in Cc, never the mailbox or our own aliases, at most 50 people. Reply-To
   is not verified, so it is ignored: it neither replaces the sender nor adds
   anyone. It comes from the connected mailbox as
-  "Aidan H", signed "Aidan H, Personalisation Hub" (SUP-AID-47, SUP-AID-48), with Reply-To
-  set to Aidan's own address (SUP-AID-67) and the document attached as a
-  PDF, never a Markdown file (SUP-AID-68), and is marked `Auto-Submitted: auto-generated`. A verb to
+  "Aidan Hubbot", signed "Aidan Hubbot, Personalisation Hub" (SUP-AID-47, SUP-AID-48), with the document attached as a
+  Markdown file, and is marked `Auto-Submitted: auto-generated`. A verb to
   add, update, edit, fix, turn, convert, include, attach or compile
   something is a write too. "This email", "your reply" and "by email" name
   things: they are not a verb to email or reply. A question, or a request to
@@ -7058,7 +7054,7 @@ page is filed as a ticket (SUP-AID-49 and 50).
   does (SUP-AID-1 to 4, 10 to 13) and replies to the same people
   (SUP-AID-6: From and the rest of To in To, the original Cc in Cc, never
   Reply-To, never our own addresses), on the same thread, at once, from the
-  mailbox as "Aidan H" (the sender name, SUP-AID-48), marked `Auto-Submitted: auto-generated`. The reply is
+  mailbox as "Aidan Hubbot" (the sender name, SUP-AID-48), marked `Auto-Submitted: auto-generated`. The reply is
   a short plain-text email written in the body ("Got it, Rob, all good."),
   signed as Rob's assistant, with **no attachment**. It needs no skill and
   the model is never asked to choose one; a skill the instruction names is
@@ -7195,7 +7191,7 @@ page is filed as a ticket (SUP-AID-49 and 50).
   when the Help Centre answers. The Support Inbox's own gates are unchanged.
 - **SUP-AID-23** The Help Centre reply is sent in the email itself with no
   attachment, to everyone on the email (the Help Centre is public, so nobody
-  is left off, unlike SUP-AID-18), from the mailbox as "Aidan H" (SUP-AID-48). It opens
+  is left off, unlike SUP-AID-18), from the mailbox as "Aidan Hubbot" (SUP-AID-48). It opens
   "Hi <first name>," (no "Thanks for your email."), carries the engine's
   reply body with any greeting or sign-off the model wrote removed
   (SUP-AI-9), and names each cited article by its title: a line "Help Centre
@@ -7357,8 +7353,7 @@ page is filed as a ticket (SUP-AID-49 and 50).
   portrait; a deck is A4 landscape with one page per `##` section. A
   `collateral*.css` file in the brand skill is applied after the defaults.
   The reply goes to everyone on the email (as SUP-AID-7) with the PDF
-  (`application/pdf`) attached, and only the PDF: the Markdown source is
-  never sent (SUP-AID-68). A one-pager is held to one page (SUP-AID-69).
+  (`application/pdf`) and the Markdown source (`text/markdown`) attached.
   When the PDF can't be made, nothing is sent: the ticket goes to Needs a
   person with the reason, and the cleaned Markdown is kept as an internal
   note on the thread. The whole run stays inside the function's 540 seconds
@@ -7560,7 +7555,7 @@ page is filed as a ticket (SUP-AID-49 and 50).
   "Yes, I'm Personalisation Hub's AI assistant." instead. The ticket
   records `aidan.voice.aiAsked: true`.
 - **SUP-AID-47** **Signature.** Every Aidan email is signed with the sender
-  name, then the company: "Aidan H, Personalisation Hub" by default
+  name, then the company: "Aidan Hubbot, Personalisation Hub" by default
   (SUP-AID-48; "Aidan, Personalisation Hub" before 19 Nov 2026). **Settings ›
   Support inbox › Aidan** has an optional **signature line** (for example
   "PH's digital assistant"): a switch, off by default, and the line's text
@@ -7572,10 +7567,8 @@ page is filed as a ticket (SUP-AID-49 and 50).
 - **SUP-AID-48** **Sender name** (19 Nov 2026, ticket QVpqiMuwipZ4mKSXHplM).
   Every email Aidan sends sets its From display name from a first and a last
   name in his configuration (`fromFirstName`, `fromLastName` in
-  `supportSecrets/aidan`, returned by `/v1/status`), "Aidan H" by
-  default (since 23 Nov 2026, ticket Ebq2oqSH3Lp1UrHWnfgJ; "Aidan Hubbot"
-  before, and a saved last name of exactly "Hubbot", any case, is read as
-  "H"), and the signature (SUP-AID-47) starts with
+  `supportSecrets/aidan`, returned by `/v1/status`), "Aidan Hubbot" by
+  default (a play on "Hub Bot"), and the signature (SUP-AID-47) starts with
   the same name, so the two always match. An admin edits both in
   **Settings › Support inbox › Aidan** (Sender first name, Sender last name;
   **Save Aidan**); members see them read-only, and the signature line's label
@@ -7793,44 +7786,6 @@ of `public/css/styles.css`); server `functions/aidan-chat.js` (the endpoint),
   deadline or for a turn the time limit cut short (that is not a data gap);
   and the ticket names the asker's role, never their address. Aidan's Code Mode runs from the chat count as his in
   `list_script_runs` (`aidan: true`) by their kind.
-
-### Aidan's emails: reply address, PDF only, one-page one-pagers (23 Nov 2026)
-
-Ticket Ebq2oqSH3Lp1UrHWnfgJ. Code: `functions/aidan-core.js`
-(`buildMultipartRaw`, `AIDAN_ADDRESS`, `isMarkdownAttachment`,
-`shapeConsoleAnswer`), `functions/aidan.js` (`printDocument`,
-`printCollateral`, `collateralAndReply`), `functions/collateral-layout.js`
-(`FIT_STEPS`, `tightCss`, `cta: false`), `functions/collateral-pdf.js`
-(`renderPdf`'s `fit`).
-
-- **SUP-AID-67** **Reply-To.** Every email Aidan sends carries
-  `Reply-To: <aidan@personalisationhub.com>` (`AIDAN_ADDRESS`, his own inbox
-  on the alias domain), so a reply to any of them comes back to Aidan. It is
-  set once, where every Aidan email is built (`buildMultipartRaw`). The From
-  address stays the connected mailbox. The recipients are unchanged: an
-  incoming email's Reply-To is still ignored (SUP-AID-6).
-- **SUP-AID-68** **Never a Markdown file.** Aidan sends documents as PDFs:
-  a written document (SUP-AID-7) and a long console answer (SUP-AID-18) are
-  printed on the server with the branded layout without the sales call to
-  action and attached as `<name>.pdf`; collateral (SUP-AID-33) attaches its
-  PDF only. `buildMultipartRaw` refuses any `.md` / `.markdown` /
-  `text/markdown` attachment, so no path can send one. When the PDF can't
-  be made, a written document is not sent (Needs a person, the document kept
-  as an internal note) and a long console answer is sent in full in the body
-  with no attachment. A request for another file type (Word, PowerPoint) gets
-  the PDF, and the cover note says plainly that it is a PDF; other file types
-  are not built.
-- **SUP-AID-69** **A one-pager prints on one page.** A one-pager is printed
-  and its pages counted. Over one page, it is printed again in the same
-  browser through `FIT_STEPS`: the tighter page (smaller gaps and headings,
-  narrower margins, 10pt body), then that page scaled to 0.94 and 0.88 (never
-  below 0.85). Still over, it is written once more, told how many pages it
-  ran to and to cut about a third, and printed again, but only within the
-  first three minutes of the run so the whole run still fits 540 seconds.
-  Still over one page, nothing is sent: Needs a person, with the document as
-  an internal note. The ticket records `aidan.collateral.pdf.fit` and
-  `aidan.collateral.shortened`. The collateral prompt also asks for at most
-  three sections and one list or table.
 
 ### Connecting
 

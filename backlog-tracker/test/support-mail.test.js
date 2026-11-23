@@ -117,8 +117,7 @@ function make({ mail = [], triage = async () => GOOD, db = fakeDb(), settings = 
     baseUrl: "https://console.example", triage, freeDomains: ["gmail.com"],
     createKanbanTask: kanban ? async (task, actor) => { kanbanCalls.created.push({ task, actor }); return `PH-${kanbanCalls.created.length}`; } : null,
     commentKanbanTask: async (key, text, actor) => { kanbanCalls.comments.push({ key, text, actor }); },
-    // Aidan sends documents as PDFs (Ebq2oqSH3Lp1UrHWnfgJ): a stub printer unless the test gives one.
-    aidan: aidan && !aidan.render ? Object.assign({}, aidan, { render: async (html, opts) => { RENDERED.push({ html, opts }); return { pdf: FAKE_PDF(2), pages: 2 }; } }) : aidan, bucket, consoleReader, Anthropic, improvements,
+    aidan, bucket, consoleReader, Anthropic, improvements,
   });
   return { api, db, google, kanbanCalls, tick: (ms) => { clock += ms; }, mail };
 }
@@ -143,11 +142,7 @@ async function connect(t) {
 const ticketOf = (t, id) => t.db.state.supportTickets[id];
 const messagesOf = (t, id) => Object.values(t.db.state[`supportTickets/${id}/messages`] || {});
 
-const AC = require("../functions/aidan-core");
-const AC_ALIAS = require("../functions/support-core").ALIAS_DOMAIN;
 const checks = [];
-// Every page the default stub printer printed (make → aidan.render).
-const RENDERED = [];
 const check = (name, fn) => checks.push([name, fn]);
 
 check("roles: signed-out and non-members get nothing; only an admin touches the connection; a viewer can't act on tickets", async () => {
@@ -625,7 +620,7 @@ const engineStub = (seen, helpCentre) => async (input) => {
   seen.helpCentre.push(input);
   return helpCentre ? helpCentre(input) : NOT_IN_HELP_CENTRE;
 };
-function makeAidan(mail, { write, answer, helpCentre, voice, render = null } = {}) {
+function makeAidan(mail, { write, answer, helpCentre, voice } = {}) {
   const seen = { write: [], triaged: [], answer: [], helpCentre: [], voice: [] };
   const stored = [];
   const t = make({
@@ -639,7 +634,6 @@ function makeAidan(mail, { write, answer, helpCentre, voice, render = null } = {
       answer: async (input) => { seen.answer.push(input); return answer ? answer(input) : { canAnswer: false, replyText: "", reason: "it needs a document" }; },
       // Aidan's voice (functions/aidan-voice.js): only the tests that give one run it.
       ...(voice ? { voice: async (input) => { seen.voice.push(input); return voice(input); } } : {}),
-      ...(render ? { render } : {}),
     },
     bucket: () => ({ file: (path) => ({ save: async (buf, opts) => { stored.push({ path, size: buf.length, type: opts.contentType }); } }) }),
   });
@@ -667,14 +661,11 @@ check("Aidan: an allowed sender's tagged request runs the skill and replies to e
   assert.strictEqual(sent.threadId, "t-a1", "on the original thread");
   assert.ok(sent.mail.includes(`To: ${OWNER}`) && sent.mail.includes("Cc: client@shop.example, colleague@shop.example"), "reply-all: everyone copied gets it");
   assert.ok(!/^(To|Cc):.*aidan@/m.test(sent.mail), "never to Aidan's own address");
-  assert.ok(sent.mail.includes('filename="aws-onboarding-pack-kestrel.pdf"') && sent.mail.includes("Content-Type: application/pdf"), "the document is attached as a PDF");
-  assert.ok(!/filename="[^"]*\.md"|text\/markdown/.test(sent.mail), "never a Markdown file (Ebq2oqSH3Lp1UrHWnfgJ)");
-  assert.ok(sent.mail.includes(`Reply-To: <${AC.AIDAN_ADDRESS}>`) && AC.AIDAN_ADDRESS === `aidan@${AC_ALIAS}`, "a reply comes back to Aidan's own address");
-  assert.ok(RENDERED.some((r) => r.html.includes("AWS onboarding pack") && !r.html.includes("Try free on AWS Marketplace")), "printed from the document, with no sales call to action");
+  assert.ok(sent.mail.includes('filename="aws-onboarding-pack-kestrel.md"'), "the document is attached");
   const tk = ticketOf(t, "t-a1");
   assert.deepStrictEqual([tk.inboxes, tk.status, tk.resolvedBy, tk.aidanPending, tk.aidan.status, tk.aidan.skillName, tk.aidan.recipients], [["aidan"], "resolved", "aidan", false, "replied", "AWS onboarding pack", 3]);
   const out = messagesOf(t, "t-a1").find((m) => m.direction === "out");
-  assert.deepStrictEqual([out.source, out.sentBy, out.to, out.cc, out.attachments.map((a) => a.name)], ["aidan", "aidan", [OWNER], ["client@shop.example", "colleague@shop.example"], ["aws-onboarding-pack-kestrel.pdf"]], "the sent reply is on the thread in the Aidan tab");
+  assert.deepStrictEqual([out.source, out.sentBy, out.to, out.cc, out.attachments.map((a) => a.name)], ["aidan", "aidan", [OWNER], ["client@shop.example", "colleague@shop.example"], ["aws-onboarding-pack-kestrel.md"]], "the sent reply is on the thread in the Aidan tab");
   // The next sync reads that sent email back from Gmail: it is not filed twice and starts nothing.
   t.mail.push(gmailMessage({ id: sent.id, threadId: "t-a1", from: `Aidan <${MAILBOX}>`, labels: ["SENT"], date: 1760000900000, text: "Hi Owner,\n\n@Aidan, send the AWS onboarding pack" }));
   await cron(t);
@@ -813,7 +804,7 @@ check("Aidan: \"please confirm you received this email\" is answered in the emai
   const tk = ticketOf(t, "t-ack");
   assert.deepStrictEqual([tk.status, tk.resolvedBy, tk.needsHuman, tk.aidanPending, tk.aidan.status, tk.aidan.kind, tk.aidan.recipients, tk.aidan.document, tk.aidan.skillId], ["resolved", "aidan", false, false, "replied", "answer", 3, undefined, undefined]);
   const out = messagesOf(t, "t-ack").find((m) => m.direction === "out");
-  assert.deepStrictEqual([out.source, out.sentBy, out.kind, out.to, out.cc, out.attachments, out.text], ["aidan", "aidan", "answer", [OWNER], ["client@shop.example", "colleague@shop.example"], [], "Got it, Owner, all good.\n\nAidan H, Personalisation Hub"], "the reply is on the thread in the Aidan tab");
+  assert.deepStrictEqual([out.source, out.sentBy, out.kind, out.to, out.cc, out.attachments, out.text], ["aidan", "aidan", "answer", [OWNER], ["client@shop.example", "colleague@shop.example"], [], "Got it, Owner, all good.\n\nAidan Hubbot, Personalisation Hub"], "the reply is on the thread in the Aidan tab");
   assert.ok(messagesOf(t, "t-ack").some((m) => m.direction === "event" && /Aidan answered on the email and replied to 3 people/.test(m.text)));
   // The next sync reads the sent answer back from Gmail: nothing is filed twice or run again.
   t.mail.push(gmailMessage({ id: sent.id, threadId: "t-ack", from: `Aidan <${MAILBOX}>`, labels: ["SENT"], date: 1760000900000, text: "Got it, Owner, all good." }));
@@ -1082,8 +1073,6 @@ check("Aidan's model calls: no retry, and timeouts that fit the function", async
     readSettings: async () => ({ connectedEmail: MAILBOX }), logEvent: async () => {}, now: () => new Date(), logger: { error() {} },
     callJson: async (opts) => { calls.push({ timeout: opts.timeout, maxRetries: opts.maxRetries, schema: opts.schema && Object.keys(opts.schema.properties) }); return opts.schema.properties.skillId ? { skillId: "s2", client: "Kestrel", reason: "fits" } : opts.schema.properties.canAnswer ? { canAnswer: true, replyText: "Got it.", reason: "" } : opts.schema.properties.quirk ? { sensitive: false, quirk: "" } : DOC; },
     apiKey: () => "sk-test",
-    // The document is sent as a PDF (Ebq2oqSH3Lp1UrHWnfgJ): a stub printer.
-    renderPdf: async () => ({ pdf: FAKE_PDF(1), pages: 1 }),
   });
   await a.runOne("t1");
   assert.deepStrictEqual(calls.map((c) => [c.timeout, c.maxRetries]), [[SELECT_TIMEOUT_MS, 0], [DOC_TIMEOUT_MS, 0], [VOICE_TIMEOUT_MS, 0]], "the voice last, after the document is written, never retried");
@@ -1126,17 +1115,17 @@ check("Aidan's allowed senders: an admin sets them, they are never read back in 
 });
 
 
-// Sender name (QVpqiMuwipZ4mKSXHplM): "Aidan H" by default, set in the console, used by the next email with no deploy.
-check("Aidan's sender name: \"Aidan H\" by default; an admin changes it and the next email's From and sign-off use it", async () => {
+// Sender name (QVpqiMuwipZ4mKSXHplM): "Aidan Hubbot" by default, set in the console, used by the next email with no deploy.
+check("Aidan's sender name: \"Aidan Hubbot\" by default; an admin changes it and the next email's From and sign-off use it", async () => {
   const t = makeAidan([aidanMail({ id: "n1", text: "@Aidan, please confirm you received this email." })],
     { answer: () => ({ canAnswer: true, replyText: "Got it, Owner, all good.", reason: "" }) });
   await connectAidan(t);
   await cron(t);
   assert.strictEqual(t.google.calls.sent.length, 1);
-  assert.ok(t.google.calls.sent[0].mail.includes(`From: "Aidan H" <${MAILBOX}>`), "the From display name is Aidan H");
-  assert.ok(messagesOf(t, "t-n1").find((m) => m.direction === "out").text.endsWith("\n\nAidan H, Personalisation Hub"), "and so is the sign-off");
+  assert.ok(t.google.calls.sent[0].mail.includes(`From: "Aidan Hubbot" <${MAILBOX}>`), "the From display name is Aidan Hubbot");
+  assert.ok(messagesOf(t, "t-n1").find((m) => m.direction === "out").text.endsWith("\n\nAidan Hubbot, Personalisation Hub"), "and so is the sign-off");
   const status = (await call(t.api, "GET", "/v1/status", { token: "view@ph.example" })).body.aidan;
-  assert.deepStrictEqual([status.fromFirstName, status.fromLastName, status.fromName], ["Aidan", "H", "Aidan H"], "members see the name");
+  assert.deepStrictEqual([status.fromFirstName, status.fromLastName, status.fromName], ["Aidan", "Hubbot", "Aidan Hubbot"], "members see the name");
   assert.strictEqual((await call(t.api, "POST", "/v1/aidan", { token: "ed@ph.example", body: { fromFirstName: "Ada" } })).statusCode, 403, "an editor can't change it");
   assert.strictEqual((await call(t.api, "POST", "/v1/aidan", { token: "admin@ph.example", body: { fromFirstName: "  ", fromLastName: "Bot" } })).statusCode, 400, "a first name is required");
   const saved = await call(t.api, "POST", "/v1/aidan", { token: "admin@ph.example", body: { fromFirstName: 'Ada "<x>"', fromLastName: "Botsworth\r\nBcc: evil@x.example" } });
@@ -1278,7 +1267,7 @@ function stubConsole() {
   };
   return { reader, calls };
 }
-function makeConsoleAidan(mail, { plan, answer, write, helpCentre, reader = null, improvements = null, render = null } = {}) {
+function makeConsoleAidan(mail, { plan, answer, write, helpCentre, reader = null, improvements = null } = {}) {
   const c = reader || stubConsole();
   const seen = { write: [], triaged: [], answer: [], plan: [], helpCentre: [] };
   const t = make({
@@ -1289,7 +1278,6 @@ function makeConsoleAidan(mail, { plan, answer, write, helpCentre, reader = null
       write: async (input) => { seen.write.push(input); return write ? write(input) : DOC; },
       plan: async (input) => { seen.plan.push(input); return plan ? plan(input) : { changeRequested: false, reads: [], reason: "" }; },
       answer: async (input) => { seen.answer.push(input); return answer ? answer(input) : { canAnswer: false, replyText: "", documentMd: "", title: "", reason: "nothing" }; },
-      ...(render ? { render } : {}),
     },
   });
   t.db.state.skills = JSON.parse(JSON.stringify(SKILLS));
@@ -1308,7 +1296,7 @@ function readSent(sent) {
   };
 }
 
-check("Aidan reads the console: \"summarise the Customer Support concept\" is answered from the concept's documents, long, so attached as a PDF (never Markdown) with a two-line summary, to the allowed senders only", async () => {
+check("Aidan reads the console: \"summarise the Customer Support concept\" is answered from the concept's documents, long, so attached as Markdown with a two-line summary, to the allowed senders only", async () => {
   const t = makeConsoleAidan([aidanMail({ id: "cs", cc: "Client <client@shop.example>", text: "Hi,\n\n@Aidan, summarise the Customer Support concept\n\nThanks" })], {
     plan: (input) => (input.round === 0 ? { changeRequested: false, reads: [{ tool: "get_concept", args: JSON.stringify({ conceptId: CONCEPT }) }], reason: "the concept" } : { changeRequested: false, reads: [], reason: "done" }),
     answer: (input) => ({ canAnswer: true, title: "Customer Support concept: summary", reason: "",
@@ -1332,15 +1320,14 @@ check("Aidan reads the console: \"summarise the Customer Support concept\" is an
   const sent = t.google.calls.sent[0];
   assert.ok(sent.mail.includes(`To: ${OWNER}\r\n`) && !/^Cc:/m.test(sent.mail) && !sent.mail.includes("client@shop.example"), "console data goes to the allowed sender only, not the client in Cc");
   const { body, files } = readSent(sent);
-  assert.strictEqual(body, "Customer Support answers support email from the Help Centre.\nIts one requirement is a reply within a day.\n\nThe full answer is attached (customer-support-concept-summary.pdf).\n\nAidan H, Personalisation Hub");
-  assert.deepStrictEqual(files.map((f) => [f.name, f.type]), [["customer-support-concept-summary.pdf", "application/pdf"]]);
-  assert.ok(files[0].content.startsWith("%PDF-"), "the PDF, printed from the answer");
-  assert.ok(RENDERED.some((r) => r.html.includes("Customer Support concept") && !r.html.includes("Try free on AWS Marketplace")), "printed from the full answer, with no sales call to action");
+  assert.strictEqual(body, "Customer Support answers support email from the Help Centre.\nIts one requirement is a reply within a day.\n\nThe full answer is attached (customer-support-concept-summary.md).\n\nAidan Hubbot, Personalisation Hub");
+  assert.deepStrictEqual(files.map((f) => [f.name, f.type]), [["customer-support-concept-summary.md", "text/markdown"]]);
+  assert.ok(files[0].content.startsWith("# Customer Support concept"));
   const tk = ticketOf(t, "t-cs");
-  assert.deepStrictEqual([tk.status, tk.aidan.status, tk.aidan.kind, tk.aidan.recipients, tk.aidan.console, tk.aidan.document.name], ["resolved", "replied", "answer", 1, { reads: 1, tools: ["get_concept"] }, "customer-support-concept-summary.pdf"]);
+  assert.deepStrictEqual([tk.status, tk.aidan.status, tk.aidan.kind, tk.aidan.recipients, tk.aidan.console, tk.aidan.document.name], ["resolved", "replied", "answer", 1, { reads: 1, tools: ["get_concept"] }, "customer-support-concept-summary.md"]);
   const out = messagesOf(t, "t-cs").find((m) => m.direction === "out");
-  assert.deepStrictEqual([out.to, out.cc, out.kind, out.console, out.attachments.map((x) => x.name)], [[OWNER], [], "answer", true, ["customer-support-concept-summary.pdf"]]);
-  assert.ok(messagesOf(t, "t-cs").some((m) => m.direction === "event" && /Aidan answered from the console \(1 read\), with the full answer attached as customer-support-concept-summary\.pdf, and replied to 1 person\. 1 other person on the email was left off/.test(m.text)));
+  assert.deepStrictEqual([out.to, out.cc, out.kind, out.console, out.attachments.map((x) => x.name)], [[OWNER], [], "answer", true, ["customer-support-concept-summary.md"]]);
+  assert.ok(messagesOf(t, "t-cs").some((m) => m.direction === "event" && /Aidan answered from the console \(1 read\), with the full answer attached as customer-support-concept-summary\.md, and replied to 1 person\. 1 other person on the email was left off/.test(m.text)));
 });
 
 check("Aidan reads the console: \"what tickets are in the Backlog Tracker backlog?\" lists titles in the email itself, never ids unless asked", async () => {
@@ -1359,7 +1346,7 @@ check("Aidan reads the console: \"what tickets are in the Backlog Tracker backlo
   assert.deepStrictEqual(t.seen.select, undefined, "a question needs no skill");
   const [first, second] = t.google.calls.sent.map(readSent);
   assert.deepStrictEqual(first.files, [], "a short answer: nothing attached");
-  assert.strictEqual(first.body, "There are two tickets in the Backlog Tracker backlog:\n- Fix the console favicon\n- Mark as spam in all three inboxes\n\nAidan H, Personalisation Hub");
+  assert.strictEqual(first.body, "There are two tickets in the Backlog Tracker backlog:\n- Fix the console favicon\n- Mark as spam in all three inboxes\n\nAidan Hubbot, Personalisation Hub");
   assert.ok(!/[A-Za-z0-9]{20}/.test(first.body), "no ticket id in the body");
   assert.ok(second.body.includes("Fav1c0nT1cketAbcdeFg") && second.body.includes("Sp4mBu7tonT1cketXyzQ"), "ids are kept when the instruction asks for them");
   assert.deepStrictEqual([ticketOf(t, "t-bl").aidan.kind, ticketOf(t, "t-bl").aidan.console], ["answer", { reads: 1, tools: ["list_backlog_items"] }]);
@@ -1430,7 +1417,7 @@ check("Aidan reads the console for a write too: the skill writes the document wi
   assert.ok(JSON.stringify(w.content).includes("<console_data>") && JSON.stringify(w.content).includes("CS-1 Reply within a day") && /PH Agent Console \(read-only\)/.test(w.system));
   const sent = t.google.calls.sent[0];
   assert.ok(sent.mail.includes(`To: ${OWNER}\r\n`) && !sent.mail.includes("client@shop.example"), "console data: the allowed sender only");
-  assert.deepStrictEqual(readSent(sent).files.map((f) => f.name), ["aws-onboarding-pack-kestrel.pdf"]);
+  assert.deepStrictEqual(readSent(sent).files.map((f) => f.name), ["aws-onboarding-pack-kestrel.md"]);
   const tk = ticketOf(t, "t-poc");
   assert.deepStrictEqual([tk.aidan.kind, tk.aidan.status, tk.aidan.recipients, tk.aidan.console], ["generate", "replied", 1, { reads: 1, tools: ["get_concept"] }]);
 });
@@ -1448,10 +1435,8 @@ check("Aidan reads the console for a write: ids the skill wrote are replaced by 
   await cron(t);
   const [plain, asked] = t.google.calls.sent.map(readSent);
   assert.ok(plain.body.includes("Attached, covering Fix the console favicon.") && !/[A-Za-z0-9]{20}/.test(plain.body), plain.body);
-  // The document is sent as a PDF, printed from the cleaned Markdown (Ebq2oqSH3Lp1UrHWnfgJ).
-  const [plainPage, askedPage] = RENDERED.filter((r) => r.html.includes("Fix the console favicon")).slice(-2).map((r) => r.html);
-  assert.ok(plain.files[0].name.endsWith(".pdf") && plainPage.includes("<li>Fix the console favicon</li><li>Mark as spam in all three inboxes</li><li>Concept Customer Support</li>") && !/Fav1c0nT1cketAbcdeFg|Sp4mBu7tonT1cketXyzQ/.test(plainPage), plainPage);
-  assert.ok(asked.body.includes("Fav1c0nT1cketAbcdeFg") && askedPage.includes("Sp4mBu7tonT1cketXyzQ"), "kept when the instruction asks for ids");
+  assert.strictEqual(plain.files[0].content, "# POC\n\n- Fix the console favicon\n- Mark as spam in all three inboxes\n- Concept Customer Support");
+  assert.ok(asked.body.includes("Fav1c0nT1cketAbcdeFg") && asked.files[0].content.includes("Sp4mBu7tonT1cketXyzQ"), "kept when the instruction asks for ids");
   assert.strictEqual(ticketOf(t, "t-wr").aidan.document.size, Buffer.byteLength(plain.files[0].content, "utf8"), "the size recorded is the document sent");
 });
 
@@ -1854,7 +1839,7 @@ check("one answering engine: the same question to support@ and to @Aidan matches
   assert.ok(/Content-Type: text\/plain/.test(sent.mail) && !/multipart|filename=/i.test(sent.mail), "inline, nothing attached");
   const body = readSent(sent).body;
   // The engine's answer and its article first, word for word; then Aidan's one aside; then the sign-off.
-  assert.strictEqual(body.trim(), `Hi Owner,\n\n${BODY}\n\nHelp Centre article:\nAdd a display to a store: https://personalisationhub.com/support-centre/article.html?id=a1\n\n${ASIDE}\n\nAidan H, Personalisation Hub`);
+  assert.strictEqual(body.trim(), `Hi Owner,\n\n${BODY}\n\nHelp Centre article:\nAdd a display to a store: https://personalisationhub.com/support-centre/article.html?id=a1\n\n${ASIDE}\n\nAidan Hubbot, Personalisation Hub`);
   assert.deepStrictEqual(aid.aidan.voice, { quirk: true });
   assert.ok(!sup.aiDraft.text.includes(ASIDE), "the Support Inbox's own draft to a customer has no aside: the voice is Aidan's alone");
   assert.ok(!/62|confidence/i.test(body), "the confidence is on the ticket, never in the email");
@@ -1891,7 +1876,7 @@ check("one answering engine: Aidan always replies when the Help Centre answers, 
   assert.deepStrictEqual(tk.aidan.helpCentre, { confidence: 0.31, confidenceSteps: [{ articles: 1, confidence: 0.2 }, { articles: 2, confidence: 0.31 }], question: "How to set up targeting.",
     articles: [{ id: "a1", title: "Add a display to a store", url: "https://personalisationhub.com/support-centre/article.html?id=a1" }, { id: "h1", title: "Targeting rules (internal draft)", url: "" }] });
   const body = readSent(t.google.calls.sent[0]).body.trim();
-  assert.strictEqual(body, "Hi Owner,\n\nOpen the campaign, then Targeting. See Add a display to a store.\n\nAidan H, Personalisation Hub", "the engine's greeting and sign-off are replaced by Aidan's; an article the reply names is not listed twice");
+  assert.strictEqual(body, "Hi Owner,\n\nOpen the campaign, then Targeting. See Add a display to a store.\n\nAidan Hubbot, Personalisation Hub", "the engine's greeting and sign-off are replaced by Aidan's; an article the reply names is not listed twice");
   assert.ok(!/internal draft/.test(body), "an article hidden from the website is on the ticket, never named in the email");
   // The engine was given the tagged email only, as a customer's first email: not the thread's earlier mail, and no answer model, console read or skill.
   const asked = t.seen.helpCentre[0];
@@ -2004,24 +1989,24 @@ check("Aidan collateral: \"send me a one-pager for <prospect>\" replies to every
   const sent = t.google.calls.sent[0];
   assert.ok(sent.mail.includes(`To: ${OWNER}`) && sent.mail.includes("Cc: partner@aws.example"), "the partner contact on Cc gets it");
   const files = attachmentsOf(sent.mail);
-  assert.deepStrictEqual(Object.keys(files), ["cp-group-one-pager.pdf"], "the PDF only: never its Markdown (Ebq2oqSH3Lp1UrHWnfgJ)");
+  assert.deepStrictEqual(Object.keys(files), ["cp-group-one-pager.pdf", "cp-group-one-pager.md"]);
   assert.strictEqual(files["cp-group-one-pager.pdf"].type, "application/pdf");
   assert.ok(files["cp-group-one-pager.pdf"].body.subarray(0, 5).toString("latin1") === "%PDF-", "the PDF bytes, intact");
-  assert.ok(r.html.includes("Personalise every aisle on your own data.") && !/australia/i.test(r.html), "the printed page is the cleaned document");
-  assert.ok(r.opts.fit && r.opts.fit.maxPages === 1 && r.opts.fit.steps.length === 3 && r.opts.fit.steps.every((st) => st.scale >= 0.85) && r.opts.fit.steps[0].html.includes("fitted to one page"), "a one-pager is printed to fit one page");
+  const md = files["cp-group-one-pager.md"].body.toString("utf8");
+  assert.ok(md.includes("Personalise every aisle on your own data.") && !/sydney|australia|PH Core|Backlog Tracker/i.test(md), md);
   assert.ok(!/[–—]/.test(sent.mail.split("--aidan-")[1] || ""), "no long dash in the email body either");
   // Filed on the ticket and kept as a reference example.
   const tk = ticketOf(t, "t-c1");
   assert.deepStrictEqual([tk.status, tk.aidan.status, tk.aidan.kind, tk.aidan.recipients], ["resolved", "replied", "generate", 2]);
   const c = tk.aidan.collateral;
-  assert.deepStrictEqual([c.format, c.formatLabel, c.industry, c.prospect, c.pdf.name, c.pdf.pages, c.markdown], ["one-pager", "One-pager", "Grocery & Supermarkets", { name: "CP Group", source: "prospect" }, "cp-group-one-pager.pdf", 1, undefined]);
+  assert.deepStrictEqual([c.format, c.formatLabel, c.industry, c.prospect, c.pdf.name, c.pdf.pages, c.markdown.name], ["one-pager", "One-pager", "Grocery & Supermarkets", { name: "CP Group", source: "prospect" }, "cp-group-one-pager.pdf", 1, "cp-group-one-pager.md"]);
   assert.deepStrictEqual(c.removed.map((x) => x.rule).sort(), ["australia", "internal", "renamed"], "what was taken out of the document");
   const ref = t.db.state.skillReferences[c.referenceId];
   assert.deepStrictEqual([ref.skillSlug, ref.source, ref.example, ref.format, ref.files.map((f) => f.name)], ["ph-brand", "aidan-collateral", true, "one-pager", ["cp-group-one-pager.pdf", "cp-group-one-pager.md"]]);
   assert.ok(ref.text.includes("Personalise every aisle") && !/sydney/i.test(ref.text));
   assert.ok(t.stored.some((x) => x.path === `skill-references/b1/${c.referenceId}/cp-group-one-pager.pdf` && x.type === "application/pdf"), "the PDF kept in Storage beside it");
   const out = messagesOf(t, "t-c1").find((m) => m.direction === "out");
-  assert.deepStrictEqual([out.collateral, out.attachments.map((a) => [a.name, a.type])], [true, [["cp-group-one-pager.pdf", "application/pdf"]]]);
+  assert.deepStrictEqual([out.collateral, out.attachments.map((a) => [a.name, a.type])], [true, [["cp-group-one-pager.pdf", "application/pdf"], ["cp-group-one-pager.md", "text/markdown"]]]);
   assert.ok(messagesOf(t, "t-c1").some((m) => m.direction === "event" && /branded one-pager cp-group-one-pager\.pdf \(1 page\)/.test(m.text) && /3 sentences|naming Sydney or Australia/.test(m.text)));
 });
 
@@ -2067,61 +2052,6 @@ check("Aidan collateral: no PDF, no email; a person takes it with the Markdown k
   assert.ok(/brand skill \(ph-brand\)/.test(nk.aidan.reason));
 });
 
-// Ebq2oqSH3Lp1UrHWnfgJ: a one-pager is never sent over one page. Printed tighter
-// and scaled first (the printer's fit steps); still over, it is written once
-// more, shorter, and re-printed; still over, a person takes it and nothing is sent.
-check("Aidan collateral: a one-pager that prints on two pages is shortened once and re-printed; still two pages, a person takes it", async () => {
-  let prints = 0;
-  const fits = makeCollateral([aidanMail({ id: "op1", text: "@Aidan, send me a one-pager for Kestrel." })], {
-    render: async () => { prints += 1; return prints === 1 ? { pdf: FAKE_PDF(2), pages: 2, fit: { step: 3, scale: 0.88, tight: true, fitted: false } } : { pdf: FAKE_PDF(1), pages: 1, fit: { step: 1, scale: 1, tight: true, fitted: true } }; } });
-  await connectAidan(fits);
-  await cron(fits);
-  assert.deepStrictEqual([fits.seen.write.length, fits.seen.render.length, fits.google.calls.sent.length], [2, 2, 1], "written twice, printed twice, sent once");
-  assert.ok(/ran to 2 pages even printed at its tightest\. Cut it by about a third so it prints on exactly one A4 page/.test(fits.seen.write[1].instruction), "the second write is told how far over it was");
-  assert.deepStrictEqual(Object.keys(attachmentsOf(fits.google.calls.sent[0].mail)), ["cp-group-one-pager.pdf"]);
-  const ok = ticketOf(fits, "t-op1").aidan;
-  assert.deepStrictEqual([ok.status, ok.collateral.pdf.pages, ok.collateral.shortened, ok.collateral.pdf.fit], ["replied", 1, true, { step: 1, scale: 1, tight: true, fitted: true }]);
-  assert.ok(messagesOf(fits, "t-op1").some((m) => m.direction === "event" && /\(1 page\), shortened once to fit one page,/.test(m.text)));
-
-  const over = makeCollateral([aidanMail({ id: "op2", text: "@Aidan, send me a one-pager for Kestrel." })], { render: async () => ({ pdf: FAKE_PDF(2), pages: 2 }) });
-  await connectAidan(over);
-  await cron(over);
-  assert.deepStrictEqual([over.seen.write.length, over.seen.render.length, over.google.calls.sent.length], [2, 2, 0], "never sent on two pages");
-  const tk = ticketOf(over, "t-op2");
-  assert.deepStrictEqual([tk.aidan.status, tk.needsHuman, tk.aidan.collateral.pdf.pages, tk.aidan.collateral.shortened], ["needs-person", true, 2, true]);
-  assert.ok(/one-pager printed on 2 pages even after it was shortened, so nothing was sent/.test(tk.aidan.reason), tk.aidan.reason);
-  const note = messagesOf(over, "t-op2").find((m) => m.direction === "note" && m.by === "aidan");
-  assert.ok(note && note.text.includes("Personalise every aisle"), "the document is on the thread for a person");
-  // Only a one-pager is held to one page: an overview prints on as many as it needs.
-  const many = makeCollateral([aidanMail({ id: "ov", text: "@Aidan, prepare a platform overview for Kestrel." })], { render: async () => ({ pdf: FAKE_PDF(4), pages: 4 }) });
-  await connectAidan(many);
-  await cron(many);
-  assert.deepStrictEqual([many.seen.write.length, Boolean(many.seen.render[0].opts.fit), many.google.calls.sent.length, ticketOf(many, "t-ov").aidan.status], [1, false, 1, "replied"]);
-});
-
-check("Aidan never sends a Markdown file: a document whose PDF can't be made goes to a person; a long console answer goes in the body", async () => {
-  const t = makeAidan([aidanMail({ id: "np", text: "@Aidan, send the AWS onboarding pack for client Kestrel." })], { render: async () => { throw new Error("the printer is down"); } });
-  await connectAidan(t);
-  await cron(t);
-  assert.strictEqual(t.google.calls.sent.length, 0, "no PDF, no email: never the Markdown instead");
-  const tk = ticketOf(t, "t-np");
-  assert.deepStrictEqual([tk.aidan.status, tk.needsHuman, tk.aidan.document.name], ["needs-person", true, "aws-onboarding-pack-kestrel.pdf"]);
-  assert.ok(/PDF couldn't be made \(the printer is down\)/.test(tk.aidan.reason));
-  assert.ok(messagesOf(t, "t-np").some((m) => m.direction === "note" && m.by === "aidan" && m.text.includes("For Kestrel.")), "the document is on the thread for a person");
-
-  const c = makeConsoleAidan([aidanMail({ id: "cp", text: "Hi,\n\n@Aidan, summarise the Customer Support concept" })], {
-    render: async () => { throw new Error("the printer is down"); },
-    plan: (input) => (input.round === 0 ? { changeRequested: false, reads: [{ tool: "get_concept", args: JSON.stringify({ conceptId: CONCEPT }) }], reason: "the concept" } : { changeRequested: false, reads: [], reason: "done" }),
-    answer: () => ({ canAnswer: true, title: "Customer Support concept: summary", reason: "", replyText: "Customer Support answers support email.", documentMd: `# Customer Support concept\n\n${"It answers support email from the Help Centre. ".repeat(80)}` }),
-  });
-  await connectAidan(c);
-  await cron(c);
-  const { body, files } = readSent(c.google.calls.sent[0]);
-  assert.deepStrictEqual(files, [], "no attachment at all");
-  assert.ok(body.startsWith("Customer Support answers support email.\n\n# Customer Support concept") && body.endsWith("Aidan H, Personalisation Hub"), body.slice(0, 200));
-  assert.strictEqual(ticketOf(c, "t-cp").aidan.document, undefined);
-});
-
 check("Aidan collateral: the gates hold: a stranger's request for a one-pager does nothing; an ordinary write is not collateral", async () => {
   const t = makeCollateral([
     aidanMail({ id: "x1", from: "Someone <someone@shop.example>", auth: "mx.google.com; dmarc=pass header.from=shop.example", text: "@Aidan, send me a one-pager for Kestrel." }),
@@ -2131,10 +2061,9 @@ check("Aidan collateral: the gates hold: a stranger's request for a one-pager do
   await cron(t);
   await cron(t);
   assert.strictEqual(ticketOf(t, "t-x1").aidan.status, "ignored");
-  // An ordinary write is printed too (never sent as Markdown), as a plain document: no collateral, no sales call to action.
-  assert.deepStrictEqual([t.seen.render.length, t.seen.render[0].opts.format.label, t.seen.render[0].html.includes("Try free on AWS Marketplace"), Boolean(t.seen.render[0].opts.fit)], [1, "Document", false, false], "a plain document, not collateral");
+  assert.strictEqual(t.seen.render.length, 0, "no PDF for anything but collateral");
   const x2 = ticketOf(t, "t-x2");
-  assert.deepStrictEqual([x2.aidan.status, x2.aidan.collateral, Object.keys(attachmentsOf(t.google.calls.sent[0].mail))], ["replied", undefined, ["aws-onboarding-pack-kestrel.pdf"]]);
+  assert.deepStrictEqual([x2.aidan.status, x2.aidan.collateral, Object.keys(attachmentsOf(t.google.calls.sent[0].mail))], ["replied", undefined, ["aws-onboarding-pack-kestrel.md"]]);
 });
 
 // ── Brand Guidelines › Markets (mErc7MPAkrKjF9fWgqXb) ──
@@ -2542,7 +2471,7 @@ check("Aidan's voice: an acknowledgement is answered in character, with one quir
     { answer: () => ({ canAnswer: true, replyText: "Got it, Owner. Filed and sorted.", reason: "" }), voice: quirky });
   await connectAidan(t);
   await cron(t);
-  assert.strictEqual(bodyOf(t, "t-ack"), `Got it, Owner. Filed and sorted.\n\n${QUIRK}\n\nAidan H, Personalisation Hub`, "the substance, then the one quirk, then the sign-off");
+  assert.strictEqual(bodyOf(t, "t-ack"), `Got it, Owner. Filed and sorted.\n\n${QUIRK}\n\nAidan Hubbot, Personalisation Hub`, "the substance, then the one quirk, then the sign-off");
   assert.strictEqual(bodyOf(t, "t-ack").split(QUIRK).length, 2, "once");
   const v = t.seen.voice[0];
   assert.deepStrictEqual([t.seen.voice.length, v.kind, v.body, v.instruction, v.firstName], [1, "answer", "Got it, Owner. Filed and sorted.", "please confirm you received this email.", "Owner"]);
@@ -2582,7 +2511,7 @@ check("Aidan's voice: a platform question gets the Help Centre's answer first, w
   const body = bodyOf(t, "t-q");
   const aside = "Targeting is my favourite bit, so ask me anything else about it.";
   assert.ok(body.startsWith("Hi Owner,\n\nOpen the campaign, then Targeting."), body);
-  assert.ok(body.endsWith(`\n\n${aside}\n\nAidan H, Personalisation Hub`), body);
+  assert.ok(body.endsWith(`\n\n${aside}\n\nAidan Hubbot, Personalisation Hub`), body);
   assert.ok(body.indexOf("Help Centre article") < body.indexOf(aside), "the aside is after the answer and its articles, never in the middle of the facts");
   assert.deepStrictEqual([t.seen.voice.length, t.seen.voice[0].kind], [1, "helpCentre"]);
   assert.ok(!t.seen.voice[0].body.includes("Hi Owner") && t.seen.voice[0].body.startsWith("Open the campaign, then Targeting."), "the voice is given the answer, which it cannot change");
@@ -2601,7 +2530,7 @@ check("Aidan's voice: a complaint, an outage, a fault or a pricing query gets a 
   for (let i = 0; i < 4; i++) await cron(t);
   assert.strictEqual(t.seen.voice.length, 0, "decided from the words, before any model is asked");
   for (const [id, , reason] of [...cases, ["subj", "", "plain reply: a commercial matter"]]) {
-    assert.strictEqual(bodyOf(t, `t-${id}`), "Got it, Owner. A person will pick this up.\n\nAidan H, Personalisation Hub", id);
+    assert.strictEqual(bodyOf(t, `t-${id}`), "Got it, Owner. A person will pick this up.\n\nAidan Hubbot, Personalisation Hub", id);
     assert.deepStrictEqual(ticketOf(t, `t-${id}`).aidan.voice, { quirk: false, reason }, id);
   }
 });
@@ -2613,7 +2542,7 @@ check("Aidan's voice: a complaint in the thread Aidan is asked to answer makes t
   await connectAidan(t);
   await cron(t);
   assert.strictEqual(t.seen.voice.length, 0, "the instruction is harmless, the thread is not: the voice is not asked");
-  assert.strictEqual(bodyOf(t, "t-jc"), "Hi all, a person will come back to you on this today.\n\nAidan H, Personalisation Hub");
+  assert.strictEqual(bodyOf(t, "t-jc"), "Hi all, a person will come back to you on this today.\n\nAidan Hubbot, Personalisation Hub");
   assert.deepStrictEqual(ticketOf(t, "t-jc").aidan.voice, { quirk: false, reason: "plain reply: a complaint" });
 });
 
@@ -2626,7 +2555,7 @@ check("Aidan's voice: the model's own \"sensitive\", a quirk with a fact in it, 
   await connectAidan(t);
   for (let i = 0; i < 3; i++) await cron(t);
   assert.strictEqual(t.google.calls.sent.length, 3, "a reply is never held up by its voice");
-  for (const id of ["m", "f", "x"]) assert.strictEqual(bodyOf(t, `t-${id}`), "Got it, Owner.\n\nAidan H, Personalisation Hub", id);
+  for (const id of ["m", "f", "x"]) assert.strictEqual(bodyOf(t, `t-${id}`), "Got it, Owner.\n\nAidan Hubbot, Personalisation Hub", id);
   assert.deepStrictEqual([ticketOf(t, "t-m").aidan.voice, ticketOf(t, "t-f").aidan.voice, ticketOf(t, "t-x").aidan.voice],
     [{ quirk: false, reason: "plain reply: the voice judged it sensitive" }, { quirk: false, reason: "no aside fitted" }, { quirk: false, reason: "the voice couldn't be reached" }]);
 });
@@ -2647,10 +2576,10 @@ check("Aidan's voice: \"are you a bot?\" always gets a clear yes, in character, 
   await connectAidan(t);
   for (let i = 0; i < 4; i++) await cron(t);
   assert.deepStrictEqual([t.seen.helpCentre.length, t.seen.voice.length], [0, 0], "Aidan's own to answer; the yes in character is this email's quirk");
-  assert.strictEqual(bodyOf(t, "t-yes"), `${answers.yes.replyText}\n\nAidan H, Personalisation Hub`, "a plain yes is sent as written");
-  assert.strictEqual(bodyOf(t, "t-dodge"), `${AI_LINE}\n\nHappy to help with whatever you need.\n\nAidan H, Personalisation Hub`, "a dodge gets the plain line first");
-  assert.strictEqual(bodyOf(t, "t-deny"), `${AI_LINE}\n\nAidan H, Personalisation Hub`, "a denial is never sent");
-  assert.strictEqual(bodyOf(t, "t-none"), `${AI_LINE}\n\nAidan H, Personalisation Hub`, "nothing to say: the line is the answer, not a person");
+  assert.strictEqual(bodyOf(t, "t-yes"), `${answers.yes.replyText}\n\nAidan Hubbot, Personalisation Hub`, "a plain yes is sent as written");
+  assert.strictEqual(bodyOf(t, "t-dodge"), `${AI_LINE}\n\nHappy to help with whatever you need.\n\nAidan Hubbot, Personalisation Hub`, "a dodge gets the plain line first");
+  assert.strictEqual(bodyOf(t, "t-deny"), `${AI_LINE}\n\nAidan Hubbot, Personalisation Hub`, "a denial is never sent");
+  assert.strictEqual(bodyOf(t, "t-none"), `${AI_LINE}\n\nAidan Hubbot, Personalisation Hub`, "nothing to say: the line is the answer, not a person");
   for (const id of ["yes", "dodge", "deny", "none"]) {
     const added = id === "dodge" || id === "deny";
     assert.deepStrictEqual([ticketOf(t, `t-${id}`).aidan.status, ticketOf(t, `t-${id}`).aidan.voice],
@@ -2662,7 +2591,7 @@ check("Aidan's voice: \"are you a bot?\" always gets a clear yes, in character, 
   const plain = makeAidan([aidanMail({ id: "ack", text: "@Aidan, please confirm you received this email." })], { answer: () => ({ canAnswer: true, replyText: "Got it, Owner.", reason: "" }), voice: quirky });
   await connectAidan(plain);
   await cron(plain);
-  // "bot" as a word: the sign-off's sender name, "Aidan H" (QVpqiMuwipZ4mKSXHplM), is not him saying so.
+  // "bot" as a word: the sign-off's sender name, "Aidan Hubbot" (QVpqiMuwipZ4mKSXHplM), is not him saying so.
   assert.ok(!/\bAI\b|\bbot\b/i.test(bodyOf(plain, "t-ack")), bodyOf(plain, "t-ack"));
 });
 
@@ -2673,8 +2602,8 @@ check("Aidan's voice: \"are you a bot?\" in a write or on a complaint still gets
   await connectAidan(w);
   await cron(w);
   const out = messagesOf(w, "t-wb").find((m) => m.direction === "out");
-  assert.strictEqual(out.text, `Hi Owner,\n\n${AV.AI_LINE}\n\n${DOC.replyText}\n\nAidan H, Personalisation Hub`);
-  assert.ok(Object.keys(attachmentsOf(w.google.calls.sent[0].mail)).join() === "aws-onboarding-pack-kestrel.pdf" && RENDERED.some((r) => r.html.includes("<p class=\"c-lede\">For Kestrel.</p>")), "the document is exactly what the skill wrote, printed to a PDF");
+  assert.strictEqual(out.text, `Hi Owner,\n\n${AV.AI_LINE}\n\n${DOC.replyText}\n\nAidan Hubbot, Personalisation Hub`);
+  assert.strictEqual(attachmentsOf(w.google.calls.sent[0].mail)["aws-onboarding-pack-kestrel.md"].body.toString("utf8"), DOC.documentMd, "the document is exactly what the skill wrote");
   assert.strictEqual(w.seen.voice.length, 0, "the yes is this email's one touch of character");
   assert.ok(/never deny it/.test(w.seen.write[0].system), "the document prompt says so too");
   // A complaint: the yes is plain (no joke on a complaint), and a denial in the reply is taken out, the rest kept.
@@ -2682,7 +2611,7 @@ check("Aidan's voice: \"are you a bot?\" in a write or on a complaint still gets
     answer: () => ({ canAnswer: true, replyText: "No, I'm not a bot. The rollout is with the team and they will reply today.", reason: "" }), voice: quirky });
   await connectAidan(c);
   await cron(c);
-  assert.strictEqual(bodyOf(c, "t-cb"), `${AV.AI_LINE_PLAIN}\n\nThe rollout is with the team and they will reply today.\n\nAidan H, Personalisation Hub`);
+  assert.strictEqual(bodyOf(c, "t-cb"), `${AV.AI_LINE_PLAIN}\n\nThe rollout is with the team and they will reply today.\n\nAidan Hubbot, Personalisation Hub`);
   assert.strictEqual(c.seen.voice.length, 0);
 });
 
@@ -2692,11 +2621,10 @@ check("Aidan's voice: a write gets a quirky cover note; the attached document is
   await cron(t);
   const sent = t.google.calls.sent[0];
   const out = messagesOf(t, "t-w").find((m) => m.direction === "out");
-  assert.strictEqual(out.text, `Hi Owner,\n\n${DOC.replyText}\n\nI kept the attachment strictly on brand, so all the personality stayed in this email.\n\nAidan H, Personalisation Hub`);
+  assert.strictEqual(out.text, `Hi Owner,\n\n${DOC.replyText}\n\nI kept the attachment strictly on brand, so all the personality stayed in this email.\n\nAidan Hubbot, Personalisation Hub`);
   assert.deepStrictEqual([t.seen.voice.length, t.seen.voice[0].kind, t.seen.voice[0].body], [1, "generate", DOC.replyText], "only the cover note goes to the voice");
   assert.ok(!JSON.stringify(t.seen.voice[0]).includes("For Kestrel."), "the document is never passed to the voice");
-  const printedDoc = RENDERED.filter((r) => r.html.includes("For Kestrel.")).slice(-1)[0].html;
-  assert.ok(Object.keys(attachmentsOf(sent.mail)).join() === "aws-onboarding-pack-kestrel.pdf" && !printedDoc.includes("personality"), "the document is exactly what the skill wrote, printed to a PDF: no quirk");
+  assert.strictEqual(attachmentsOf(sent.mail)["aws-onboarding-pack-kestrel.md"].body.toString("utf8"), DOC.documentMd, "the document is exactly what the skill wrote: no quirk");
   assert.ok(/no joke, aside or quirk anywhere in it/.test(t.seen.write[0].system), "and its prompt says so");
   assert.deepStrictEqual(ticketOf(t, "t-w").aidan.voice, { quirk: true });
 });
@@ -2709,20 +2637,20 @@ check("Aidan's voice: branded collateral gets a quirky cover note; the PDF and i
   await cron(t);
   const sent = t.google.calls.sent[0];
   const out = messagesOf(t, "t-c").find((m) => m.direction === "out");
-  assert.ok(out.text.endsWith(`\n\n${aside}\n\nAidan H, Personalisation Hub`), out.text);
+  assert.ok(out.text.endsWith(`\n\n${aside}\n\nAidan Hubbot, Personalisation Hub`), out.text);
   assert.deepStrictEqual([seenVoice.length, seenVoice[0].kind], [1, "generate"]);
   const files = attachmentsOf(sent.mail);
   for (const [name, f] of Object.entries(files)) assert.ok(f.body.length > 0 && !f.body.toString("latin1").includes("checkout queue"), `${name} has no quirk`);
   assert.ok(!t.seen.render[0].html.includes("checkout queue"), "the printed page has none either");
 });
 
-check("Aidan's signature: \"Aidan H, Personalisation Hub\" by default; the signature line is a setting, off by default, saved by an admin", async () => {
+check("Aidan's signature: \"Aidan Hubbot, Personalisation Hub\" by default; the signature line is a setting, off by default, saved by an admin", async () => {
   const t = makeAidan([aidanMail({ id: "a", text: "@Aidan, please confirm you received this email." })], { answer: () => ({ canAnswer: true, replyText: "Got it, Owner.", reason: "" }) });
   await connectAidan(t);
   const before = (await call(t.api, "GET", "/v1/status", { token: "admin@ph.example" })).body.aidan;
   assert.deepStrictEqual([before.signatureLineOn, before.signatureLine], [false, ""], "off by default");
   await cron(t);
-  assert.strictEqual(bodyOf(t, "t-a"), "Got it, Owner.\n\nAidan H, Personalisation Hub");
+  assert.strictEqual(bodyOf(t, "t-a"), "Got it, Owner.\n\nAidan Hubbot, Personalisation Hub");
   // Only an admin; it can't be switched on empty; the text is kept when it is switched off.
   assert.strictEqual((await call(t.api, "POST", "/v1/aidan", { token: "ed@ph.example", body: { signatureLineOn: true, signatureLine: "PH's digital assistant" } })).statusCode, 403);
   const empty = await call(t.api, "POST", "/v1/aidan", { token: "admin@ph.example", body: { signatureLineOn: true, signatureLine: "  " } });
@@ -2731,12 +2659,12 @@ check("Aidan's signature: \"Aidan H, Personalisation Hub\" by default; the signa
   assert.deepStrictEqual([on.statusCode, on.body.aidan.signatureLineOn, on.body.aidan.signatureLine, on.body.aidan.senderCount], [200, true, "PH's digital assistant", 1], "saved as one clean line; the senders are untouched");
   t.mail.push(aidanMail({ id: "b", text: "@Aidan, please confirm you received this email.", date: 1759990005000 }));
   await cron(t);
-  assert.strictEqual(bodyOf(t, "t-b"), "Got it, Owner.\n\nAidan H, Personalisation Hub\nPH's digital assistant", "on: the configured line is appended");
+  assert.strictEqual(bodyOf(t, "t-b"), "Got it, Owner.\n\nAidan Hubbot, Personalisation Hub\nPH's digital assistant", "on: the configured line is appended");
   const off = await call(t.api, "POST", "/v1/aidan", { token: "admin@ph.example", body: { signatureLineOn: false } });
   assert.deepStrictEqual([off.body.aidan.signatureLineOn, off.body.aidan.signatureLine], [false, "PH's digital assistant"]);
   t.mail.push(aidanMail({ id: "c", text: "@Aidan, please confirm you received this email.", date: 1759990009000 }));
   await cron(t);
-  assert.strictEqual(bodyOf(t, "t-c"), "Got it, Owner.\n\nAidan H, Personalisation Hub", "off again: the default signature");
+  assert.strictEqual(bodyOf(t, "t-c"), "Got it, Owner.\n\nAidan Hubbot, Personalisation Hub", "off again: the default signature");
 });
 
 (async () => {

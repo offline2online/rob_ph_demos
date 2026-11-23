@@ -124,19 +124,16 @@ check("configuration: nobody can start a run without an allowed sender; switched
   assert.ok(!JSON.stringify(adm).includes(ALLOWED));
 });
 
-check("the sender name: \"Aidan H\" by default, a saved first and last name otherwise, safe for a From header", () => {
+check("the sender name: \"Aidan Hubbot\" by default, a saved first and last name otherwise, safe for a From header", () => {
   const d = ac.normaliseConfig({});
-  assert.deepStrictEqual([d.fromFirstName, d.fromLastName, d.fromName], ["Aidan", "H", "Aidan H"]);
+  assert.deepStrictEqual([d.fromFirstName, d.fromLastName, d.fromName], ["Aidan", "Hubbot", "Aidan Hubbot"]);
   assert.strictEqual(ac.normaliseConfig({ fromFirstName: "Ada", fromLastName: "Botsworth" }).fromName, "Ada Botsworth");
   assert.strictEqual(ac.normaliseConfig({ fromFirstName: "Ada", fromLastName: "" }).fromName, "Ada", "a last name may be left empty");
-  assert.strictEqual(ac.normaliseConfig({ fromFirstName: "", fromLastName: "Bot" }).fromName, "Aidan H", "no first name: the default");
+  assert.strictEqual(ac.normaliseConfig({ fromFirstName: "", fromLastName: "Bot" }).fromName, "Aidan Hubbot", "no first name: the default");
   assert.strictEqual(ac.normaliseConfig({ fromFirstName: 'A"d<a>\r\nX', fromLastName: "B" }).fromName, "A d a X B");
   assert.strictEqual(ac.cleanNamePart("x".repeat(60)).length, ac.NAME_PART_MAX);
   const pub = ac.publicConfig({});
-  assert.deepStrictEqual([pub.fromName, pub.fromFirstName, pub.fromLastName], ["Aidan H", "Aidan", "H"]);
-  // Ebq2oqSH3Lp1UrHWnfgJ: "Hubbot" was the old default; one saved as it stood reads as "H". Any other saved last name is kept.
-  for (const old of ["Hubbot", " hubbot ", "HUBBOT"]) assert.strictEqual(ac.normaliseConfig({ fromFirstName: "Aidan", fromLastName: old }).fromName, "Aidan H", old);
-  assert.deepStrictEqual([ac.publicConfig({ fromFirstName: "Aidan", fromLastName: "Hubbot" }).fromLastName, ac.normaliseConfig({ fromFirstName: "Aidan", fromLastName: "Hubbots" }).fromName], ["H", "Aidan Hubbots"]);
+  assert.deepStrictEqual([pub.fromName, pub.fromFirstName, pub.fromLastName], ["Aidan Hubbot", "Aidan", "Hubbot"]);
   assert.ok(ac.composeAidanAnswer({ replyText: "Done.", fromName: "Ada Botsworth" }).endsWith("\n\nAda Botsworth, Personalisation Hub"), "the sign-off is the display name");
 });
 
@@ -173,25 +170,14 @@ check("reply-all: the sender and everyone they copied, never the mailbox or our 
 check("the reply is one email with the document attached, threaded on the original", () => {
   const raw = ac.buildMultipartRaw({ fromName: "Aidan", fromEmail: "support@ph.example", to: [ALLOWED, "client@shop.example"], cc: ["colleague@shop.example"], subject: "Onboarding",
     text: "Hi Owner,\n\nAttached.", inReplyTo: "<m1@mail.example>", references: "<m0@mail.example>", boundary: "BOUNDARY",
-    attachments: [{ name: "onboarding-pack.pdf", type: "application/pdf", content: Buffer.from("%PDF-1.7 onboarding", "latin1") }] });
+    attachments: [{ name: "onboarding-pack.md", type: "text/markdown; charset=UTF-8", content: "# Onboarding\n\nStep one." }] });
   const mail = Buffer.from(raw.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8");
   for (const want of ['From: "Aidan" <support@ph.example>', `To: ${ALLOWED}, client@shop.example`, "Cc: colleague@shop.example", "Subject: Re: Onboarding", "In-Reply-To: <m1@mail.example>",
-    "References: <m0@mail.example> <m1@mail.example>", "Auto-Submitted: auto-generated", 'Content-Type: multipart/mixed; boundary="BOUNDARY"', 'Content-Disposition: attachment; filename="onboarding-pack.pdf"', "--BOUNDARY--",
-    // Ebq2oqSH3Lp1UrHWnfgJ: a reply comes back to Aidan's own address.
-    "Reply-To: <aidan@personalisationhub.com>"]) {
+    "References: <m0@mail.example> <m1@mail.example>", "Auto-Submitted: auto-generated", 'Content-Type: multipart/mixed; boundary="BOUNDARY"', 'Content-Disposition: attachment; filename="onboarding-pack.md"', "--BOUNDARY--"]) {
     assert.ok(mail.includes(want), `the email has ${want}`);
   }
-  assert.strictEqual(ac.AIDAN_ADDRESS, "aidan@personalisationhub.com");
   const attached = mail.split("--BOUNDARY")[2].split("\r\n\r\n")[1];
-  assert.strictEqual(Buffer.from(attached.replace(/\r\n/g, ""), "base64").toString("latin1"), "%PDF-1.7 onboarding");
-  // Never a Markdown file, whichever path built the email (Ebq2oqSH3Lp1UrHWnfgJ).
-  for (const md of [{ name: "notes.md", type: "application/octet-stream" }, { name: "Notes.MARKDOWN", type: "" }, { name: "notes.txt", type: "text/markdown; charset=UTF-8" }]) {
-    assert.throws(() => ac.buildMultipartRaw({ fromEmail: "support@ph.example", to: [ALLOWED], subject: "S", text: "T", attachments: [{ ...md, content: "# x" }] }), /never sends a Markdown file/, md.name);
-  }
-  assert.deepStrictEqual([ac.pdfFileName("onboarding-pack.md"), ac.pdfFileName("x.markdown"), ac.isMarkdownAttachment({ name: "a.pdf", type: "application/pdf" })], ["onboarding-pack.pdf", "x.pdf", false]);
-  // A plain reply with no attachment carries the Reply-To too.
-  const plain = Buffer.from(ac.buildMultipartRaw({ fromEmail: "support@ph.example", to: [ALLOWED], subject: "S", text: "T" }).replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8");
-  assert.ok(plain.includes("Reply-To: <aidan@personalisationhub.com>\r\n"));
+  assert.strictEqual(Buffer.from(attached.replace(/\r\n/g, ""), "base64").toString("utf8"), "# Onboarding\n\nStep one.");
   assert.ok(!/\r\n(Bcc|Cc): .*\r\n.*Cc:/.test(mail));
 });
 
@@ -626,17 +612,16 @@ check("console: data is shown without addresses and within budget; ids become ti
   assert.deepStrictEqual(idx, { projects: [{ id: "p1", name: "Backlog Tracker & FAQs", description: "", counts: { backlog: 9 } }], concepts: [] });
 });
 
-check("console: a short answer stays in the body; a long one (over roughly a page) is attached as a PDF (printed from its Markdown) with a two-line summary", () => {
+check("console: a short answer stays in the body; a long one (over roughly a page) is a Markdown attachment with a two-line summary", () => {
   assert.deepStrictEqual(ac.shapeConsoleAnswer({ replyText: "Three tickets are in Backlog: A, B and C.", documentMd: "", title: "" }), { inline: "Three tickets are in Backlog: A, B and C.", attachment: null });
   const long = ac.shapeConsoleAnswer({ replyText: "The Customer Support concept answers support email from the Help Centre. It is still being critiqued. It has three parts.",
     documentMd: "# Customer Support concept\n\n## What it is\n\n" + "Lots of detail. ".repeat(300), title: "Customer Support concept: summary" });
-  assert.strictEqual(long.inline, "The Customer Support concept answers support email from the Help Centre.\nIt is still being critiqued.\n\nThe full answer is attached (customer-support-concept-summary.pdf).");
-  assert.ok(long.attachment.name === "customer-support-concept-summary.pdf" && long.attachment.content.startsWith("# Customer Support concept") && long.attachment.content.endsWith("\n"));
-  assert.ok(long.full.startsWith("The Customer Support concept answers") && long.full.includes("\n\n# Customer Support concept"), "the whole answer, for the body when the PDF can't be made");
+  assert.strictEqual(long.inline, "The Customer Support concept answers support email from the Help Centre.\nIt is still being critiqued.\n\nThe full answer is attached (customer-support-concept-summary.md).");
+  assert.ok(long.attachment.name === "customer-support-concept-summary.md" && long.attachment.content.startsWith("# Customer Support concept") && long.attachment.content.endsWith("\n"));
   // The model wrote a page and more in the body: it is attached anyway, summarised in two lines.
   const body = ["## Backlog", ...Array.from({ length: 60 }, (_, i) => `- Ticket ${i + 1}`)].join("\n");
   const moved = ac.shapeConsoleAnswer({ replyText: body, documentMd: "", title: "Backlog" });
-  assert.deepStrictEqual([moved.attachment.name, moved.attachment.content, moved.inline], ["backlog.pdf", `${body}\n`, "Backlog\nTicket 1\n\nThe full answer is attached (backlog.pdf)."]);
+  assert.deepStrictEqual([moved.attachment.name, moved.attachment.content, moved.inline], ["backlog.md", `${body}\n`, "Backlog\nTicket 1\n\nThe full answer is attached (backlog.md)."]);
   assert.ok(ac.isLongAnswer("x".repeat(ac.ANSWER_PAGE_CHARS + 1)) && !ac.isLongAnswer("x".repeat(ac.ANSWER_PAGE_CHARS)));
   const c = ac.cleanConsoleAnswer({ canAnswer: true, replyText: " Two lines. ", documentMd: " # Doc ", title: "Doc\nTitle", reason: "x" });
   assert.deepStrictEqual(c, { canAnswer: true, replyText: "Two lines.", documentMd: "# Doc", title: "Doc Title", reason: "", selfCheck: null });

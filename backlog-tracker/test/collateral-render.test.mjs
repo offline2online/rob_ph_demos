@@ -122,40 +122,6 @@ await test("the brand skill's own collateral stylesheet is applied after the def
   assert.strictEqual(r.m.eyebrow, "rgb(196, 61, 130)");
 });
 
-// Ebq2oqSH3Lp1UrHWnfgJ: a one-pager that runs over is printed through the fit
-// steps (cl.FIT_STEPS), the way collateral-pdf.js → renderPdf does, until it is
-// one page; a plain document (cta: false) carries no sales call to action.
-const overLong = (extra) => [ONE_PAGER, "", "## Proof", "", para(extra, "Proof")].join("\n");
-async function fitted(md) {
-  const format = cc.FORMATS["one-pager"];
-  const context = await browser.newContext({ javaScriptEnabled: false });
-  const page = await context.newPage();
-  await page.route("**/*", (route) => (route.request().url().startsWith("data:") ? route.continue() : route.abort("blockedbyclient")));
-  const counts = [];
-  for (const st of cl.FIT_STEPS) {
-    await page.setContent(cl.collateralHtml({ documentMd: md, format, industry: "Grocery & Supermarkets", prospect: { name: "CP Group" }, brand: BRAND, tight: st.tight }), { waitUntil: "load" });
-    const pdf = Buffer.from(await page.pdf(cl.PDF_OPTIONS(format, { scale: st.scale })));
-    counts.push(cc.pdfPageCount(pdf));
-    if (counts[counts.length - 1] === 1) break;
-  }
-  await context.close();
-  return counts;
-}
-
-await test("a one-pager that runs onto a second page is fitted to one: the tight page first, then scaled, never below 0.85", async () => {
-  assert.deepStrictEqual(await fitted(overLong(20)), [2, 1], "the tight page is enough");
-  const scaled = await fitted(overLong(44));
-  assert.ok(scaled.length >= 3 && scaled[0] === 2 && scaled[scaled.length - 1] === 1, `scaled down to fit: ${scaled}`);
-  const tooLong = await fitted(overLong(90));
-  assert.ok(tooLong.length === cl.FIT_STEPS.length && tooLong.every((n) => n > 1), `far too long never fits by printing alone: ${tooLong}`);
-  assert.ok(cl.FIT_STEPS.every((st) => st.scale >= cl.MIN_FIT_SCALE) && cl.PDF_OPTIONS(cc.FORMATS["one-pager"], { scale: 0.5 }).scale === cl.MIN_FIT_SCALE, "never below the readable floor");
-});
-
-await test("a document Aidan sends that isn't collateral is printed without the sales call to action", async () => {
-  const html = cl.collateralHtml({ documentMd: "# AWS onboarding pack\n\nFor Kestrel.", format: Object.assign({}, cc.FORMATS.overview, { label: "Document" }), cta: false, brand: BRAND });
-  assert.ok(!html.includes(`<section class="c-cta"`) && !html.includes("Try free on AWS Marketplace") && !html.includes(`<p class="c-eyebrow"`) && html.includes("For Kestrel."));
-});
-
 await browser.close();
 console.log(failed ? `\n${failed} failed` : "\ncollateral-render: all passed");
 process.exit(failed ? 1 : 0);

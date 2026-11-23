@@ -70,32 +70,6 @@ check("renderPdf: after a timed-out print the next one starts with no browser le
   assert.deepStrictEqual([second.proc.killed, second.closed], [false, 1], "closed normally, not killed");
 });
 
-// Ebq2oqSH3Lp1UrHWnfgJ: a one-pager is re-printed through the fit steps, in the
-// same page and the same browser, until it is one page.
-check("renderPdf fit: a one-pager over one page is re-printed through the steps in the same browser until it fits; none fits, the last is returned unfitted", async () => {
-  const pdfOf = (pages) => Buffer.from("%PDF-1.4\n" + "1 0 obj << /Type /Page >>\n".repeat(pages) + " ".repeat(80), "latin1");
-  const browserFor = (pagesByScale) => {
-    const log = { launches: 0, content: [], scales: [] };
-    const page = { setJavaScriptEnabled: async () => {}, setRequestInterception: async () => {}, on: () => {}, evaluateHandle: async () => {},
-      setContent: async (html) => { log.content.push(html); }, pdf: async (opts) => { const sc = opts.scale || 1; log.scales.push(sc); return pdfOf(pagesByScale(log.content[log.content.length - 1], sc)); } };
-    return { log, launch: async () => { log.launches += 1; return { process: () => null, close: async () => {}, newPage: async () => page }; } };
-  };
-  const steps = [{ html: "tight", scale: 1, tight: true }, { html: "tight", scale: 0.94, tight: true }, { html: "tight", scale: 0.88, tight: true }];
-  const fmt = { key: "one-pager", label: "One-pager" };
-  const a = browserFor((html, sc) => (html === "tight" && sc <= 0.94 ? 1 : 2));
-  const out = await renderPdf("normal", { format: fmt, timeoutMs: 2000, launch: a.launch, fit: { maxPages: 1, steps } });
-  assert.deepStrictEqual([out.pages, out.fit, a.log.launches, a.log.content, a.log.scales], [1, { step: 2, scale: 0.94, tight: true, fitted: true }, 1, ["normal", "tight"], [1, 1, 0.94]], "one browser; the page is loaded again only when it changes");
-  const b = browserFor(() => 2);
-  const none = await renderPdf("normal", { format: fmt, timeoutMs: 2000, launch: b.launch, fit: { maxPages: 1, steps } });
-  assert.deepStrictEqual([none.pages, none.fit.fitted, none.fit.step, b.log.scales], [2, false, 3, [1, 1, 0.94, 0.88]]);
-  const c = browserFor(() => 1);
-  const first = await renderPdf("normal", { format: fmt, timeoutMs: 2000, launch: c.launch, fit: { maxPages: 1, steps } });
-  assert.deepStrictEqual([first.pages, first.fit, c.log.scales], [1, { step: 0, scale: 1, tight: false, fitted: true }, [1]], "fits as laid out: printed once");
-  const d = browserFor(() => 4);
-  const plain = await renderPdf("normal", { format: { key: "overview" }, timeoutMs: 2000, launch: d.launch });
-  assert.deepStrictEqual([plain.pages, plain.fit, d.log.scales], [4, undefined, [1]], "no fit asked: printed once, as many pages as it needs");
-});
-
 check("stopBrowser: no browser, or one whose close hangs, never holds the run", async () => {
   await stopBrowser(null);
   const b = stubBrowser();
