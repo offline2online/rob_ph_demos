@@ -1310,13 +1310,14 @@ export function mountStaffKanban(ctx) {
 
   // returnTo: the epic to reopen when a child ticket opened from it closes.
   let returnTo = null;
-  // An existing ticket opens for reading (KB-VIEW-1): its title, description, acceptance criteria, linked
-  // tickets and details column are read-only until their edit icon is pressed. `unlocked` holds what has
-  // been opened for editing on the ticket that is open; drawing the same ticket again keeps it, and
-  // closing the ticket clears it. A new ticket is a form from the start.
+  // An existing ticket opens for reading (KB-VIEW-1): its title, description, acceptance criteria and linked
+  // tickets are read-only until their edit icon is pressed. `unlocked` holds what has been opened for editing
+  // on the ticket that is open; drawing the same ticket again keeps it, and closing the ticket clears it. A new
+  // ticket is a form from the start. The details column (status, assignee, priority…) changes too often to sit
+  // behind an edit icon: for anyone who can edit it is always its form (KB-VIEW-3); a viewer reads it as text.
   let unlocked = new Set(), lockKey = "", threadTab = "comments";
   const lockable = () => !draftIsNew;
-  const isLocked = (k) => lockable() && !unlocked.has(k);
+  const isLocked = (k) => lockable() && !unlocked.has(k) && !(k === "details" && canWrite());
   const editBtn = (k, what) => (canWrite() ? `<button type="button" class="icon-btn kb-ro-edit" data-kb-edit="${k}" title="Edit ${what}" aria-label="Edit ${what}"><span class="material-symbols-outlined" aria-hidden="true">edit</span></button>` : "");
   // A field with a reading view and its form: the form is there from the start (Save compares it with what
   // was loaded) and shows once the field is opened for editing.
@@ -2060,7 +2061,7 @@ export function mountStaffKanban(ctx) {
     if (threadTab === "history") { const hw = $("#f-history-wrap"); if (hw) hw.innerHTML = historyHTML(); }
   }
 
-  // The details column as it reads before it is opened for editing: one line per field.
+  // The details column as a viewer reads it (an editor always has its form, KB-VIEW-3): one line per field.
   function roDetail(k) {
     const d = draft, none = (t) => `<span class="kb-none">${esc(t)}</span>`;
     const who = (id) => (id ? `${avatar(id)}<span>${esc(fullName(id))}</span>` : none(k === "assignee" ? "Unassigned" : "—"));
@@ -2085,7 +2086,7 @@ export function mountStaffKanban(ctx) {
   }
   function sideHTML(fields) {
     const inner = fields.map(fieldHTML).join("");
-    if (!lockable()) return `<div class="kb-task-side" id="kb-task-side">${inner}</div>`;
+    if (!isLocked("details")) return `<div class="kb-task-side" id="kb-task-side">${inner}</div>`;
     return `<div class="kb-task-side kb-lockable${isLocked("details") ? " kb-locked" : ""}" id="kb-task-side">
       <div class="kb-ro"><div class="kb-ro-head"><span class="field-label">Details</span>${editBtn("details", "details")}</div><dl class="kb-ro-details" id="f-details-ro">${fields.map(roDetail).join("")}</dl></div>
       <div class="kb-edit-body">${inner}</div></div>`;

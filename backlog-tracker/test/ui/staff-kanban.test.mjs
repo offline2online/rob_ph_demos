@@ -2246,7 +2246,7 @@ const lockedFields = (p) => p.$$eval("#task-form .kb-lockable", (els) => els.map
 const shown = (p, sel) => p.$eval(sel, (e) => !!e.getClientRects().length && getComputedStyle(e).visibility !== "hidden").catch(() => false);
 const commentWrites = async (p, key) => (await writes(p, new RegExp(`^kanbanTasks/${key}/comments/`))).filter((w) => w.data);
 
-T("KB-C35", "an existing ticket opens for reading: details read-only with an edit icon each, Comments first with the box to add one; a new task is the form it always was", { timeout: 120000 }, async (prof) => {
+T("KB-C35", "an existing ticket opens for reading: title, description, criteria and links read-only with an edit icon each, the details column always its form (KB-VIEW-3), Comments first with the box to add one; a new task is the form it always was", { timeout: 120000 }, async (prof) => {
   const p = await open(prof, "#staff-kanban", { ...REVIEW, seed: kanbanSeed({ extra: { kanbanTasks: { "PH-20": { ...KB.kanbanTasks["PH-20"], acceptanceCriteria: ["aaaaaaaa\t0\tPreview shows the offer price", "bbbbbbbb\t1\tLive board unchanged"], acTotal: 2, acDone: 1 } } } }) });
   // New task: a form from the start, nothing to unlock.
   await openNewTask(p);
@@ -2256,12 +2256,16 @@ T("KB-C35", "an existing ticket opens for reading: details read-only with an edi
   // An existing ticket.
   await press(p, '.kb-card[data-key="PH-20"]');
   await p.waitForSelector("#f-title-ro");
-  assert.equal((await lockedFields(p)).split(" ").sort().join(" "), "criteria:locked description:locked details:locked links:locked title:locked");
+  assert.equal((await lockedFields(p)).split(" ").sort().join(" "), "criteria:locked description:locked links:locked title:locked");
   assert.equal(await p.textContent("#f-title-ro"), "Menu board preview shows RRP instead of local offer price");
   assert.match(await p.textContent("#f-description-ro"), /products with an active local offer still show HQ RRP/);
-  for (const sel of ["#f-title", "#f-description", "#f-status", "#f-assignee", "#f-ac-input", "#f-link-type"]) assert.equal(await shown(p, sel), false, `${sel} is not on show while the ticket is read`);
-  assert.match(await p.textContent('#f-details-ro [data-ro="assignee"] dd'), new RegExp(`${FULL.huy}$`)); assert.match(await p.textContent('#f-details-ro [data-ro="status"]'), /In Progress/i); assert.match(await p.textContent('#f-details-ro [data-ro="priority"]'), /Highest/);
-  assert.deepEqual((await p.$$eval("#task-form .kb-locked [data-kb-edit]", (b) => b.map((x) => x.getAttribute("aria-label")))).sort(), ["Edit acceptance criteria", "Edit description", "Edit details", "Edit linked tickets", "Edit title"]);
+  for (const sel of ["#f-title", "#f-description", "#f-ac-input", "#f-link-type"]) assert.equal(await shown(p, sel), false, `${sel} is not on show while the ticket is read`);
+  // The details column is its form from the start (KB-VIEW-3): status, assignee and the rest change without an edit icon.
+  for (const sel of ["#f-status", "#f-assignee", "#f-priority"]) assert.ok(await shown(p, sel), `${sel} is ready to change`);
+  assert.equal(await p.$("#f-details-ro"), null, "no reading view of the details for an editor");
+  assert.equal(await p.$eval("#f-assignee", (e) => e.value), HUY); assert.equal(await p.$eval("#f-status", (e) => e.value), "in-progress"); assert.equal(await p.$eval("#f-priority", (e) => e.value), "highest");
+  assert.deepEqual((await p.$$eval("#task-form .kb-locked [data-kb-edit]", (b) => b.map((x) => x.getAttribute("aria-label")))).sort(), ["Edit acceptance criteria", "Edit description", "Edit linked tickets", "Edit title"]);
+  assert.equal(await p.$('[data-kb-edit="details"]'), null, "the details column has no edit icon");
   // Comments is the tab that is open, with the box and its mic ready; History is one press away.
   assert.equal(await p.getAttribute("#f-tab-comments", "aria-selected"), "true"); assert.equal(await p.getAttribute("#f-tab-history", "aria-selected"), "false");
   await p.waitForSelector('[data-field="comments"] .ql-editor');
@@ -2290,17 +2294,17 @@ T("KB-C35", "an existing ticket opens for reading: details read-only with an edi
   await p.click('[data-field="description"] .ql-editor'); await p.keyboard.press("Control+End"); await p.keyboard.type(" Checked on staging.");
   await press(p, '[data-kb-edit="criteria"]');
   assert.ok(await shown(p, "#f-ac-input"), "criteria can be added and reworded once opened");
-  await press(p, '[data-kb-edit="details"]');
-  assert.ok(await shown(p, "#f-status") && await shown(p, "#f-assignee"), "the details column becomes its form");
+  await p.selectOption("#f-priority", "high");
   await eventually(async () => assert.equal(await p.$eval("#f-save", (e) => e.disabled), false));
   await press(p, "#f-save");
-  await eventually(async () => { const t = await stored(p, "PH-20"); assert.equal(t.title, "Menu board preview shows the offer price"); assert.match(t.description, /Checked on staging\./); });
+  await eventually(async () => { const t = await stored(p, "PH-20"); assert.equal(t.title, "Menu board preview shows the offer price"); assert.match(t.description, /Checked on staging\./); assert.equal(t.priority, "high"); });
   // Opened again it is back to reading, with what was saved.
   await p.waitForFunction(() => document.getElementById("task-backdrop").hidden);
   await press(p, '.kb-card[data-key="PH-20"]');
   await p.waitForSelector("#f-title-ro");
   assert.equal(await p.textContent("#f-title-ro"), "Menu board preview shows the offer price");
   assert.match(await lockedFields(p), /^title:locked description:locked criteria:locked/);
+  assert.equal(await p.$eval("#f-priority", (e) => e.value), "high", "and the details column is still its form, with what was saved");
   await p.done();
 });
 
@@ -2311,6 +2315,8 @@ T("KB-C35", "a viewer reads the same view with no edit icons, and a long descrip
   await press(p, '.kb-card[data-key="PH-20"]');
   await p.waitForSelector("#f-title-ro");
   assert.equal(await p.$$eval("#task-form [data-kb-edit]", (e) => e.length), 0, "a viewer has nothing to open for editing");
+  assert.match(await p.textContent('#f-details-ro [data-ro="assignee"] dd'), new RegExp(`${FULL.huy}$`)); assert.match(await p.textContent('#f-details-ro [data-ro="status"]'), /In Progress/i);
+  assert.equal(await shown(p, "#f-status"), false, "a viewer reads the details as text");
   assert.equal(await p.$("#f-save"), null);
   const h = () => p.$eval("#f-description-ro", (e) => e.clientHeight);
   const cut = await h();
@@ -2350,8 +2356,7 @@ T("KB-C36", "History: who opened it, every move and hand-off newest first with l
   const stat = (id) => p.textContent(`#f-history-stats [data-hist-stat="${id}"] dd`);
   assert.equal(await stat("open"), "10d"); assert.equal(await stat("handoffs"), "1"); assert.equal(await stat("moves"), "2"); assert.equal(await stat("edits"), "1");
   assert.deepEqual(await p.$$eval("#f-history-cols [data-hist-col]", (e) => e.map((x) => `${x.dataset.histCol}=${x.querySelector("b").textContent}`)), ["backlog=2d", "ready-for-dev=2d", "in-progress=6d"]);
-  // Reassign it and move it, from the details column.
-  await press(p, '[data-kb-edit="details"]');
+  // Reassign it and move it, from the details column (its form from the start, KB-VIEW-3).
   await p.selectOption("#f-assignee", LINH); await p.selectOption("#f-status", "approved");
   await press(p, "#f-save");
   await p.waitForFunction(() => document.getElementById("task-backdrop").hidden);

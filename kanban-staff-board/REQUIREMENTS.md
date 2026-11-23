@@ -396,11 +396,10 @@ keeps them (any ticket above the lowest level can have children, KB-TASK-14).
 **KB-VIEW-1 An existing ticket opens for reading (console build, 19 Nov 2026).**
 Creating a ticket is unchanged (KB-MOD-1). Opening one that exists is for
 reviewing it and commenting, so its details are read-only until asked for:
-- The **title**, **description**, **acceptance criteria**, **linked tickets** and
-  the **details column** (priority, type, parent, people, release, estimate, time
-  logged, sprint, project, due date, labels, status) read as text. Each has an
+- The **title**, **description**, **acceptance criteria** and **linked tickets**
+  read as text. Each has an
   **edit icon** (pencil; "Edit title", "Edit description", "Edit acceptance
-  criteria", "Edit linked tickets", "Edit details") that turns it into its form,
+  criteria", "Edit linked tickets") that turns it into its form,
   with the cursor in it. A field opened for editing stays open until the ticket is
   closed; the next time the ticket opens it reads again. Save, Cancel and "Save
   only when something changed" (KB-TASK-13) are as before, and a save that finds a
@@ -411,11 +410,28 @@ reviewing it and commenting, so its details are read-only until asked for:
   once as before); rewording, moving, removing and adding wait for the edit icon.
 - Child tickets, agent tickets and attachments are lists with their own actions
   and are unchanged. Fields hidden by settings stay under "N more fields".
-- A viewer reads the same view with no edit icons.
+- The **details column** is always its form for an editor (KB-VIEW-3).
+- A viewer reads the same view with no edit icons, the details column included
+  (one line per field).
 AC: + New task shows the creation form as before; open PH-20: the title and
-description are text, no field of the form is on show, the Comments tab is
+description are text, their fields are not on show, the details column's Status,
+Assignee and Priority are ready to change, the Comments tab is
 selected and the comment box is ready; press the edit icon on the description: the
 editor opens, and Save writes the change. KB-C35.
+
+**KB-VIEW-3 The details column is always editable (console build, 23 Nov 2026).**
+Status, assignee and the other fields down the right of an existing ticket
+(priority, type, parent, people, release, estimate, time logged, sprint, project,
+due date, labels) change often, so for anyone who can edit they are always their
+form: no "Edit details" icon and no reading view of them. A change is written by
+**Save** as before (KB-TASK-13: Save is enabled once something has changed), and
+Cancel leaves the ticket as it was. A viewer still reads the column as text. The
+title, description, acceptance criteria and linked tickets still open for reading
+(KB-VIEW-1).
+AC: open PH-20 as an editor: Status, Assignee and Priority show as their controls
+with the ticket's values and there is no "Edit details" icon; change Priority and
+Save: it is stored, and reopened the column is still its form; as a viewer the
+column reads as text. KB-C35, KB-C36.
 
 **KB-VIEW-2 Comments and History tabs.** Under the details an existing ticket has
 two tabs, **Comments** (selected whenever a ticket opens, with the number of
