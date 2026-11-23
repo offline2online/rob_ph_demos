@@ -41,7 +41,7 @@ const LIMITS = {
 // letters, digits and underscores, starting with a letter, never one of the template slots the render engine
 // fills with layout (js/tokens.js SLOT_TOKENS; test/tokens.test.mjs checks the two lists agree).
 const TOKEN_NAME_RE = /^[A-Za-z][A-Za-z0-9_]{0,39}$/;
-// Data tokens filled live, never set by hand (js/tokens.js LIVE_TOKENS): ${StoreName} is the pharmacy name and
+// Data tokens filled live, never set by hand (js/tokens.js LIVE_TOKENS): ${StoreName} is the store name and
 // ${CloseTime} / ${OpenTime} are today's hours. A value stored for one before that rule is dropped on the next save.
 const LIVE_TOKENS = Object.freeze(["StoreName", "CloseTime", "OpenTime"]);
 const SLOT_TOKENS = Object.freeze(["Logo", "Headline", "AccentLine", "Content", "Icon", "ServiceLabel", "Line1", "Line2", "Tiles", "Footer", "OpenToday", "Chevron", "ViewBox", "EdgePath", "HoursCard", "HolidayNote", "ContactLine", "Decor"]);

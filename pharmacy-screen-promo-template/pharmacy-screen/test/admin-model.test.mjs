@@ -366,6 +366,12 @@ test('Currently active promotion: what the screens play today (activation, else 
   assert.equal(M.seasonOf(null, act, day(2026, 11, 23)), 'christmas');
   assert.equal(M.seasonOf(null, act, day(2026, 12, 28)), 'new-year');
   assert.equal(M.seasonOf(null, act, day(2027, 11, 23)), 'fallback');
+  // The editor goes by the store's date, as the screens do, not the browser's: 23:30 UTC on 23 Nov is 24 Nov in
+  // Melbourne (the default when the store's time zone is not known) and still 23 Nov in Perth.
+  const at = new Date('2026-11-23T23:30:00Z');
+  assert.deepEqual(M.storeToday(undefined, at), day(2026, 11, 24));
+  assert.deepEqual(M.storeToday('Australia/Perth', at), day(2026, 11, 24));
+  assert.deepEqual(M.storeToday('Australia/Perth', new Date('2026-11-23T15:30:00Z')), day(2026, 11, 23));
   // The Fallback plays for exactly 7 s whatever is saved on its beats.
   assert.equal(M.loopSeconds({ beats: [{ dur: 9 }, {}, {}] }, undefined, 'fallback'), 7);
   assert.equal(M.loopSeconds({ beats: [{}, {}, {}] }, undefined, 'easter'), 12);

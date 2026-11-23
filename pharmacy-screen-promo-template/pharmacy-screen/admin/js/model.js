@@ -10,6 +10,7 @@
 // exactly what a screen draws.
 
 import { defaultContent, occasionCopy, OCCASIONS, OCCASION_IDS, DEFAULT_OCCASION, DEFAULT_HTML, footerConfig, beatSeconds, defaultHeadlineSeconds, sceneSeconds, fmtMonthDay, seasonDates, liveOccasion, occasionOf } from '../../js/render.js';
+import { storeDate } from '../../js/hours.js';
 import { DATA_TOKENS, isSettableToken, tokensIn, cleanTokens } from '../../js/tokens.js';
 
 export const BUILTIN_SCENES = 'builtin-promotion-scenes';
@@ -146,11 +147,17 @@ export function effectiveContent(master, own, detached) {
 /** Today's date in this browser, as {y, m, d}. */
 export const localToday = (now = new Date()) => ({ y: now.getFullYear(), m: now.getMonth() + 1, d: now.getDate() });
 /**
+ * Today's date at the store, as {y, m, d}: the date the screens go by (js/hours.js storeDate, the store's time zone,
+ * Australia/Melbourne when it is not known, as on the screen). The editor uses it for "Activate on display" and for
+ * what is on display, so an admin in another time zone, or near midnight, sees and sets what the screens play.
+ */
+export const storeToday = (tz, now = new Date()) => storeDate(tz, now);
+/**
  * What a Seasonal promotion plays on `today` for this content (js/render.js liveOccasion, as the screen works it out):
  * a running "Activate on display" (content.activation), else the season whose dates hold today, else the fallback.
  * The old Season pick (content.season, before 23 Nov 2026) no longer counts. `p` is unused, kept for callers.
  */
-export const seasonOf = (p, ownContent, today = localToday()) => liveOccasion(isObj(ownContent) ? ownContent : {}, today);
+export const seasonOf = (p, ownContent, today = storeToday()) => liveOccasion(isObj(ownContent) ? ownContent : {}, today);
 
 /**
  * Seasonal content is each pharmacy's own (config-api/src/seasonal.js, which this mirrors): its season, and every
@@ -389,10 +396,10 @@ export function editsSince(sent, ph) {
 
 /** What each data token shows when it is not set by hand (the Tokens card's placeholders). */
 export const TOKEN_SOURCES = {
-  Suburb: 'Suburb from Personalisation Hub',
-  Phone: 'Phone number from Personalisation Hub',
-  State: 'State from Personalisation Hub',
-  StoreCode: 'Store code from Personalisation Hub',
+  Suburb: 'Suburb from store details',
+  Phone: 'Phone number from store details',
+  State: 'State from store details',
+  StoreCode: 'Store code from store details',
 };
 
 // The Open today bar's messages, unless the bar is hidden.

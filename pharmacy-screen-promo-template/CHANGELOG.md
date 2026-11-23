@@ -24,8 +24,24 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
   `content.season` is kept but no longer published). Which pharmacies show promotions at all is the campaign's
   store segment targeting in Personalisation Hub ([docs/DATA-CONTRACT.md](docs/DATA-CONTRACT.md)).
 
+### Changed
+
+- **+ Add token: Brand name and Website removed, and no "From Personalisation Hub" line.** The menu above every
+  headline field now lists Store name, Suburb, Store code, State, Phone number, Languages spoken by store staff and
+  Localised copy. The store-data entries no longer carry the "From Personalisation Hub" sub-line (all of a user's
+  data comes from there). A value already set for `${BrandName}` or `${Website}` in Settings → Tokens still fills
+  copy that uses it. Settings → Tokens' placeholders for the store's data now read "… from store details" (e.g.
+  "Suburb from store details") instead of "… from Personalisation Hub".
+
 ### Fixed
 
+- **Seasonal: Currently active promotion is readable, and Activate on display reaches every screen.** In Retail
+  Admin the drop-down was squashed to a sliver beside Activate on display, so what was selected could not be seen;
+  it now has the row to itself and keeps one width (Activate on display goes below it on a narrow screen), in the
+  HQ Admin pharmacy view too. The published Seasonal template is now the activated season while an activation runs
+  (the Fallback otherwise), so a screen still on the player from before Activate on display plays the activated
+  season instead of the Fallback. The editor works out what is on display, and how long an activation runs, from
+  the store's date rather than the browser's.
 - **Preview: "Sample opening hours" is under the preview, beside Pause.** The label and its info tooltip have moved
   from their own row above the preview to the controls row under it, directly to the right of the Pause button, and
   nothing about them shows above the preview any more. The label still always shows in full (at phone width too): the
@@ -87,6 +103,11 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Changed
 
+- **`${StoreName}` comes from the Location API.** The screen fills `${StoreName}` (Christmas and New Year's
+  sign-offs, the logo's alt text, custom templates) with `store_location.store_name` that Personalisation Hub's
+  Location API returns for the screen's device, instead of the Pharmacy name typed in the editor, which may not be
+  the store's name or may be a placeholder. The Pharmacy name is used only when the API has no store name
+  (`storeModel()` in `pharmacy-screen/js/render.js`).
 - **The Firebase functions run in Sydney (`australia-southeast1`)**, next to the stores, instead of `us-central1`;
   the deploy removes the old copies. No instance is kept warm yet (`PS_MIN_INSTANCES` / `PH_MIN_INSTANCES`, default
   0): that is a monthly cost and the owner's call ([docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) → "Regions and warm

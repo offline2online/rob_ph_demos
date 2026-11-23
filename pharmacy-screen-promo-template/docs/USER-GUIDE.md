@@ -36,7 +36,8 @@ Personalisation Hub API. **Back to promotions** returns.
 ## Add a pharmacy
 
 1. Open **Settings** and click **Add pharmacy** in the *Pharmacies* section.
-2. Enter the **Pharmacy name** (shown on screens as `${StoreName}`) and the **Store code**. The store code
+2. Enter the **Pharmacy name** and the **Store code**. Screens show the store name from Personalisation Hub's
+   Location API as `${StoreName}`; the Pharmacy name is shown only when Personalisation Hub has no store name. The store code
    must be exactly the store's `store_code` in Personalisation Hub (e.g. `VIC-MP-006`): that is how a screen
    finds its pharmacy. It is checked as you type and must be unique.
 3. The pharmacy is created as soon as both are valid. Carry on editing; nothing is lost.
@@ -129,11 +130,11 @@ Service copy needs TGA advertising review before go-live.
 **Copy tips**
 
 - Headlines are rich text: bold, italic, regular weight, accent colour and line breaks.
-- **+ Add token**, on the right of each headline's label, lists the tokens you can use: Store name, Suburb, Brand
-  name, Store code, State, Phone number, Website, Languages spoken by store staff and Localised copy. Pick one to
-  insert it where the cursor is (e.g. `${StoreCode}`). Store name, Suburb, Store code, State and Phone number come
-  from the pharmacy and Personalisation Hub; Brand name, Website, Languages spoken and Localised copy show the
-  value set for the pharmacy in **Settings → Tokens**, and nothing until one is set.
+- **+ Add token**, on the right of each headline's label, lists the tokens you can use: Store name, Suburb, Store
+  code, State, Phone number, Languages spoken by store staff and Localised copy. Pick one to insert it where the
+  cursor is (e.g. `${StoreCode}`). Store name, Suburb, Store code, State and Phone number come from the pharmacy's
+  store data; Languages spoken and Localised copy show the value set for the pharmacy in **Settings → Tokens**,
+  and nothing until one is set.
 - `${Suburb}` becomes the store's suburb from Personalisation Hub. If a store has no suburb it disappears with
   the comma or line break before it.
 - Bar messages use `${CloseTime}` and `${OpenTime}` (worked out in the store's time zone), e.g. "Open today until
@@ -176,7 +177,10 @@ change. **Activate on display**, beside it, puts the one picked on that pharmacy
 a season activated early still ends on its scheduled end date (the button's tooltip says which day), then the
 screens go back to the Fallback, and next year it starts on its own dates again. Activating the Fallback during a
 season shows the Fallback until that season would have ended. The button reads **On display** when the one picked
-is already playing. The master template has no screens, so it has no Activate on display. Each season's line
+is already playing. The drop-down keeps one width, wide enough to read the whole line; in Retail Admin it has the
+row to itself, and on a narrow screen Activate on display goes below it. Activate on display and "· on display" go
+by the store's date (Melbourne time when the store's time zone is not known), as the screens do, not the date on
+your own computer. The master template has no screens, so it has no Activate on display. Each season's line
 shows its start and end dates in brackets after its
 name, for example **Christmas (15 Dec – 27 Dec)** (one date for a one-day season: **Australia Day (26 Jan)**;
 Easter shows this year's Good Friday to Easter Monday). They are the dates in the season's **Dates** card, and
@@ -258,13 +262,14 @@ in the link that is not their store shows "Access denied" ([PH-EMBED.md](PH-EMBE
 **Settings** (the cog beside Promo preview) shows:
 
 - **Pharmacies**: the pharmacy picker, **Add pharmacy**, **Reset** and **Delete** ("Add a pharmacy" above).
-- **Pharmacy details**: name and store code. The name is the `${StoreName}` token, shown beside the
-  **Pharmacy name** label: change the name here to change it on screens.
+- **Pharmacy details**: name and store code. On screens `${StoreName}` is the store name from Personalisation
+  Hub's Location API for the screen's device; the **Pharmacy name** (the token is shown beside its label) is used
+  only when Personalisation Hub has no store name for the store.
 - **Tokens**: every `${…}` token this pharmacy's promotions and templates use, including the master template's
   sections it inherits, with the promotions that use each. Leave a token blank to show the store's own data
-  (the placeholder says where it comes from: the suburb, phone number, state and store code from Personalisation
-  Hub). `${StoreName}`
-  (the Pharmacy name above) and `${CloseTime}` / `${OpenTime}` (today's hours, which change through the day) are
+  (the placeholder says where it comes from, e.g. "Suburb from store details": the suburb, phone number, state
+  and store code from the store's details). `${StoreName}`
+  (the store name from Personalisation Hub, else the Pharmacy name above) and `${CloseTime}` / `${OpenTime}` (today's hours, which change through the day) are
   filled in live and are not listed. Type a value to show it on this pharmacy's screens instead, for
   example when Personalisation Hub has the wrong suburb. A token only a custom template or your own copy uses
   (e.g. `${Website}`) shows nothing until it has a value here. Changes save as you type and show in the

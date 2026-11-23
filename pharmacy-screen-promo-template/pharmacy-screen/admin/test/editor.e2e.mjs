@@ -235,7 +235,7 @@ test('Settings → Tokens: lists the tokens the pharmacy uses (master included);
   assert.equal((await page.textContent('#detailsCard label:has(#sName) > span')).trim(), 'Pharmacy name * ${StoreName}');
   assert.equal(await page.textContent('#sNameTok'), '${StoreName}');
   assert.ok(!names.some((n) => ['Headline', 'Logo', 'Content', 'Footer'].includes(n)), 'layout slots are not listed');
-  assert.equal(await page.getAttribute('#tokList input[data-token="Suburb"]', 'placeholder'), 'Suburb from Personalisation Hub');
+  assert.equal(await page.getAttribute('#tokList input[data-token="Suburb"]', 'placeholder'), 'Suburb from store details');
   assert.match(await page.textContent('#tokList'), /Used in Morning/);
   // The preview has no store data, so ${Suburb} is blank until a value is set by hand.
   assert.doesNotMatch(await headline(page), /Testville/);
@@ -462,6 +462,8 @@ test('seasonal: Currently active promotion opens on what plays (the Fallback out
   await settle(page);
   screen = (await api('GET', '/api/screens/VIC-MP-001', { token: null })).body.promotions.occasions;
   assert.deepEqual(screen.content.activation, { occasion: 'easter', until: '2027-03-29' });
+  // Published as Easter's template while it runs, so a screen still on an older player plays Easter too.
+  assert.deepEqual([screen.template.kind, screen.template.occasion], ['occasion', 'easter']);
   assert.equal(await page.textContent('#pmActivate'), 'check_circleOn display');
   assert.match((await seasonOpts())[5], /· on display$/);
   assert.doesNotMatch((await seasonOpts())[0], /on display/);
@@ -1074,6 +1076,11 @@ test('pharmacy view: admin/?store=<code> shows only that pharmacy\'s promotions,
   assert.equal(await page.isDisabled('#pmTpl'), false);
   assert.equal(await page.inputValue('#pmTpl'), 'builtin-occasion-fallback');
   assert.equal(await page.isVisible('#pmActivate'), true);
+  // The drop-down is not squashed by the button beside it: its label takes the whole row in the pharmacy view and
+  // the drop-down keeps its width, so the selected line (with its dates and "· on display") can be read.
+  const pick = await page.evaluate(() => { const s = document.getElementById('pmTpl'), row = s.closest('.meta-row').getBoundingClientRect(), lab = s.closest('label').getBoundingClientRect(); return { sel: s.getBoundingClientRect().width, lab: lab.width, row: row.width }; });
+  assert.ok(pick.sel >= 300, `drop-down ${pick.sel}px wide`);
+  assert.ok(pick.lab >= pick.row - 1, 'the field spans the row');
   await page.selectOption('#pmTpl', 'builtin-occasion-christmas');
   assert.equal(await page.isHidden('#o0dur'), true);
   assert.equal(await page.isVisible('#occDates'), true, 'the pharmacy view shows the season dates');
@@ -1281,9 +1288,13 @@ test('+ Add token above every headline field lists the available tokens and inse
   await page.click(add);
   assert.equal(await page.getAttribute(add, 'aria-expanded'), 'true');
   assert.deepEqual(await page.$$eval(`${menu} button .tok-l`, (l) => l.map((e) => e.textContent)),
-    ['Store name', 'Suburb', 'Brand name', 'Store code', 'State', 'Phone number', 'Website', 'Languages spoken by store staff', 'Localised copy']);
+    ['Store name', 'Suburb', 'Store code', 'State', 'Phone number', 'Languages spoken by store staff', 'Localised copy']);
   assert.deepEqual(await page.$$eval(`${menu} button code`, (l) => l.map((e) => e.textContent)),
-    ['${StoreName}', '${Suburb}', '${BrandName}', '${StoreCode}', '${State}', '${Phone}', '${Website}', '${LanguagesSpoken}', '${LocalisedCopy}']);
+    ['${StoreName}', '${Suburb}', '${StoreCode}', '${State}', '${Phone}', '${LanguagesSpoken}', '${LocalisedCopy}']);
+  // Brand name and Website are gone, and nothing in the menu says "From Personalisation Hub".
+  assert.doesNotMatch(await page.textContent(menu), /Brand name|Website|Personalisation Hub/);
+  assert.deepEqual(await page.$$eval(`${menu} button .tok-s`, (l) => l.map((e) => e.textContent)),
+    ['Pharmacy name', 'Set in Settings → Tokens', 'Set in Settings → Tokens']);
   // Escape and a click elsewhere close it without inserting anything.
   await page.keyboard.press('Escape');
   assert.equal(await page.isVisible(menu), false);

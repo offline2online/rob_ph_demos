@@ -134,13 +134,13 @@
     <div class="card" id="detailsCard" style="margin-top:16px">
       <div class="sect">Pharmacy details</div>
       <div class="grid2">
-        <label class="f"><span>Pharmacy name * <code class="tok" id="sNameTok">${StoreName}</code></span><input id="sName" placeholder="e.g. Brighton Pharmacy"></label>
+        <label class="f"><span>Pharmacy name * <code class="tok" id="sNameTok" title="On screens ${StoreName} is the store name from the Location API. This name is shown only when the store has none there.">${StoreName}</code></span><input id="sName" placeholder="e.g. Brighton Pharmacy"></label>
         <label class="f"><span>Store code *</span><input id="sCode" placeholder="e.g. VIC-MP-006" autocapitalize="characters"></label>
       </div>
       <span class="hint" id="codeErr" style="color:var(--err)" hidden></span>
     </div>
     <div class="card" id="tokensCard" style="margin-top:16px">
-      <div class="sect">Tokens <span class="ms help" title="The tokens this pharmacy's promotions and templates use, including the master template's. Leave a token blank to show the store's own data. Type a value to show it on this pharmacy's screens instead. ${StoreName} is the Pharmacy name above, and ${CloseTime} and ${OpenTime} are today's hours, filled in live, so they are not listed.">info</span></div>
+      <div class="sect">Tokens <span class="ms help" title="The tokens this pharmacy's promotions and templates use, including the master template's. Leave a token blank to show the store's own data. Type a value to show it on this pharmacy's screens instead. ${StoreName} is the store name from the Location API (the Pharmacy name above when it has none), and ${CloseTime} and ${OpenTime} are today's hours, filled in live, so they are not listed.">info</span></div>
       <div class="grid2" id="tokList"></div>
       <span class="hint" id="tokEmpty" hidden>No promotion or template uses a token yet.</span>
     </div>

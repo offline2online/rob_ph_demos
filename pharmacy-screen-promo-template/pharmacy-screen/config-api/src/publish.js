@@ -52,6 +52,18 @@ function withoutSeason(content) {
   return a ? { ...rest, activation: a } : rest;
 }
 
+// The season a Seasonal promotion is published as: the season of this pharmacy's
+// "Activate on display" while it runs (its `until` day not yet over, by the UTC date
+// of the publish), else the fallback. Screens on the current player don't depend on
+// it (they read content.activation against the store's own date); it is what a
+// screen still on an older player, which plays the template's season, shows. Such a
+// screen keeps the season after `until` until the pharmacy is next published.
+function publishedSeason(own, publishedAt) {
+  const a = cleanActivation(own && own.activation);
+  const today = String(publishedAt || new Date().toISOString()).slice(0, 10);
+  return a && today <= a.until ? a.occasion : FALLBACK_OCCASION;
+}
+
 // pharmacy: a stored pharmacy record (with id); promotions: every promotion
 // (with id); templates: every custom template (with id). Returns the public
 // document for pharmacy.storeCode.
@@ -61,10 +73,12 @@ function buildScreenConfig(pharmacy, promotions, templates, publishedAt) {
   const detached = pharmacy.detached || {};
   const promos = {};
   for (const p of [...promotions].sort((a, b) => a.promoId.localeCompare(b.promoId))) {
-    // A Seasonal promotion is published as the fallback: the screen plays a running
-    // "Activate on display" (content.activation), else the season whose dates hold
-    // the store's date, else this (js/render.js liveOccasion).
-    const season = seasonOfPromotion(p) ? FALLBACK_OCCASION : null;
+    // A Seasonal promotion is published as the season of a running "Activate on
+    // display", else the fallback (publishedSeason). The screen itself plays a running
+    // activation (content.activation), else the season whose dates hold the store's
+    // date, else the fallback (js/render.js liveOccasion); the template is what a
+    // player from before 23 Nov 2026 plays, as it does not read content.activation.
+    const season = seasonOfPromotion(p) ? publishedSeason(content[p.id], publishedAt) : null;
     promos[p.promoId] = {
       promoId: p.promoId,
       name: p.name,
@@ -91,4 +105,4 @@ function buildScreenConfig(pharmacy, promotions, templates, publishedAt) {
   };
 }
 
-module.exports = { buildScreenConfig, PUBLISHED_SCHEMA_VERSION };
+module.exports = { buildScreenConfig, publishedSeason, PUBLISHED_SCHEMA_VERSION };

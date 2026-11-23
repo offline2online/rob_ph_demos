@@ -35,7 +35,7 @@ Only these are kept; the proxy drops everything else before answering the screen
 | Field (under `data`) | Type | Used for |
 |---|---|---|
 | `store_location.store_code` | string | Which pharmacy's config to load (`/api/screens/{store_code}`) |
-| `store_location.store_name` | string | Fallback store name (the config's pharmacy name wins) |
+| `store_location.store_name` | string | The store name, `${StoreName}`: the Location API's value for this device wins; the config's pharmacy name is used only when it is blank |
 | `store_location.store_timezone` | IANA zone, e.g. `Australia/Melbourne` | Store time for the "Open today" bar and today's hours (default `Australia/Melbourne` if empty) |
 | `store_info.opening_hours[]` | array | Weekly hours and the bar state |
 | `…opening_hours[].open_day` / `close_day` | `MONDAY` … `SUNDAY` | A session may close the next day (crossing midnight) |
@@ -115,7 +115,7 @@ are 1–40 lower-case letters, digits and hyphens, unique across promotions.
 | `morning` | Morning | Promotion scenes (`builtin-promotion-scenes`) | Greeting, service chips, one scene per service, "Walk in today" close; "Open today" bar |
 | `afternoon` | Afternoon | Promotion scenes | The same, with afternoon copy |
 | `closed` | Closed | Opening hours (`builtin-opening-hours`) | Rotating headlines, the full week's hours, "Public Holidays: Please call to confirm", phone |
-| `occasions` | Seasonal | The Fallback and the six seasonal templates (published as the Fallback) | A running "Activate on display" (`content[<promotion id>].activation`), else the season whose dates hold the store's date, else the Fallback (the pharmacy's brand colours, logo and name, "Thank you, ${Suburb}, for supporting your local pharmacy", exactly 7 s). For a season: its standalone animation, its copy as beats, each for its own seconds (seeded: 7 s of beats, playback duration 8 s; with no seconds set, 12 s and 13 s), played once with the last beat held; no "Open today" bar |
+| `occasions` | Seasonal | The Fallback and the six seasonal templates (published as the Fallback, or as the activated season while an activation runs) | A running "Activate on display" (`content[<promotion id>].activation`), else the season whose dates hold the store's date, else the Fallback (the pharmacy's brand colours, logo and name, "Thank you, ${Suburb}, for supporting your local pharmacy", exactly 7 s). For a season: its standalone animation, its copy as beats, each for its own seconds (seeded: 7 s of beats, playback duration 8 s; with no seconds set, 12 s and 13 s), played once with the last beat held; no "Open today" bar |
 
 Admins can add more (Admin → New promotion). Which promotion plays when is scheduled in Personalisation Hub
 Core, not here. A promotion can carry a **Schedule**: No schedule (the default, nothing stored) or Annual, a start
@@ -136,7 +136,7 @@ Copy and template HTML use Personalisation Hub's token format, `${TokenName}`.
 | Token | Value |
 |---|---|
 | `${Suburb}` | `store_info.address_info.suburb`. With no suburb it is removed together with its leading comma and/or line break ("Good morning,<br>${Suburb}" → "Good morning") |
-| `${StoreName}` | The pharmacy's name from the editor (Christmas and New Year's sign-offs) |
+| `${StoreName}` | `store_location.store_name` from the Location API for this device (Christmas and New Year's sign-offs); the pharmacy's name from the editor only when the API has none |
 | `${CloseTime}` | Close time of today's current or next session, e.g. `7PM` ("Open today" bar) |
 | `${OpenTime}` | Open time of today's next session, e.g. `8.30AM` ("Open today" bar) |
 | `${Phone}` | `store_info.address_info.phone_number` |
@@ -144,11 +144,12 @@ Copy and template HTML use Personalisation Hub's token format, `${TokenName}`.
 | `${StoreCode}` | `store_location.store_code`, e.g. `VIC-MP-001` |
 
 Every headline field in the editor (each scene's headline, the hours headlines, the seasonal beats' main lines and
-the bar messages) has **+ Add token** on its label row: a menu of Store name (`${StoreName}`), Suburb, Brand name
-(`${BrandName}`), Store code, State, Phone number, Website (`${Website}`), Languages spoken by store staff
-(`${LanguagesSpoken}`) and Localised copy (`${LocalisedCopy}`) that inserts the token at the caret
-(`ADD_TOKENS` in `pharmacy-screen/js/tokens.js`). Brand name, Website, Languages spoken and Localised copy have no
-store data behind them: each shows the value the pharmacy sets in Settings → Tokens, and nothing until it does.
+the bar messages) has **+ Add token** on its label row: a menu of Store name (`${StoreName}`), Suburb, Store code,
+State, Phone number, Languages spoken by store staff (`${LanguagesSpoken}`) and Localised copy (`${LocalisedCopy}`)
+that inserts the token at the caret (`ADD_TOKENS` in `pharmacy-screen/js/tokens.js`). The store-data entries have no
+"From Personalisation Hub" sub-line. Languages spoken and Localised copy have no store data behind them: each shows
+the value the pharmacy sets in Settings → Tokens, and nothing until it does. Brand name and Website are not in the
+menu; copy that already uses `${BrandName}` or `${Website}` still shows a value set for it in Settings → Tokens.
 
 **In a custom template's HTML** (Admin → Edit HTML shows these as chips; `TEMPLATE_TOKENS` in
 `pharmacy-screen/js/tokens.js`):
@@ -183,8 +184,8 @@ store data behind them: each shows the value the pharmacy sets in Settings → T
 the pharmacy's `tokens`). A value set there wins over the store's data: `${Suburb}`, `${Phone}`, `${State}` and `${StoreCode}` show it
 instead of the Location API's value, and any other token name (letters, digits and underscores, starting with a letter,
 e.g. `${Website}`) used in copy or template HTML shows it instead of nothing. With a value set, `${Phone}` also
-resolves in promotion copy. `${StoreName}` is always the Pharmacy name (Settings → Pharmacy details shows the token
-beside that field), and `${CloseTime}` / `${OpenTime}` are always today's times, so none of the three can be set
+resolves in promotion copy. `${StoreName}` is always the store name from the Location API, falling back to the
+Pharmacy name (Settings → Pharmacy details shows the token beside that field) when the API has none, and `${CloseTime}` / `${OpenTime}` are always today's times, so none of the three can be set
 by hand (`LIVE_TOKENS` in `pharmacy-screen/js/tokens.js`); a value stored for one earlier is ignored by the screen
 and dropped the next time the pharmacy is saved. The layout slots (`${Headline}`, `${Logo}`, `${Content}` and the
 rest of the table above, other than `${Suburb}`, `${StoreName}`, `${Phone}`, `${State}` and `${StoreCode}`) cannot be set. Values are plain text, at most 200 characters, and at most 50 per
@@ -204,7 +205,7 @@ record also has `version`, `createdAt`, `createdBy`, `updatedAt`, `updatedBy`. F
 // pharmacy
 {
   "storeCode": "VIC-MP-001",              // 2-32 letters, digits, hyphens; stored upper-case; unique; must equal PH's store_code
-  "name": "Beaumaris Pharmacy",           // ${StoreName}
+  "name": "Beaumaris Pharmacy",           // admin label; ${StoreName} only when the Location API has no store_name
   "colours": { "primary": "#0f1050", "accent": "#5ee6b0" },
   "logo": { "path": "…", "url": "https://…", "contentType": "image/webp" },   // or null; set by the upload endpoint
   "content": {                            // keyed by promotion record id
@@ -268,9 +269,11 @@ Master template: a promotion's optional `master` holds the default content (the 
 `"detached": { "<promotion id>": ["greeting", "slots", "close", "footer", "headlines", "address", "occasions"] }`
 lists the sections it manages itself (its own `content` is used for those). Branding is never inherited, and
 neither is seasonal content (`"occasions"` is always listed for a Seasonal promotion). The published screen config
-below carries the resolved content only: for a Seasonal promotion its `template` is the Fallback
-(`builtin-occasion-fallback`; the screen picks the season by date), and `content` carries `activation` when one is
-set and well formed, and no `season`.
+below carries the resolved content only: for a Seasonal promotion its `template` is the season of a running
+"Activate on display" (its `until` not yet past on the UTC date of the publish), else the Fallback
+(`builtin-occasion-fallback`). The current screen decides from `content` (activation, else the season by the
+store's date, else the Fallback); the template is what an older player, which does not read `activation`, plays.
+`content` carries `activation` when one is set and well formed, and no `season`.
 
 **Store segment.** Whether a pharmacy shows these promotions at all is decided in Personalisation Hub, not here:
 the campaign that plays `promo=occasions` is targeted at the promotion store segment. A pharmacy in the segment
