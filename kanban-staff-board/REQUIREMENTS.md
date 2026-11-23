@@ -56,8 +56,9 @@ Build, Publish, Search, Profile). Route `#staff-kanban`, with
 `#staff-kanban/report?…`, `#staff-kanban/settings` and one address per ticket,
 `#staff-kanban/ticket/PH-<n>` (KB-LINK-1).
 
-**KB-NAV-2** The Staff Kanban page header holds the title, task count, search
-box, **Release report**, **+ New task**, and a settings cog (no ⋮ menu). AC: the
+**KB-NAV-2** The Staff Kanban page header holds the title, task count,
+**Release report**, **+ New task**, and a settings cog (no ⋮ menu). The search
+box is in the pinned filter bar (KB-FLT-1). AC: the
 cog opens Kanban settings; Release report opens the report for the board's
 selected release.
 
@@ -197,8 +198,10 @@ the mentions bell panel opens inside the window (KB-NAV-2).
 select, full names, "Unassigned"), **My tasks**, **Release**. **Secondary**
 in a **Filters** menu: Flagged only, Type, Priority, Sprint, Project, Label; the
 button shows how many secondary filters are on. The Project filter is kept in the
-address (`#staff-kanban?project=<id>`), so a reload or a shared link keeps it. Search sits in the page header and
-matches key, title, description text and labels. **Clear filters** resets all.
+address (`#staff-kanban?project=<id>`), so a reload or a shared link keeps it. **Search**
+sits in the pinned filter bar between **My tasks** and **Release** (23 Nov 2026),
+so it stays on screen while the board scrolls, and matches key, title,
+description text and labels. (The prototype still shows it in the page header.) **Clear filters** resets all.
 
 **KB-FLT-2 Keep position.** Changing any filter keeps the page's scroll
 position (and the phone's current column). A scroll the person makes straight
@@ -393,11 +396,10 @@ keeps them (any ticket above the lowest level can have children, KB-TASK-14).
 **KB-VIEW-1 An existing ticket opens for reading (console build, 19 Nov 2026).**
 Creating a ticket is unchanged (KB-MOD-1). Opening one that exists is for
 reviewing it and commenting, so its details are read-only until asked for:
-- The **title**, **description**, **acceptance criteria**, **linked tickets** and
-  the **details column** (priority, type, parent, people, release, estimate, time
-  logged, sprint, project, due date, labels, status) read as text. Each has an
+- The **title**, **description**, **acceptance criteria** and **linked tickets**
+  read as text. Each has an
   **edit icon** (pencil; "Edit title", "Edit description", "Edit acceptance
-  criteria", "Edit linked tickets", "Edit details") that turns it into its form,
+  criteria", "Edit linked tickets") that turns it into its form,
   with the cursor in it. A field opened for editing stays open until the ticket is
   closed; the next time the ticket opens it reads again. Save, Cancel and "Save
   only when something changed" (KB-TASK-13) are as before, and a save that finds a
@@ -408,11 +410,28 @@ reviewing it and commenting, so its details are read-only until asked for:
   once as before); rewording, moving, removing and adding wait for the edit icon.
 - Child tickets, agent tickets and attachments are lists with their own actions
   and are unchanged. Fields hidden by settings stay under "N more fields".
-- A viewer reads the same view with no edit icons.
+- The **details column** is always its form for an editor (KB-VIEW-3).
+- A viewer reads the same view with no edit icons, the details column included
+  (one line per field).
 AC: + New task shows the creation form as before; open PH-20: the title and
-description are text, no field of the form is on show, the Comments tab is
+description are text, their fields are not on show, the details column's Status,
+Assignee and Priority are ready to change, the Comments tab is
 selected and the comment box is ready; press the edit icon on the description: the
 editor opens, and Save writes the change. KB-C35.
+
+**KB-VIEW-3 The details column is always editable (console build, 23 Nov 2026).**
+Status, assignee and the other fields down the right of an existing ticket
+(priority, type, parent, people, release, estimate, time logged, sprint, project,
+due date, labels) change often, so for anyone who can edit they are always their
+form: no "Edit details" icon and no reading view of them. A change is written by
+**Save** as before (KB-TASK-13: Save is enabled once something has changed), and
+Cancel leaves the ticket as it was. A viewer still reads the column as text. The
+title, description, acceptance criteria and linked tickets still open for reading
+(KB-VIEW-1).
+AC: open PH-20 as an editor: Status, Assignee and Priority show as their controls
+with the ticket's values and there is no "Edit details" icon; change Priority and
+Save: it is stored, and reopened the column is still its form; as a viewer the
+column reads as text. KB-C35, KB-C36.
 
 **KB-VIEW-2 Comments and History tabs.** Under the details an existing ticket has
 two tabs, **Comments** (selected whenever a ticket opens, with the number of
@@ -478,7 +497,13 @@ comment's `mentions` (the notification trigger's input). KB-C37,
 `kanban-mcp.test.js` ("/mcp/kanban/voice-mentions"), `kanban-core.test.mjs`.
 
 **KB-MOD-1 New task.** Always starts in Backlog (no Status field, no
-Comments). The heading and primary button follow the type: **Create task**,
+Comments), **at the top of Backlog** (23 Nov 2026: its rank is the lowest in
+Backlog minus 10), so it is among the 25 cards Backlog draws first (§13) and
+shows on the unfiltered board as soon as it is created; a ticket ranked at the
+bottom of a long Backlog was behind "Show more" and looked missing. Every
+create path does the same: the board's form and `kanban_create_task`,
+`kanban_create_tasks` (the batch above the old top, in its own order) and
+`kanban_create_contract_ticket`. A move into a column still goes to its end. The heading and primary button follow the type: **Create task**,
 **Raise bug**, **Create epic**. Right-hand details column order: Priority,
 Type, Parent epic, Assignee, Reporter, Release, Estimate, Time logged (then
 any other shown optional fields; Status last when editing).
@@ -562,6 +587,15 @@ remembered and the column reopens if a required field in it is empty.
 
 **KB-MOD-6 Validation.** Required fields (per settings) are marked and
 checked on save; estimate and time logged accept `1d 4h`, `6h`, `30m`.
+
+**KB-MOD-7 A click outside never discards (23 Nov 2026).** Clicking the dimmed
+area around the ticket dialog closes it only when nothing in it has changed. A
+new ticket that has been typed into, or an existing ticket with unsaved
+changes, stays open with what was typed and a toast saying to Create/Save, or
+use **Cancel** or **×** to discard. A press that starts inside the dialog and is
+released outside (a text selection dragged past its edge) never counts as an
+outside click. Cancel, × and Escape close as before. Tested by KB-C39 in
+`backlog-tracker/test/ui/staff-kanban.test.mjs`.
 
 ## 8. Release report
 
@@ -715,7 +749,8 @@ is not logged.
 Reads stay bounded as the board grows (every tool answers in well under a
 second whatever its size). The next rank in a column is one query
 (`status` == column, `rank` desc, `limit 1`; no counter document, which would
-take about one write a second); if its index is still building the tool reads
+take about one write a second), and a new ticket's place at the top of Backlog
+the same with `rank` asc (KB-MOD-1); if its index is still building the tool reads
 the column as before. `kanban_list_tasks` and `kanban_release_report` push the
 filters into the query (assignee, status, release, project, type, priority,
 sprint, flagged, label; equality and `array-contains` merge single-field

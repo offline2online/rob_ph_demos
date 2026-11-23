@@ -89,8 +89,9 @@ heading (KB-MCP-1; `backlog-tracker/MCP.md` → Staff Kanban).
   bottom of the screen. (The console build, 29 Oct 2026: on a tablet they cover that column only, clipped to what is on screen; on a phone they are a slim bar above the tab bar that grows only when the card nears it; a drag drops nothing until the finger has moved, a drop on a target counts only if the finger entered it after the drag began, and Esc cancels a drag. See REQUIREMENTS.md → KB-BOARD-3/4.) You can drag cards
   with a mouse, or press and hold them on touch. Moving a card to Ready for
   Testing reassigns it to the tester (Rob by default). Moving it back to In
-  Progress or Ready for Dev returns it to the developer. Search sits in the page header, beside the task count. The primary filters, staff avatars,
-  **My tasks** and **Release**, sit in a bar pinned to the top while you scroll, with the column headers under it. Flagged,
+  Progress or Ready for Dev returns it to the developer. The primary filters, staff avatars,
+  **My tasks**, the search box and **Release**, sit in a bar pinned to the top while you scroll, with the column headers under it.
+  Search sits in that bar between My tasks and Release, so it stays on screen while the board scrolls. Flagged,
   type, priority, sprint and label are in the **Filters** menu, whose button shows how many are on. The bar stays on
   one line from 1024px wide. Changing a filter keeps your place on the page. **On a phone** the columns are a
   sideways carousel: swipe left or right, or tap a column tab in the pinned strip. With swimlanes, every
@@ -142,12 +143,14 @@ heading (KB-MCP-1; `backlog-tracker/MCP.md` → Staff Kanban).
   playable video (prototype only: a recording lasts for the browser session, and the real console would upload it to Storage).
 - **Ticket view: read first** (console build only, 19 Nov 2026; the prototype still opens a ticket as its form).
   Creating a ticket is unchanged. An existing ticket opens for reviewing and commenting: the title, description,
-  acceptance criteria, linked tickets and the details column read as text, each with an edit icon that turns it into
-  its form (criteria can still be ticked without it; a long description has Show more). Under the details are two
+  acceptance criteria and linked tickets read as text, each with an edit icon that turns it into
+  its form (criteria can still be ticked without it; a long description has Show more). The details column (status,
+  assignee, priority and the rest) is always its form for an editor, with no edit icon, because those change often
+  (23 Nov 2026, KB-VIEW-3); a viewer reads it as text. Under the details are two
   tabs: **Comments** (always the one selected, with the box and its mic) and **History**, the ticket's audit trail
   newest first in your own time zone (opened by whom, every move, every hand-off as from → to, every field change)
   under its figures: time open, handoffs, column moves, edits and time in each column. REQUIREMENTS.md → KB-VIEW-1,
-  KB-VIEW-2, KB-HIST-1.
+  KB-VIEW-2, KB-VIEW-3, KB-HIST-1.
 - **Voice comments** (console build only, 19 Nov 2026). Tap the mic in the comment box and talk. When you stop, a
   staff member's name, said as it is spelt or as the staff pronunciation list says it, becomes a proper @mention
   of that person, who is notified when you add the comment. A name it isn't sure of stays as the words heard, with

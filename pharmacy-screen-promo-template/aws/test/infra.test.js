@@ -13,11 +13,13 @@ const path = require("node:path");
 const cdk = require("aws-cdk-lib");
 const { Template, Match } = require("aws-cdk-lib/assertions");
 const { PharmacyScreenStack, PH_ROUTES, CONFIG_ROUTES } = require("../infra/stack");
+const { CSP_HEADER, screenCsp, editorCsp } = require("../infra/csp");
 const { normaliseParams } = require("../infra/params");
 
 const assets = fs.mkdtempSync(path.join(os.tmpdir(), "ps-aws-assets-"));
-for (const d of ["site/admin", "lambda"]) fs.mkdirSync(path.join(assets, d), { recursive: true });
+for (const d of ["site/admin", "site/assets/js", "lambda"]) fs.mkdirSync(path.join(assets, d), { recursive: true });
 fs.writeFileSync(path.join(assets, "site/admin/index.html"), "<!doctype html>");
+fs.writeFileSync(path.join(assets, "site/assets/js/player.0123456789.js"), "");
 fs.writeFileSync(path.join(assets, "lambda/index.js"), "");
 
 function synth(extra = {}) {
@@ -76,7 +78,7 @@ test("infra: CloudFront routes /api, media and the site; API Gateway gets the or
   const { json } = synth();
   const [, dist] = ofType(json, "AWS::CloudFront::Distribution")[0];
   const cfg = dist.Properties.DistributionConfig;
-  assert.deepEqual(cfg.CacheBehaviors.map((b) => b.PathPattern), ["pharmacyScreen/media/*", "api/screens/*", "api/*"]);
+  assert.deepEqual(cfg.CacheBehaviors.map((b) => b.PathPattern), ["pharmacyScreen/media/*", "api/screens/*", "api/*", "admin/*"]);
   const api = cfg.Origins.find((o) => o.OriginCustomHeaders);
   assert.equal(api.OriginCustomHeaders[0].HeaderName, "x-origin-verify");
   assert.match(JSON.stringify(api.OriginCustomHeaders[0].HeaderValue), /resolve:secretsmanager/);
@@ -86,8 +88,78 @@ test("infra: CloudFront routes /api, media and the site; API Gateway gets the or
   assert.equal(cfg.DefaultCacheBehavior.ViewerProtocolPolicy, "redirect-to-https");
   assert.equal(cfg.DefaultCacheBehavior.FunctionAssociations[0].EventType, "viewer-request");
   const [, phFn] = ofType(json, "AWS::Lambda::Function").find(([id]) => id.startsWith("PhApi"));
-  assert.match(JSON.stringify(phFn.Properties.Environment.Variables.PS_ORIGIN_VERIFY), /resolve:secretsmanager/);
   assert.equal(phFn.Properties.Environment.Variables.PH_API_DEFAULT_BASE_URL, "https://ph.mipharmacy.net");
+  assert.equal(phFn.Properties.Environment.Variables.PH_API_ALLOWED_HOSTS, undefined, "unset: only the default base URL's host");
+});
+
+test("infra: --ph-api-allowed-hosts reaches PhApi as PH_API_ALLOWED_HOSTS, and is checked at deploy time", () => {
+  const { json } = synth({ phApiAllowedHosts: "ph.mipharmacy.net, PH-Backup.mipharmacy.net,.personalisationhub.com" });
+  const [, phFn] = ofType(json, "AWS::Lambda::Function").find(([id]) => id.startsWith("PhApi"));
+  assert.equal(phFn.Properties.Environment.Variables.PH_API_ALLOWED_HOSTS, "ph.mipharmacy.net,ph-backup.mipharmacy.net,.personalisationhub.com");
+  const [, cfgFn] = ofType(json, "AWS::Lambda::Function").find(([id]) => id.startsWith("ConfigApi"));
+  assert.equal(cfgFn.Properties.Environment.Variables.PH_API_ALLOWED_HOSTS, undefined, "only PhApi sends the token");
+
+  const errs = (v, extra = {}) => normaliseParams({ region: "ap-southeast-2", phApiAllowedHosts: v, ...extra }).errors;
+  assert.match(errs("*").join(), /"\*" \(any host\) is not allowed/);
+  assert.match(errs("https://ph.mipharmacy.net").join(), /is not a host name/);
+  assert.match(errs("ph.mipharmacy.net:443").join(), /is not a host name/);
+  assert.match(errs("ph-backup.mipharmacy.net").join(), /must include the host of phApiBaseUrl \(ph\.mipharmacy\.net\)/);
+  assert.deepEqual(errs(".mipharmacy.net"), []);
+  assert.deepEqual(errs("ph.example.com", { phApiBaseUrl: "https://ph.example.com" }), []);
+});
+
+test("infra: the origin secret reaches the functions by reference only, and each may read it", () => {
+  const { json } = synth();
+  const [secretId] = ofType(json, "AWS::SecretsManager::Secret")[0];
+  const fns = ofType(json, "AWS::Lambda::Function").filter(([, f]) => /aws\/lambda\//.test(f.Properties.Handler || ""));
+  assert.equal(fns.length, 2);
+  for (const [id, f] of fns) {
+    const vars = f.Properties.Environment.Variables;
+    assert.ok(!("PS_ORIGIN_VERIFY" in vars), `${id}: no secret value in the environment`);
+    assert.doesNotMatch(JSON.stringify(vars), /resolve:secretsmanager/, `${id}: no dynamic reference to the value either`);
+    assert.deepEqual(vars.PS_ORIGIN_VERIFY_SECRET_ARN, { Ref: secretId }, `${id}: the secret's ARN`);
+    const role = f.Properties.Role["Fn::GetAtt"][0];
+    const statements = ofType(json, "AWS::IAM::Policy").filter(([, p]) => p.Properties.Roles.some((r) => r.Ref === role)).flatMap(([, p]) => p.Properties.PolicyDocument.Statement);
+    const reads = statements.filter((st) => [].concat(st.Action).includes("secretsmanager:GetSecretValue"));
+    assert.equal(reads.length, 1, `${id} may read the secret`);
+    assert.deepEqual(reads[0].Resource, { Ref: secretId }, `${id}: that secret only`);
+  }
+  // The only place the value is resolved is CloudFront's origin header (a dynamic reference in the template).
+  const text = JSON.stringify(json);
+  assert.equal(text.match(/resolve:secretsmanager/g).length, 1);
+});
+
+test("infra: CSP (report-only) on the screen and the editor; the viewer address goes to the screen read", () => {
+  const { json } = synth();
+  const cfg = ofType(json, "AWS::CloudFront::Distribution")[0][1].Properties.DistributionConfig;
+  const policies = Object.fromEntries(ofType(json, "AWS::CloudFront::ResponseHeadersPolicy"));
+  const cspOf = (behaviour) => {
+    const ref = behaviour.ResponseHeadersPolicyId.Ref;
+    const custom = policies[ref].Properties.ResponseHeadersPolicyConfig.CustomHeadersConfig;
+    const h = custom && custom.Items.find((i) => i.Header === CSP_HEADER);
+    return h ? h.Value : undefined;
+  };
+  assert.equal(cspOf(cfg.DefaultCacheBehavior), screenCsp(), "the screen page (default behaviour)");
+  const admin = cfg.CacheBehaviors.find((b) => b.PathPattern === "admin/*");
+  // Cognito: the editor may call the user pool's sign-in domain (resolved at deploy), and nothing else outside.
+  const [sep, parts] = cspOf(admin)["Fn::Join"];
+  assert.equal(sep, "");
+  assert.equal(parts[0], editorCsp({ connect: ["https://"] }).split("https://;")[0] + "https://");
+  assert.match(parts[1].Ref, /^AdminUsersSignInDomain/);
+  assert.equal(parts[2], ".auth.ap-southeast-2.amazoncognito.com; report-uri /api/csp-report");
+  assert.equal(admin.FunctionAssociations[0].EventType, "viewer-request", "/admin/ still serves index.html");
+  for (const b of cfg.CacheBehaviors.filter((x) => x.PathPattern.startsWith("api/"))) assert.equal(cspOf(b), undefined, `${b.PathPattern}: JSON, no CSP`);
+  const screens = cfg.CacheBehaviors.find((b) => b.PathPattern === "api/screens/*");
+  const orp = Object.fromEntries(ofType(json, "AWS::CloudFront::OriginRequestPolicy"))[screens.OriginRequestPolicyId.Ref].Properties.OriginRequestPolicyConfig;
+  assert.deepEqual(orp.HeadersConfig, { HeaderBehavior: "whitelist", Headers: ["CloudFront-Viewer-Address"] }, "never Host");
+  assert.deepEqual(orp.QueryStringsConfig, { QueryStringBehavior: "whitelist", QueryStrings: ["promo"] });
+  // With the retailer's own OIDC provider, the editor may call that provider's token endpoint.
+  const ext = synth({ oidcIssuer: "https://login.example.com", oidcClientId: "c", oidcAuthorizeUrl: "https://login.example.com/authorize", oidcTokenUrl: "https://login.example.com/oauth/token" }).json;
+  const extCfg = ofType(ext, "AWS::CloudFront::Distribution")[0][1].Properties.DistributionConfig;
+  const extPolicies = Object.fromEntries(ofType(ext, "AWS::CloudFront::ResponseHeadersPolicy"));
+  const extAdmin = extCfg.CacheBehaviors.find((b) => b.PathPattern === "admin/*");
+  const extCsp = extPolicies[extAdmin.ResponseHeadersPolicyId.Ref].Properties.ResponseHeadersPolicyConfig.CustomHeadersConfig.Items.find((i) => i.Header === CSP_HEADER).Value;
+  assert.equal(extCsp, editorCsp({ connect: ["https://login.example.com"] }));
 });
 
 test("infra: the site router sends / to the admin editor and serves directory indexes", () => {
@@ -122,7 +194,7 @@ test("infra: inside the retailer's VPC, with endpoints", () => {
   const fns = ofType(json, "AWS::Lambda::Function").filter(([, f]) => /aws\/lambda\//.test(f.Properties.Handler || ""));
   for (const [, f] of fns) assert.deepEqual(f.Properties.VpcConfig.SubnetIds, ["subnet-a", "subnet-b"]);
   template.resourceCountIs("AWS::EC2::SecurityGroup", 1);
-  template.resourceCountIs("AWS::EC2::VPCEndpoint", 3);
+  template.resourceCountIs("AWS::EC2::VPCEndpoint", 4); // S3, DynamoDB, KMS, Secrets Manager
 });
 
 test("infra: the retailer's own OIDC provider instead of Cognito; custom domain with DNS", () => {
@@ -151,7 +223,7 @@ test("infra: the retailer's own OIDC provider instead of Cognito; custom domain 
 
 test("infra: the admin editor's config.js is written at deploy time with the sign-in endpoints", () => {
   const { json } = synth();
-  const [, dep] = ofType(json, "Custom::CDKBucketDeployment")[0];
+  const dep = ofType(json, "Custom::CDKBucketDeployment").map(([, r]) => r).find((r) => !r.Properties.DestinationBucketKeyPrefix);
   const markers = JSON.stringify(dep.Properties.SourceMarkers || []);
   assert.match(markers, /oauth2\/authorize/);
   assert.match(markers, /oauth2\/token/);
@@ -175,4 +247,24 @@ test("infra: parameters are checked before anything is deployed", () => {
   assert.match(errs({ cognitoDomainPrefix: "my-cognito-login" }), /cognitoDomainPrefix/);
   assert.match(errs({ region: "sydney" }), /region/);
   assert.equal(errs({ region: "ap-southeast-2" }), "");
+});
+
+test("infra: the screen's fingerprinted assets/ are uploaded first, kept a year and never pruned; the rest is no-cache", () => {
+  const { json } = synth();
+  const deps = ofType(json, "Custom::CDKBucketDeployment");
+  assert.equal(deps.length, 2);
+  const [assetsId, assetsDep] = deps.find(([, r]) => r.Properties.DestinationBucketKeyPrefix === "assets/");
+  assert.deepEqual(assetsDep.Properties.SystemMetadata, { "cache-control": "public, max-age=31536000, immutable" });
+  assert.equal(assetsDep.Properties.Prune, false, "a player still on the previous page can finish loading it");
+  const [, site] = deps.find(([, r]) => !r.Properties.DestinationBucketKeyPrefix);
+  assert.deepEqual(site.Properties.SystemMetadata, { "cache-control": "no-cache" });
+  assert.deepEqual(site.Properties.Exclude, ["assets/*"], "the page upload neither uploads nor prunes assets/");
+  assert.ok((site.DependsOn || []).includes(assetsId), "the page is uploaded after the files it names");
+  // A site staged empty (cdk destroy) synthesizes without assets/.
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), "ps-aws-empty-"));
+  fs.mkdirSync(path.join(empty, "site"));
+  const { params } = normaliseParams({ region: "ap-southeast-2", siteAsset: path.join(empty, "site"), lambdaAsset: path.join(assets, "lambda") });
+  const app = new cdk.App();
+  const stack = new PharmacyScreenStack(app, params.stackName, { env: { account: "111122223333", region: "ap-southeast-2" }, params });
+  assert.equal(ofType(app.synth().getStackByName(stack.stackName).template, "Custom::CDKBucketDeployment").length, 1);
 });

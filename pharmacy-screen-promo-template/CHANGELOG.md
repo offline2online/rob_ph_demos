@@ -8,8 +8,65 @@ release handed to miPharmacy is tagged and packaged with this file and the `docs
 Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 ([docs/RELEASING.md](docs/RELEASING.md)).
 
+### Fixed
+
+- **Copy experience URL works when the editor is shown in Personalisation Hub.** PH's content frame is not given
+  clipboard access, so the button always said "Copy failed, select it from the tooltip" there (in both
+  orientations), and the hover tooltip could not be selected from. It now falls back to the browser's copy command,
+  which works in the frame; if the browser refuses that too, the URL is shown selected in a read-only field under the
+  button ("Press Ctrl+C to copy the URL below"). A test copies every promotion (Morning, Afternoon, Closed, and
+  Seasonal in each of its seasons) in both orientations from the framed editor and checks the URL.
+
+### Security
+
+- **Content-Security-Policy on the screen and the editor, report-only first.** Both deployments send
+  `Content-Security-Policy-Report-Only` (`aws/infra/csp.js`; the same in `firebase.json`): the screen may load
+  scripts, styles and fonts from its own origin only and connect only to it; the editor also Google Fonts and its
+  sign-in (Firebase Auth, or the OIDC token endpoint on AWS). Violations go to the new `POST /api/csp-report`, which
+  logs one short line each. Enforce it after a week without reports ([docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) →
+  "Content-Security-Policy").
+- **Public endpoints are harder to abuse.** The screen read (`/api/screens/**`) has a per-client limit (600 a minute,
+  about 150 screens behind one shared address; `429` past it). The Location API proxy keeps "not registered" answers in their own small cache, so made-up device
+  ids no longer push real devices' fallbacks out, and an address past 30 "not found" answers a minute gets `429` for
+  unknown devices while real ones keep refreshing; the slot is taken when the lookup starts, so ids sent all at once
+  are held to the same limit.
+- **AWS: the API answers only through CloudFront, and the origin secret is read by reference.** Both functions
+  refuse a request without CloudFront's `x-origin-verify` value (`403`). They get the secret's ARN
+  (`PS_ORIGIN_VERIFY_SECRET_ARN`) and read it at run time; the value is no longer in a function's environment. With
+  `--vpc-endpoints` a Secrets Manager endpoint is added. The screen read sees the viewer's address (not CloudFront's)
+  for its limit.
+- **AWS: the PH API allowed hosts can be set at deploy time.** `--ph-api-allowed-hosts` passes
+  `PH_API_ALLOWED_HOSTS` to `PhApi` (before, an AWS install could only save base URLs on the host of
+  `--ph-api-base-url`, so a second or failover PH server was refused). It must include that host, and `*` is not
+  accepted; unset, nothing changes.
+
 ### Changed
 
+- **The Firebase functions run in Sydney (`australia-southeast1`)**, next to the stores, instead of `us-central1`;
+  the deploy removes the old copies. No instance is kept warm yet (`PS_MIN_INSTANCES` / `PH_MIN_INSTANCES`, default
+  0): that is a monthly cost and the owner's call ([docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) → "Regions and warm
+  instances").
+
+- **Players download only what changed after a deploy, and the first load is lighter.** The deploy now publishes
+  every script and stylesheet under a name made from its content (`assets/`, kept by the browser and the CDN for a
+  year) and writes the fonts and the Christmas photo out as their own files; only `pharmacy-screen.html` and `sw.js`
+  are re-checked. After a deploy a player's service worker keeps every unchanged file and downloads the rest (a
+  one-line change to the player script: `sw.js`, the page and that script), instead of the whole 1.5 MB screen. A
+  player without the service worker no longer revalidates its scripts, stylesheets and fonts on every load. The
+  page waits on about 14 KB of stylesheets instead of 1.5 MB: the Seasonal fonts and photo load only when a
+  Seasonal promotion plays (and are still kept for offline), Roboto moved to the debug panel's stylesheet, the icon
+  font holds only the icons the editor offers (about 280 KB instead of 430 KB), and the player's modules are
+  preloaded. A scene's fitted copy is remembered, so the loop does not re-measure it on every pass. On AWS the
+  stack uploads `assets/` first with the long cache and keeps earlier builds' files
+  ([pharmacy-screen/README.md](pharmacy-screen/README.md) → "Kept on the device", "First load").
+
+- **A promotion plays once, then holds its last scene.** On a player a promotion plays inside a rotation of
+  campaigns: it now plays through once and stays on its last scene (Seasonal: its last beat), fully drawn, until
+  the next campaign loads, instead of starting again from the first scene. The held scene still follows the
+  store's clock and new data. It plays from the start again when the page is loaded or shown again, or a season
+  changes at midnight. `loop=1` on the screen URL keeps the old behaviour (loop forever) for a screen that shows one
+  campaign only ([docs/CONFIGURATION.md](docs/CONFIGURATION.md) → "Query parameters"). The editor's preview still
+  loops.
 - **Seeded seasons play on a 7-second loop.** The launch data now carries the seconds on screen set on the live
   master for every season's beats: Christmas 3 + 4, New Year's 2 + 2 + 3, Australia Day 2 + 2 + 3, Valentine's Day
   3 + 2 + 2, Easter 2 + 3 + 2, Anzac Day 3 + 2 + 2. A fresh install shows **Loop 7s** and a playback duration of

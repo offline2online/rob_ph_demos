@@ -35,6 +35,7 @@ const PARAMS = [
   ["adminValue", "value of that claim that means admin (default admin)"],
   ["cognitoDomainPrefix", "Cognito hosted sign-in domain prefix (default <stack name>-<account id>, lower case)"],
   ["phApiBaseUrl", "default Personalisation Hub API base URL until an admin saves one (default https://ph.mipharmacy.net)"],
+  ["phApiAllowedHosts", "comma-separated hosts an admin may save as a PH API base URL, e.g. ph.mipharmacy.net,ph-backup.mipharmacy.net; .example.com allows any host under it (default: the host of phApiBaseUrl)"],
   ["retainData", "true: keep the table, media bucket, KMS key and user pool when the stack is deleted"],
   ["siteAsset", "staged static files (written by the deploy script)"],
   ["lambdaAsset", "staged function code (written by the deploy script)"],
@@ -42,6 +43,8 @@ const PARAMS = [
 
 const bool = (v) => v === true || v === "true" || v === "1" || v === "yes";
 const list = (v) => (Array.isArray(v) ? v : String(v || "").split(",")).map((s) => String(s).trim()).filter(Boolean);
+// A host name, or ".example.com" for any host under it.
+const HOST_RE = /^\.?[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;
 const str = (v) => (v === undefined || v === null ? "" : String(v).trim());
 
 // endpointsLater: the deploy script reads an external provider's endpoints from its discovery document
@@ -70,6 +73,7 @@ function normaliseParams(raw = {}, { endpointsLater = false } = {}) {
     adminValue: get("adminValue") || DEFAULTS.adminValue,
     cognitoDomainPrefix: get("cognitoDomainPrefix").toLowerCase(),
     phApiBaseUrl: get("phApiBaseUrl") || DEFAULTS.phApiBaseUrl,
+    phApiAllowedHosts: list(raw.phApiAllowedHosts).map((h) => h.toLowerCase()),
     retainData: bool(raw.retainData),
     siteAsset: get("siteAsset"),
     lambdaAsset: get("lambdaAsset"),
@@ -92,6 +96,17 @@ function normaliseParams(raw = {}, { endpointsLater = false } = {}) {
   }
   for (const k of ["oidcAuthorizeUrl", "oidcTokenUrl", "oidcLogoutUrl", "oidcJwksUri", "phApiBaseUrl"]) {
     if (p[k] && !/^https:\/\/[^\s]+$/.test(p[k])) errors.push(`${k} must be an https URL`);
+  }
+  // The PH API token is sent to every saved base URL, so the allowed hosts are
+  // named one by one (or as a .suffix); "*" (any https host) is not offered here.
+  for (const h of p.phApiAllowedHosts) {
+    if (h === "*") errors.push("phApiAllowedHosts: \"*\" (any host) is not allowed; name each Personalisation Hub host, or .example.com for any host under it");
+    else if (!HOST_RE.test(h)) errors.push(`phApiAllowedHosts: "${h}" is not a host name (no scheme, path or port; .example.com for any host under it)`);
+  }
+  if (p.phApiAllowedHosts.length && /^https:\/\/[^\s]+$/.test(p.phApiBaseUrl)) {
+    const host = new URL(p.phApiBaseUrl).hostname.toLowerCase();
+    const ok = p.phApiAllowedHosts.some((a) => (a.startsWith(".") ? host.endsWith(a) && host.length > a.length : host === a));
+    if (!ok) errors.push(`phApiAllowedHosts must include the host of phApiBaseUrl (${host})`);
   }
   if (p.cognitoDomainPrefix && (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(p.cognitoDomainPrefix) || /aws|amazon|cognito/.test(p.cognitoDomainPrefix))) {
     errors.push("cognitoDomainPrefix: lower-case letters, digits and hyphens, without aws, amazon or cognito");

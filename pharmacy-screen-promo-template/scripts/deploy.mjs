@@ -35,7 +35,7 @@
 // first deploy (pharmacy-screen/ph-proxy/README.md).
 
 import { spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync, mkdirSync, copyFileSync, cpSync, rmSync, readdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, copyFileSync, cpSync, rmSync, readdirSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -43,7 +43,15 @@ import { fileURLToPath } from "node:url";
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 export const FIREBASE_TOOLS = "firebase-tools@14.27.0";
-export const REGION = "us-central1";
+// Where both functions run: Sydney, next to the Australian stores (they ran in us-central1 until 23 Nov 2026).
+// firebase.json's Hosting rewrites name it too, and PS_REGION / PH_REGION in the functions' .env.<project> files
+// must match (test/deploy-config.test.mjs). The media bucket is created here only if it does not exist yet.
+export const REGION = "australia-southeast1";
+// Where the functions ran before. The deploy deletes them there first (LEGACY_FUNCTIONS): firebase deploy
+// --non-interactive refuses to leave or delete them by itself, and --force is ruled out (it would also delete
+// Firestore indexes the menu-board demo owns).
+export const LEGACY_REGION = "us-central1";
+export const LEGACY_FUNCTIONS = ["pharmacyScreenConfigApi", "pharmacyScreenPhApi"];
 export const KMS = { location: "global", keyRing: "pharmacy-screen", key: "ph-api-token" };
 export const CODEBASES = ["pharmacy-screen-config-api", "pharmacy-screen-ph-proxy"];
 export const FUNCTION_SOURCES = ["pharmacy-screen/config-api", "pharmacy-screen/ph-proxy"];
@@ -88,25 +96,121 @@ export function stagePublic(root = ROOT, pub = join(root, STAGE_DIR, "public")) 
   return stampServiceWorker(pub);
 }
 
-// The screen's service worker (pharmacy-screen/sw.js) keeps the page, its scripts and stylesheets on the device and
-// downloads them again only when its BUILD changes. BUILD is a hash of exactly those files, so a deploy that changes
-// none of them leaves sw.js byte-identical and the players download nothing; one that changes any of them makes
-// every player fetch the new shell once. Returns the build id.
+// The screen as the players download it (buildShell), then its service worker (pharmacy-screen/sw.js) stamped with
+// the result. Run on the staged copy (Firebase, AWS and the release package all stage through here), never on the
+// repo's own files, and safe to run again on a staged copy whose css/ or js/ changed (the tests do).
+//
+//   assets/js/<name>.<hash>.js     every module in js/, its imports and the stylesheet paths it loads pointing at the
+//                                  fingerprinted copies, so the copies only ever load each other
+//   assets/css/<name>.<hash>.css   every stylesheet in css/, with each base64 font and image in it written out as
+//   assets/fonts/<hash>.woff2      its own file (the committed stylesheets keep them as data: URLs because the
+//   assets/media/<hash>.jpg        board's patch hand-over takes text only)
+//   pharmacy-screen.html           its stylesheet, script and modulepreload URLs pointing at assets/
+//   sw.js                          FILES: every one of those files and the hash of its content; BUILD: a hash of FILES
+//
+// A name in assets/ is the hash of its content, so it is published with Cache-Control immutable (firebase.json,
+// aws/infra/stack.js) and a player never asks for it twice; pharmacy-screen.html and sw.js stay no-cache. A deploy
+// that changes nothing leaves sw.js byte-identical and the players download nothing; one that changes js/player.js
+// makes them download sw.js, the page and that one script (the worker keeps every unchanged file). The original
+// css/ and js/ stay published for the admin editor's preview, which imports the render engine from them.
 export const SW_FILE = "sw.js";
 export const SW_PLACEHOLDER = "__PHARMACY_SCREEN_BUILD__";
+export const SW_FILES_PLACEHOLDER = "{/*__PHARMACY_SCREEN_FILES__*/}";
+export const SHELL_PAGE = "pharmacy-screen.html";
 export const SHELL_DIRS = ["css", "js"];
-export function shellBuildId(pub) {
-  const files = ["pharmacy-screen.html", ...SHELL_DIRS.flatMap((d) => readdirSync(join(pub, d)).sort().map((f) => `${d}/${f}`))];
-  const hash = createHash("sha256");
-  for (const f of files) hash.update(f).update("\0").update(readFileSync(join(pub, f))).update("\0");
-  return hash.digest("hex").slice(0, 16);
+export const ASSETS_DIR = "assets";
+const NAME_HASH = 10; // hex characters in a fingerprinted name
+const BINARY = { "font/woff2": ["fonts", "woff2"], "image/jpeg": ["media", "jpg"], "image/png": ["media", "png"], "image/webp": ["media", "webp"] };
+const sha256 = (data) => createHash("sha256").update(data).digest("hex");
+const fingerprint = (rel, data) => rel.replace(/\.(css|js)$/, (ext) => `.${sha256(data).slice(0, NAME_HASH)}${ext}`);
+// An import of a sibling module: `from './x.js'`, `import './x.js'`, `import('./x.js')`.
+const IMPORT = /(\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)(['"])\.\/([\w-]+\.js)\2/g;
+// A document-relative stylesheet path in a script ('css/debug.css'), as js/player.js and js/debug-panel.js load them.
+const CSS_PATH = /(['"])css\/([\w-]+\.css)\1/g;
+// A stylesheet, script or module preload in the page, before or after an earlier build.
+const PAGE_REF = /((?:href|src)=")(?:assets\/)?(css|js)\/([\w-]+)(?:\.[0-9a-f]+)?\.(css|js)"/g;
+
+export function buildShell(pub) {
+  rmSync(join(pub, ASSETS_DIR), { recursive: true, force: true });
+  const put = (rel, data) => {
+    mkdirSync(dirname(join(pub, rel)), { recursive: true });
+    writeFileSync(join(pub, rel), data);
+  };
+  const map = {}; // "css/screen.css" -> "assets/css/screen.<hash>.css"
+
+  for (const f of readdirSync(join(pub, "css")).filter((n) => n.endsWith(".css")).sort()) {
+    const css = readFileSync(join(pub, "css", f), "utf8").replace(
+      /url\(\s*(["']?)data:(font\/woff2|image\/jpeg|image\/png|image\/webp);base64,([A-Za-z0-9+/=]+)\1\s*\)/g,
+      (m, q, type, b64, at, whole) => {
+        const bytes = Buffer.from(b64, "base64");
+        const [dir, ext] = BINARY[type];
+        const name = `${sha256(bytes).slice(0, 16)}.${ext}`;
+        put(`${ASSETS_DIR}/${dir}/${name}`, bytes);
+        // A url() in a custom property (--occ-photo) is resolved where var() uses it: the screen's own <style>, so
+        // relative to the page (beside assets/), not to this stylesheet.
+        const decl = whole.slice(Math.max(whole.lastIndexOf("{", at), whole.lastIndexOf(";", at)) + 1, at);
+        return /^\s*--/.test(decl) ? `url("${ASSETS_DIR}/${dir}/${name}")` : `url("../${dir}/${name}")`;
+      }
+    );
+    const rel = `${ASSETS_DIR}/${fingerprint(`css/${f}`, css)}`;
+    put(rel, css);
+    map[`css/${f}`] = rel;
+  }
+
+  const sources = Object.fromEntries(readdirSync(join(pub, "js")).filter((n) => n.endsWith(".js")).sort().map((n) => [n, readFileSync(join(pub, "js", n), "utf8")]));
+  const cssPaths = (src, where) => src.replace(CSS_PATH, (m, q, name) => {
+    if (!map[`css/${name}`]) throw new Error(`${where} loads css/${name}, which is not in css/`);
+    return `${q}${map[`css/${name}`]}${q}`;
+  });
+  // Leaves first, so a module's copy names its imports' fingerprinted copies.
+  const state = {};
+  const visit = (name, chain) => {
+    if (state[name] === "done") return;
+    if (state[name] === "visiting") throw new Error(`js/ has an import cycle: ${[...chain, name].join(" -> ")}`);
+    if (!(name in sources)) throw new Error(`js/${chain.at(-1)} imports ./${name}, which is not in js/`);
+    state[name] = "visiting";
+    for (const m of sources[name].matchAll(IMPORT)) visit(m[3], [...chain, name]);
+    const src = cssPaths(sources[name].replace(IMPORT, (m, lead, q, dep) => `${lead}${q}./${map[`js/${dep}`].split("/").pop()}${q}`), `js/${name}`);
+    const rel = `${ASSETS_DIR}/${fingerprint(`js/${name}`, src)}`;
+    put(rel, src);
+    map[`js/${name}`] = rel;
+    state[name] = "done";
+  };
+  for (const name of Object.keys(sources)) visit(name, []);
+
+  const page = join(pub, SHELL_PAGE);
+  writeFileSync(page, readFileSync(page, "utf8").replace(PAGE_REF, (m, attr, dir, name, ext) => {
+    const to = map[`${dir}/${name}.${ext}`];
+    if (!to || dir !== ext) throw new Error(`${SHELL_PAGE} refers to ${dir}/${name}.${ext}, which is not in ${dir}/`);
+    return `${attr}${to}"`;
+  }));
+  return shellFiles(pub);
 }
+
+// The shell as it stands in a staged copy: the page and everything in assets/, each with the first 16 hex characters
+// of the SHA-256 of its bytes (what sw.js checks a cached or downloaded copy against).
+export function shellFiles(pub) {
+  const files = [SHELL_PAGE];
+  const walk = (rel) => {
+    for (const n of readdirSync(join(pub, rel), { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
+      if (n.isDirectory()) walk(`${rel}/${n.name}`);
+      else files.push(`${rel}/${n.name}`);
+    }
+  };
+  if (existsSync(join(pub, ASSETS_DIR))) walk(ASSETS_DIR);
+  return Object.fromEntries(files.map((f) => [f, sha256(readFileSync(join(pub, f))).slice(0, 16)]));
+}
+export const shellBuildId = (pub) => sha256(JSON.stringify(shellFiles(pub))).slice(0, 16);
+
+// Builds the shell and stamps sw.js with it. Returns the build id.
 export function stampServiceWorker(pub) {
   const file = join(pub, SW_FILE);
   const src = readFileSync(file, "utf8");
   if (!src.includes(SW_PLACEHOLDER)) throw new Error(`${SW_FILE} has no ${SW_PLACEHOLDER} to stamp`);
-  const build = shellBuildId(pub);
-  writeFileSync(file, src.split(SW_PLACEHOLDER).join(build));
+  if (!src.includes(SW_FILES_PLACEHOLDER)) throw new Error(`${SW_FILE} has no ${SW_FILES_PLACEHOLDER} to stamp`);
+  const files = buildShell(pub);
+  const build = sha256(JSON.stringify(files)).slice(0, 16);
+  writeFileSync(file, src.split(SW_PLACEHOLDER).join(build).split(SW_FILES_PLACEHOLDER).join(JSON.stringify(files)));
   return build;
 }
 
@@ -282,6 +386,14 @@ export function buildPlan({ project, site, bucket, skipSetup = false }) {
   // In the deploy phase, so it runs with --skip-setup (CI) too.
   steps.push({
     phase: "deploy",
+    kind: "run",
+    optional: true,
+    optionalNote: "nothing to remove: the functions are not in the old region",
+    label: `Remove the functions from their old region (${LEGACY_REGION}), if they are still there`,
+    cmd: fb("functions:delete", ...LEGACY_FUNCTIONS, "--region", LEGACY_REGION, "--force", "--project", project),
+  });
+  steps.push({
+    phase: "deploy",
     kind: "task",
     task: "adminConfig",
     label: `Write the admin editor's Firebase sign-in config (web app "${ADMIN_WEB_APP}") into the staged admin/config.js`,
@@ -443,7 +555,7 @@ async function main() {
     } else if (step.kind === "task") {
       console.log(`   ${await TASKS[step.task](step.args)}`);
     } else if (!run(step.cmd)) {
-      if (step.optional) { console.warn("   ! skipped (optional step failed; the deploy may ask about image cleanup)"); continue; }
+      if (step.optional) { console.warn(`   ! skipped (${step.optionalNote || "optional step failed; the deploy may ask about image cleanup"})`); continue; }
       throw new Error(`Failed: ${step.label}`);
     }
   }

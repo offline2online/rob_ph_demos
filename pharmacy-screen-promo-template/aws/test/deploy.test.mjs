@@ -65,6 +65,7 @@ test("destroy: one command — deletes the stack, then the log groups it leaves"
 
 test("contextArgs: only set values, in a fixed order", () => {
   assert.deepEqual(contextArgs({ region: "ap-southeast-2", stackName: "S", vpcEndpoints: false, subnetIds: [] }), ["-c", "stackName=S", "-c", "region=ap-southeast-2"]);
+  assert.deepEqual(contextArgs({ phApiAllowedHosts: ["ph.mipharmacy.net", ".personalisationhub.com"] }), ["-c", "phApiAllowedHosts=ph.mipharmacy.net,.personalisationhub.com"]);
 });
 
 test("stage: the site holds the screen and admin only; the functions hold their code only", () => {
@@ -75,6 +76,8 @@ test("stage: the site holds the screen and admin only; the functions hold their 
   assert.ok(existsSync(join(site, "admin", "js", "auth.js")));
   const sw = readFileSync(join(site, "sw.js"), "utf8");
   assert.ok(!sw.includes("__PHARMACY_SCREEN_BUILD__"), "the service worker is stamped with the build id, as on Firebase");
+  assert.match(readFileSync(join(site, "pharmacy-screen.html"), "utf8"), /src="assets\/js\/player\.[0-9a-f]{10}\.js"/, "the page names its fingerprinted copies, as on Firebase");
+  assert.ok(readdirSync(join(site, "assets", "fonts")).length > 0, "the fonts are files in assets/");
   for (const never of ["config-api", "ph-proxy", "seed/seed.js", "admin/test", "admin/tools", "admin/package.json"]) {
     assert.ok(!existsSync(join(site, never)), `${never} is not published`);
   }
@@ -84,7 +87,7 @@ test("stage: the site holds the screen and admin only; the functions hold their 
   assert.ok(!existsSync(join(fn, "pharmacy-screen/ph-proxy/.env.rob-ph-demos")));
   assert.ok(!existsSync(join(fn, "aws/infra")) && !existsSync(join(fn, "aws/test")) && !existsSync(join(fn, "aws/node_modules")));
   const pkg = JSON.parse(readFileSync(join(fn, "package.json"), "utf8"));
-  assert.deepEqual(Object.keys(pkg.dependencies).sort(), ["@aws-sdk/client-dynamodb", "@aws-sdk/client-kms", "@aws-sdk/client-s3"]);
+  assert.deepEqual(Object.keys(pkg.dependencies).sort(), ["@aws-sdk/client-dynamodb", "@aws-sdk/client-kms", "@aws-sdk/client-s3", "@aws-sdk/client-secrets-manager"]);
   // The staged entries load from their staged paths (the SDK is only required when a client is made).
   for (const entry of ["config-api", "ph-proxy"]) {
     const mod = require(join(fn, "aws", "lambda", `${entry}.js`));

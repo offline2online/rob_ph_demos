@@ -39,6 +39,7 @@ function createApi({ env = process.env, settingsStore, auditLog, secretStore, au
     perDeviceLimit: num(env.PH_RATE_LIMIT_PER_DEVICE_PER_MIN, 12),
     perClientLimit: num(env.PH_RATE_LIMIT_PER_IP_PER_MIN, 600),
     upstreamLimit: num(env.PH_UPSTREAM_CALLS_PER_MIN, 1200),
+    unknownPerClientLimit: num(env.PH_RATE_LIMIT_UNKNOWN_PER_IP_PER_MIN, 30),
     staleMs: num(env.PH_PROXY_STALE_SECONDS, 600) * 1000,
   });
   // PH session sign-in (src/ph-session.js): only where the entry point can

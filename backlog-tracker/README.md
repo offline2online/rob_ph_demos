@@ -3286,7 +3286,13 @@ key of the audit's query hash, closed to every client).
 
 **Deploying it.** It ships with the console: `deploy-backlog-tracker.yml`
 deploys the functions, rules and indexes, and "PH Agent Context backfill"
-then runs by itself and indexes existing data. Until that first backfill
+then runs by itself and indexes existing data. A deploy from a push starts
+it through `workflow_run`. A deploy the pipeline started gets no
+`workflow_run` event, because GitHub sends none for a run started with the
+pipeline's own `GITHUB_TOKEN`, so the backlog automation dispatches the
+backfill itself once that deploy succeeds (`sweepContextBackfill` in
+`run-backlog-automation.js`, once per deploy run, marker
+`systemStatus/contextBackfill`). Until that first backfill
 finishes, searches return only records written since the deploy, and
 Aidan's open-ticket lookup keeps using its old read. Semantic vectors need
 the Vertex AI API enabled on `backlog-tracker-e4ed2` and the functions'
@@ -3484,8 +3490,9 @@ thread. A run:
   one that also says "keep" or "add"): writes the documentation with that
   skill from the email, its attachments (text, PDF and images are read; up
   to 8 files, 20 MB) and the skill's kept reference material, and replies to
-  everyone on the email from the mailbox as "Aidan Hubbot" (the sender name), with the document
-  attached as a Markdown file: **To** the sender's verified From address
+  everyone on the email from the mailbox as "Aidan H" (the sender name), with the document
+  printed and attached as a PDF (never a Markdown file) and Reply-To set to
+  Aidan's own address: **To** the sender's verified From address
   plus everyone else in the original To, **Cc** the original Cc. A Reply-To
   header is not verified, so it is ignored. Our own addresses (the mailbox,
   support@, hello@, aidan@) never receive it. No approval step. The reply is
@@ -3509,8 +3516,8 @@ thread. A run:
   `board.read` tools can run, so nothing an email asks for can write.
   Addresses are taken out of what the model sees. The answer is written from
   that and the email: a short one in the body; a long one (over roughly a
-  page, 3,000 characters or 45 lines) attached as Markdown with a two-line
-  summary in the body. Tickets, projects and concepts are named by title;
+  page, 3,000 characters or 45 lines) attached as a PDF with a two-line
+  summary in the body (in full in the body if the PDF can't be made). Tickets, projects and concepts are named by title;
   an id the model writes is replaced by its title (or dropped) unless the
   instruction asks for ids. **A reply with console data goes only to the
   allowed senders on the email** (the sender, and any other allowed sender
@@ -3618,7 +3625,9 @@ thread. A run:
   then "Or book a demo at personalisationhub.com"); a deck is landscape with a
   page per section, and a `collateral*.css` file in the brand skill is applied
   after the defaults. The reply goes to everyone on the email with **the
-  PDF and the Markdown source** attached. The run is filed on the ticket
+  PDF only** attached (never the Markdown). A one-pager is held to one page:
+  printed tighter, then scaled (never below 0.85), then written once more
+  shorter; still over, a person takes it. The run is filed on the ticket
   (`aidan.collateral`: format, industry, company, the two files, the page
   count, what was removed) and the Aidan tab shows it (Collateral, Files,
   Kept, Removed). It is kept as a **reference example** for the skill
@@ -3707,7 +3716,7 @@ thread. A run:
   curation?") is not "are you a bot?", and a sentence like "it is not a
   bot feature" or "I am not an AI expert, but…" is never taken out), in every kind of reply including a
   write's cover note, and plainly, with no joke, on a complaint, an outage
-  or anything commercial. The same for every recipient. He signs **"Aidan Hubbot,
+  or anything commercial. The same for every recipient. He signs **"Aidan H,
   Personalisation Hub"** (his sender name, below); Settings › Support inbox ›
   Aidan has an optional signature line (for example "PH's digital
   assistant"), off by default.
@@ -3716,7 +3725,9 @@ thread. A run:
 - **sends and signs as the sender name set in the console** (19 Nov 2026,
   ticket QVpqiMuwipZ4mKSXHplM): every email's From display name and the name
   in its signature are the first and last name in Settings › Support inbox ›
-  Aidan, "Aidan Hubbot" by default (a play on "Hub Bot"). An admin changes
+  Aidan, "Aidan H" by default (since 23 Nov 2026; "Aidan Hubbot" before, and
+  a saved "Hubbot" reads as "H"). Every Aidan email's Reply-To is Aidan's own
+  address, so replies come back to him. An admin changes
   them there and clicks Save Aidan; the next email uses the new name, with no
   deploy, since the configuration is read on every run. The Gmail send-as
   name is left alone: the mailbox is shared with the Support Inbox

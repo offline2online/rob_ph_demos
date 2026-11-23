@@ -12,7 +12,10 @@ import { join, relative } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { hasGit } from "../scripts/release.mjs";
-import { ROOT, buildPlan, readTargets, urls, parseArgs, stage, stagePublic, adminConfigJs, writeAdminConfig, CODEBASES, RULES_SOURCE, STAGE_DIR, ADMIN_WEB_APP } from "../scripts/deploy.mjs";
+import { createRequire } from "node:module";
+import { ROOT, buildPlan, readTargets, urls, parseArgs, stage, stagePublic, adminConfigJs, writeAdminConfig, CODEBASES, RULES_SOURCE, STAGE_DIR, ADMIN_WEB_APP, REGION, LEGACY_REGION, LEGACY_FUNCTIONS } from "../scripts/deploy.mjs";
+
+const csp = createRequire(import.meta.url)("../aws/infra/csp.js");
 
 const read = (p) => readFileSync(join(ROOT, p), "utf8");
 // A release package (scripts/release.mjs) carries this folder without the repo-root firestore.rules or our test
@@ -59,10 +62,50 @@ test(".firebaserc targets rob-ph-demos: a dedicated Hosting site and the media b
   assert.equal(t.bucket, "rob-ph-demos-pharmacy-screen-media");
 });
 
+// Hosting's header globs, with the extglob @(a|b) the rules use.
+function headerGlobToRe(glob) {
+  let re = "";
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i];
+    if (c === "*" && glob[i + 1] === "*") { re += ".*"; i++; }
+    else if (c === "*") re += "[^/]*";
+    else if (c === "@" && glob[i + 1] === "(") { const end = glob.indexOf(")", i); re += "(" + glob.slice(i + 2, end).split("|").map((s) => s.replace(/[.+?^$()|[\]\\]/g, "\\$&")).join("|") + ")"; i = end; }
+    else re += c.replace(/[.+?^$()|[\]\\]/g, "\\$&");
+  }
+  return new RegExp("^" + re + "$");
+}
+const cacheControlOf = (path) => hosting.headers.filter((h) => headerGlobToRe(h.source).test(path)).flatMap((h) => h.headers.filter((x) => x.key === "Cache-Control").map((x) => x.value));
+
+test("the screen's fingerprinted assets/ are kept for a year; the page, sw.js and everything else are revalidated", () => {
+  for (const p of ["/assets/js/player.0123456789.js", "/assets/css/screen.0123456789.css", "/assets/fonts/0123456789abcdef.woff2", "/assets/media/0123456789abcdef.jpg"]) {
+    assert.deepEqual(cacheControlOf(p), ["public, max-age=31536000, immutable"], p);
+  }
+  for (const p of ["/pharmacy-screen.html", "/sw.js", "/js/render.js", "/css/screen.css", "/fixtures/config.json", "/seed/fixtures/pharmacies.json", "/admin/js/editor.js", "/admin/"]) {
+    assert.deepEqual(cacheControlOf(p), ["no-cache"], p);
+  }
+});
+
 test("the admin editor can only be framed by Personalisation Hub", () => {
   const admin = hosting.headers.find((h) => h.source === "/admin/**");
   const csp = admin.headers.find((h) => h.key === "Content-Security-Policy");
   assert.equal(csp.value, "frame-ancestors 'self' https://ph.mipharmacy.net");
+});
+
+test("Content-Security-Policy (report-only) on the screen page and the editor: the same policies as aws/infra/csp.js", () => {
+  const headerOf = (path, key) => hosting.headers.filter((h) => headerGlobToRe(h.source).test(path)).flatMap((h) => h.headers.filter((x) => x.key === key).map((x) => x.value));
+  assert.equal(csp.CSP_HEADER, "Content-Security-Policy-Report-Only", "report-only until a week without violations");
+  assert.deepEqual(headerOf("/pharmacy-screen.html", csp.CSP_HEADER), [csp.screenCsp()]);
+  assert.equal(csp.screenCsp(), "script-src 'self'; object-src 'none'; base-uri 'none'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self'; report-uri /api/csp-report");
+  const { project } = readTargets();
+  for (const p of ["/admin/", "/admin/index.html", "/admin/js/editor.js"]) {
+    assert.deepEqual(headerOf(p, csp.CSP_HEADER), [csp.editorCsp(csp.firebaseEditorExtras(`${project}.firebaseapp.com`))], p);
+  }
+  const editor = csp.editorCsp(csp.firebaseEditorExtras(`${project}.firebaseapp.com`));
+  for (const want of ["script-src 'self' https://www.gstatic.com", "https://fonts.googleapis.com", "https://fonts.gstatic.com", "https://identitytoolkit.googleapis.com", "frame-src https://rob-ph-demos.firebaseapp.com", "object-src 'none'", "base-uri 'none'"]) {
+    assert.ok(editor.includes(want), want);
+  }
+  assert.doesNotMatch(editor, /unsafe-eval|'unsafe-inline'[^;]*script|script-src[^;]*'unsafe-inline'/);
+  assert.equal(routeOf("/api/csp-report"), "pharmacyScreenConfigApi", "reports reach the config API");
 });
 
 test("Hosting rewrites send each /api path to the function that serves it", () => {
@@ -77,7 +120,9 @@ test("Hosting rewrites send each /api path to the function that serves it", () =
   // Nothing catches everything: an unknown /api path is a Hosting 404, not a function call.
   assert.equal(routeOf("/api/other"), undefined);
   assert.equal(routeOf("/pharmacy-screen.html"), undefined);
-  for (const rw of hosting.rewrites) assert.equal(rw.function.region, "us-central1", rw.source);
+  // Sydney, next to the stores; the functions' own region settings say the same (next test).
+  for (const rw of hosting.rewrites) assert.equal(rw.function.region, REGION, rw.source);
+  assert.equal(REGION, "australia-southeast1");
 });
 
 test("every rewritten function is exported by its codebase's entry point", () => {
@@ -116,7 +161,7 @@ test("Hosting publishes the screen, the admin editor and its seed fixtures only 
     assert.ok(files.includes(want), `${want} is published`);
   }
   for (const f of files) {
-    assert.match(f, /^(pharmacy-screen\.html|sw\.js|(css|js|fixtures)\/[^/]+|admin\/(index\.html|config\.js|(css|js)\/[^/]+)|seed\/fixtures\/.+)$/, `${f} is in the allow-list`);
+    assert.match(f, /^(pharmacy-screen\.html|sw\.js|(css|js|fixtures)\/[^/]+|assets\/(css\/[\w-]+\.[0-9a-f]{10}\.css|js\/[\w-]+\.[0-9a-f]{10}\.js|fonts\/[0-9a-f]{16}\.woff2|media\/[0-9a-f]{16}\.jpg)|admin\/(index\.html|config\.js|(css|js)\/[^/]+)|seed\/fixtures\/.+)$/, `${f} is in the allow-list`);
     assert.ok(!f.split("/").some((seg) => seg.startsWith(".") || ["test", "tools", "node_modules"].includes(seg)), `${f} must not be published`);
     assert.doesNotMatch(f, /(^|\/)(package(-lock)?\.json|README\.md)$/, `${f} must not be published`);
   }
@@ -161,6 +206,11 @@ test("rules: the project's one Firestore ruleset, indexes, and Storage rules on 
 test("function environments: non-secret, KMS envelope encryption, the PH default base URL", ourEnvOnly, () => {
   const proxy = parseEnv("pharmacy-screen/ph-proxy/.env.rob-ph-demos");
   const config = parseEnv("pharmacy-screen/config-api/.env.rob-ph-demos");
+  assert.equal(proxy.PH_REGION, REGION, "the proxy deploys where Hosting rewrites to");
+  assert.equal(config.PS_REGION, REGION, "the config API deploys where Hosting rewrites to");
+  for (const [name, env, key] of [["config API", config, "PS_MIN_INSTANCES"], ["proxy", proxy, "PH_MIN_INSTANCES"]]) {
+    assert.ok(!(key in env) || env[key] === "0", `${name}: no instance kept warm without the owner's yes (a monthly cost)`);
+  }
   const { site, bucket } = readTargets();
   assert.equal(proxy.PH_SECRET_STORE, "gcp-kms");
   assert.equal(proxy.PH_TOKEN_KMS_KEY, "projects/rob-ph-demos/locations/global/keyRings/pharmacy-screen/cryptoKeys/ph-api-token");
@@ -209,6 +259,16 @@ test("the deploy plan installs, sets up and deploys every part, in that order", 
   const setupFree = buildPlan({ ...t, skipSetup: true });
   assert.deepEqual([...new Set(setupFree.map((s) => s.phase))], ["install", "deploy"]);
   assert.equal(setupFree.at(-2).task, "adminConfig", "CI (--skip-setup) writes the admin config too");
+  // The functions moved region: their old copies are deleted first, by name, in that region only, and a deploy
+  // where they are already gone carries on.
+  for (const p of [plan, setupFree]) {
+    const legacy = p.at(-3);
+    assert.equal(legacy.phase, "deploy");
+    assert.equal(legacy.optional, true);
+    assert.deepEqual(legacy.cmd.slice(legacy.cmd.indexOf("functions:delete")), ["functions:delete", ...LEGACY_FUNCTIONS, "--region", LEGACY_REGION, "--force", "--project", t.project]);
+  }
+  assert.equal(LEGACY_REGION, "us-central1");
+  assert.notEqual(LEGACY_REGION, REGION);
 });
 
 test("URLs printed after a deploy", () => {

@@ -166,35 +166,64 @@ ${format && format.pageBreaks ? ".c-body h2 { break-before: page; margin-top: 0;
 .c-demo { margin: 8px 0 0; font-size: 9pt; color: ${b.muted}; }
 `;
 }
+// The tighter page a one-pager is re-printed with when it runs over one page
+// (Ebq2oqSH3Lp1UrHWnfgJ): the same layout with smaller gaps, a smaller lede
+// and headings, and narrower margins. Body text stays at 10pt.
+function tightCss() {
+  return `
+@page { margin: 12mm 15mm 16mm 15mm; }
+body { font-size: 10pt; line-height: 1.42; }
+.c-bar { margin-bottom: 14px; }
+.c-head { margin-bottom: 18px; }
+h1 { font-size: 23pt; margin-bottom: 8px; }
+.c-lede { font-size: 11.5pt; margin-bottom: 14px; }
+h2 { font-size: 13.5pt; margin: 14px 0 6px; }
+h3 { font-size: 11pt; margin: 10px 0 3px; }
+p { margin-bottom: 6px; }
+ul, ol { margin-bottom: 8px; }
+li { margin-bottom: 2px; }
+blockquote { margin: 8px 0 10px; padding: 8px 12px; }
+table { margin: 6px 0 10px; }
+th, td { padding: 5px 8px; }
+.c-cta { margin-top: 18px; padding: 12px 18px; }
+`;
+}
+// The steps a one-pager is printed through until it fits one page: as laid
+// out, the tight page, then the tight page scaled to 0.94 and 0.88 (never
+// below 0.85, so body text stays readable on paper). Each step is { tight, scale }.
+const FIT_STEPS = [{ tight: false, scale: 1 }, { tight: true, scale: 1 }, { tight: true, scale: 0.94 }, { tight: true, scale: 0.88 }];
+const MIN_FIT_SCALE = 0.85;
 // The whole page the PDF is printed from. Nothing here runs script: the
 // printer turns JavaScript off and fetches nothing but the brand font.
-function collateralHtml({ documentMd, title = "", format = FORMATS.overview, industry = "", prospect = null, brand = null }) {
+// `cta: false` (a document Aidan sends that isn't sales collateral, Ebq2oqSH3Lp1UrHWnfgJ):
+// no sales call to action and no format eyebrow. `tight`: the one-pager's tighter page.
+function collateralHtml({ documentMd, title = "", format = FORMATS.overview, industry = "", prospect = null, brand = null, cta = true, tight = false }) {
   const { title: mdTitle, html } = markdownToHtml(documentMd);
   const b = BRAND;
   const assets = brandAssets(brand);
   const headline = mdTitle || title || format.label;
   // The opening paragraph is the lede, in muted.
   const body = html.replace(/^<p>([\s\S]*?)<\/p>/, (m, p) => `<p class="c-lede">${p}</p>`);
-  const eyebrow = [format.label, industry].filter(Boolean).join(" · ");
+  const eyebrow = cta ? [format.label, industry].filter(Boolean).join(" · ") : "";
   const logo = assets.logoSvg ? `<img class="c-logo" alt="Personalisation Hub" src="data:image/svg+xml;base64,${Buffer.from(assets.logoSvg, "utf8").toString("base64")}">` : `<span class="c-logo-text">Personalisation Hub</span>`;
   return `<!doctype html>
 <html lang="en-GB"><head><meta charset="utf-8">
 <title>${esc(headline)}</title>
 <link rel="stylesheet" href="${b.fontCss}">
-<style>${baseCss(format)}${assets.css ? `\n/* from the brand skill */\n${assets.css.replace(/</g, "")}` : ""}</style>
+<style>${baseCss(format)}${assets.css ? `\n/* from the brand skill */\n${assets.css.replace(/</g, "")}` : ""}${tight ? `\n/* fitted to one page */${tightCss()}` : ""}</style>
 </head><body>
 <div class="c-bar" aria-hidden="true"><span style="background:${b.teal}"></span><span style="background:${b.pink}"></span><span style="background:${b.orange}"></span><span style="background:${b.green}"></span></div>
 <header class="c-head">${logo}${prospect && prospect.name ? `<div class="c-for">Prepared for ${esc(prospect.name)}</div>` : ""}</header>
-<p class="c-eyebrow">${esc(eyebrow)}</p>
+${eyebrow ? `<p class="c-eyebrow">${esc(eyebrow)}</p>` : ""}
 <h1>${inline(headline)}</h1>
 <main class="c-body">
 ${body}
 </main>
-<section class="c-cta">
+${cta ? `<section class="c-cta">
   <div class="c-cta-text"><p class="c-cta-eyebrow">Try it yourself</p><p class="c-cta-title">Try it free for 30 days.</p><p class="c-cta-line">Runs in your own cloud. Minimal setup.</p></div>
   <div><a class="c-pill" href="${esc(b.trialUrl)}">Try free on AWS Marketplace →</a><p class="c-demo">Or book a demo at ${b.site}</p></div>
 </section>
-</body></html>`;
+` : ""}</body></html>`;
 }
 // Printed at the foot of every page: an accent dot, the site, the page number.
 function footerTemplate() {
@@ -202,6 +231,8 @@ function footerTemplate() {
   return `<div style="width:100%;margin:0 18mm;display:flex;align-items:center;gap:8px;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;font-size:8px;color:${b.muted};">
 <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${b.teal};"></span><span>${b.site}</span><span style="margin-left:auto;"><span class="pageNumber"></span> / <span class="totalPages"></span></span></div>`;
 }
-const PDF_OPTIONS = (format) => ({ format: "A4", landscape: Boolean(format && format.landscape), printBackground: true, displayHeaderFooter: true, headerTemplate: "<span></span>", footerTemplate: footerTemplate(), preferCSSPageSize: true });
+// `scale` (a one-pager being fitted, FIT_STEPS): Chromium's print scale, never below MIN_FIT_SCALE.
+const PDF_OPTIONS = (format, { scale = 1 } = {}) => Object.assign({ format: "A4", landscape: Boolean(format && format.landscape), printBackground: true, displayHeaderFooter: true, headerTemplate: "<span></span>", footerTemplate: footerTemplate(), preferCSSPageSize: true },
+  Number(scale) && Number(scale) !== 1 ? { scale: Math.max(MIN_FIT_SCALE, Math.min(1, Number(scale))) } : {});
 
-module.exports = { esc, inline, markdownToHtml, BRAND, brandAssets, baseCss, collateralHtml, footerTemplate, PDF_OPTIONS };
+module.exports = { esc, inline, markdownToHtml, BRAND, brandAssets, baseCss, tightCss, FIT_STEPS, MIN_FIT_SCALE, collateralHtml, footerTemplate, PDF_OPTIONS };
