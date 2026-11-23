@@ -1527,6 +1527,13 @@ export function mountStaffKanban(ctx) {
     if (!edHtml[which] || edHtml[which].q !== q) edHtml[which] = { q, html: KBEditor.getHtml(q) };
     return edHtml[which].html;
   }
+  // The open dialog differs from how it was drawn. A dialog still drawing (no baseline yet) counts
+  // as changed, so an outside click never discards anything before the check can be made.
+  function taskHasUnsavedChanges() {
+    if (!draft) return false;
+    if (saving) return true;
+    return changeBase == null || formState() !== changeBase;
+  }
   function syncSaveState() {
     const b = $("#f-save");
     if (b && draft && !draftIsNew) b.disabled = saving || changeBase == null || formState() === changeBase;
@@ -3049,7 +3056,20 @@ export function mountStaffKanban(ctx) {
     }
     $("#task-share").addEventListener("click", copyTicketLink);
     $("#task-close").addEventListener("click", () => closeTask());
-    $("#task-backdrop").addEventListener("click", (e) => { if (e.target.id === "task-backdrop") closeTask(); });
+    // A click outside the dialog never throws away what was typed (KB-TASK: keep the draft on an
+    // outside click). It closes the dialog only when the press also started outside, so a text
+    // selection dragged past the panel's edge doesn't count. It also has to be a ticket with nothing
+    // changed. With changes (a new ticket typed into, an edit not saved) the dialog stays open and the
+    // toast says how to leave: Save, Cancel or ×.
+    let pressedOutside = false;
+    $("#task-backdrop").addEventListener("pointerdown", (e) => { pressedOutside = e.target.id === "task-backdrop"; });
+    $("#task-backdrop").addEventListener("click", (e) => {
+      const outside = e.target.id === "task-backdrop" && pressedOutside;
+      pressedOutside = false;
+      if (!outside) return;
+      if (taskHasUnsavedChanges()) { toast(draftIsNew ? "This ticket isn't created yet. Create it, or use Cancel or × to discard it." : "You have unsaved changes. Save them, or use Cancel or × to discard them."); return; }
+      closeTask();
+    });
     document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#task-backdrop").hidden) closeTask(); });
   }
 

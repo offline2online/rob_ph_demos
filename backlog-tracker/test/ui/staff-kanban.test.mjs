@@ -2484,6 +2484,58 @@ T("KB-C38", "a comment the owner's agent added under his first address can be ed
   await p.done();
 });
 
+
+// A click outside the dialog never throws away what was typed (Backlog item A9gzWrnFX9AZGrtiuCen): a new ticket typed
+// into, or an edit not saved, stays open with a toast saying to use Cancel or ×. A ticket with nothing changed still
+// closes, and a press that starts inside the panel (a text selection dragged out) never counts as outside.
+T("KB-C39", "a click outside the dialog keeps a new ticket or unsaved edit open; Cancel or × still closes; an unchanged ticket closes", { timeout: 60000 }, async (prof) => {
+  const p = await open(prof);
+  const closed = () => p.evaluate(() => document.querySelector("#task-backdrop").hidden);
+  const outsidePoint = () => p.evaluate(() => {
+    const bd = document.querySelector("#task-backdrop");
+    for (const [x, y] of [[6, 6], [innerWidth - 6, 6], [6, innerHeight / 2], [innerWidth - 6, innerHeight / 2]]) if (document.elementFromPoint(x, y) === bd) return { x, y };
+    return null;
+  });
+  const clickOutside = async () => { const at = await outsidePoint(); assert.ok(at, "a spot on the backdrop outside the panel"); await p.mouse.click(at.x, at.y); await p.waitForTimeout(120); };
+  const setTitle = (v) => p.evaluate((v) => { const f = document.querySelector("#f-title"); f.value = v; f.dispatchEvent(new Event("input", { bubbles: true })); }, v);
+  const openCard = async (k) => { await p.evaluate((k) => document.querySelector(`.kb-card[data-key="${k}"]`).click(), k); await until(() => p.$("#task-backdrop:not([hidden]) #f-title"), "the ticket's form"); await until(() => p.$("#f-description .ql-editor"), "the editor"); await p.waitForTimeout(150); };
+
+  // 1. a new ticket with a title typed: the outside click keeps it, with what was typed, and says how to leave
+  await openNewTask(p);
+  await until(() => p.$("#f-description .ql-editor"), "the editor");
+  await setTitle("Typed before clicking away");
+  await clickOutside();
+  assert.equal(await closed(), false, "the New task form is still open");
+  assert.equal(await p.inputValue("#f-title"), "Typed before clicking away", "what was typed is still there");
+  await until(async () => /Cancel or ×/.test(await toastText(p)), "the toast saying how to close it");
+  // 2. Cancel still closes it
+  await press(p, "#f-cancel");
+  await eventually(async () => assert.equal(await closed(), true, "Cancel closes the form"));
+
+  // 3. an existing ticket with nothing changed closes on an outside click, as before
+  await openCard("PH-34");
+  await clickOutside();
+  await eventually(async () => assert.equal(await closed(), true, "an unchanged ticket closes on an outside click"));
+
+  // 4. a press inside the panel released outside (a selection dragged past the edge) doesn't close it
+  await openCard("PH-34");
+  const box = await p.locator("#f-title").boundingBox();
+  const at = await outsidePoint();
+  await p.mouse.move(box.x + 4, box.y + box.height / 2); await p.mouse.down(); await p.mouse.move(at.x, at.y, { steps: 4 }); await p.mouse.up();
+  await p.waitForTimeout(120);
+  assert.equal(await closed(), false, "a press that started inside the panel is not an outside click");
+
+  // 5. an unsaved edit: the outside click keeps it; × closes without saving
+  await setTitle("Edited, not saved");
+  await clickOutside();
+  assert.equal(await closed(), false, "the edited ticket is still open");
+  assert.equal(await p.inputValue("#f-title"), "Edited, not saved");
+  await until(async () => /unsaved changes/.test(await toastText(p)), "the unsaved-changes toast");
+  await press(p, "#task-close");
+  await eventually(async () => assert.equal(await closed(), true, "× closes it"));
+  assert.notEqual((await stored(p, "PH-34")).title, "Edited, not saved", "nothing was saved by clicking away");
+  await p.done();
+});
 // ── run ──────────────────────────────────────────────────────────────────────
 for (const [name, fn] of queue) await test(name, fn);
 await h.close();

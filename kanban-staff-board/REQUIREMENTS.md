@@ -566,6 +566,15 @@ remembered and the column reopens if a required field in it is empty.
 **KB-MOD-6 Validation.** Required fields (per settings) are marked and
 checked on save; estimate and time logged accept `1d 4h`, `6h`, `30m`.
 
+**KB-MOD-7 A click outside never discards (23 Nov 2026).** Clicking the dimmed
+area around the ticket dialog closes it only when nothing in it has changed. A
+new ticket that has been typed into, or an existing ticket with unsaved
+changes, stays open with what was typed and a toast saying to Create/Save, or
+use **Cancel** or **×** to discard. A press that starts inside the dialog and is
+released outside (a text selection dragged past its edge) never counts as an
+outside click. Cancel, × and Escape close as before. Tested by KB-C39 in
+`backlog-tracker/test/ui/staff-kanban.test.mjs`.
+
 ## 8. Release report
 
 **KB-REP-1** Linked from the board; defaults to the current release; every
