@@ -8387,6 +8387,68 @@ async function reconcileDeployRuns(item, ctx) {
   console.log(`[deploy-status] ${item.id}: deploy follow-ups ${roll.deployConclusion} (${after.map((r) => `${r.workflow}=${r.conclusion}`).join(", ")})`);
 }
 
+// PH Agent Context backfill after a console deploy (J3aBXuFlCsuXJ4404vAO).
+// context-backfill.yml re-indexes the search index after "Deploy
+// backlog-tracker" through `on: workflow_run`. GitHub doesn't create that
+// event for a run started with this job's own GITHUB_TOKEN, and the pipeline
+// starts every console deploy that way (`gh workflow run`, see
+// processMergePr / processDeployTrain). So after a train shipped, the
+// backfill never ran: the documentation source (876 pages migrated from
+// Confluence) reached production with nothing indexed, and search_console
+// found none of it. This sweep closes the gap. It finds the newest
+// successful console deploy of main and, if no backfill has been started
+// for it, dispatches context-backfill.yml with apply=true. An explicit
+// dispatch is exempt from GitHub's rule, the same way the deploy dispatch
+// is. A deploy started by a person's push still gets its backfill from
+// `workflow_run`, so that one is only recorded. The marker
+// (systemStatus/contextBackfill) holds the deploy run id. A failed dispatch
+// leaves the marker unchanged, so the next tick tries again. Rerunning the
+// backfill is safe: an unchanged record is one read and no write.
+const CONTEXT_BACKFILL_WORKFLOW = "context-backfill.yml";
+const CONTEXT_BACKFILL_MARKER = "systemStatus/contextBackfill";
+
+// Pure, for test/context-backfill-dispatch.test.js. runs: `gh run list
+// --json databaseId,event,status,conclusion,url` for the console deploy on
+// main (any order). marker: the stored { deployRunId } or null.
+// Returns null (nothing to do) or { run, dispatch }: record `run` as handled,
+// and dispatch the backfill first when `dispatch` is true.
+function contextBackfillPlan(runs, marker) {
+  const done = (runs || []).filter((r) => r && r.status === "completed" && r.conclusion === "success" && Number.isFinite(Number(r.databaseId)));
+  if (!done.length) return null;
+  const newest = done.reduce((a, b) => (Number(b.databaseId) > Number(a.databaseId) ? b : a));
+  const handled = Number(marker && marker.deployRunId);
+  if (Number.isFinite(handled) && handled >= Number(newest.databaseId)) return null;
+  return { run: newest, dispatch: newest.event !== "push" };
+}
+
+async function sweepContextBackfill({ gh = (args) => run("gh", args) } = {}) {
+  const res = await fetch(`${FIRESTORE_BASE}/${CONTEXT_BACKFILL_MARKER}`, { headers: await firestoreHeaders() });
+  if (!res.ok && res.status !== 404) throw new Error(`GET ${CONTEXT_BACKFILL_MARKER} failed: ${res.status} ${await res.text()}`);
+  const marker = res.status === 404 ? null : fdoc((await res.json()).fields);
+  const runs = JSON.parse(gh([
+    "run", "list", "--repo", REPO, "--workflow", CONSOLE_DEPLOY_WORKFLOW,
+    "--branch", "main", "--limit", "10", "--json", "databaseId,event,status,conclusion,url",
+  ]));
+  const plan = contextBackfillPlan(runs, marker);
+  if (!plan) return null;
+  if (plan.dispatch) {
+    // Throws on failure: main() logs it and the marker stays, so the next tick retries.
+    gh(["workflow", "run", CONTEXT_BACKFILL_WORKFLOW, "--repo", REPO, "--ref", "main", "-f", "apply=true"]);
+    console.log(`[context-backfill] dispatched ${CONTEXT_BACKFILL_WORKFLOW} after console deploy run ${plan.run.databaseId}`);
+  } else {
+    console.log(`[context-backfill] console deploy run ${plan.run.databaseId} was a push: its own workflow_run starts the backfill`);
+  }
+  const fields = { deployRunId: Number(plan.run.databaseId), deployRunUrl: plan.run.url || null, dispatched: plan.dispatch, at: new Date().toISOString() };
+  const mask = Object.keys(fields).map((k) => `updateMask.fieldPaths=${k}`).join("&");
+  const put = await fetch(`${FIRESTORE_BASE}/${CONTEXT_BACKFILL_MARKER}?${mask}`, {
+    method: "PATCH",
+    headers: await firestoreHeaders(),
+    body: JSON.stringify({ fields: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, tv(v)])) }),
+  });
+  if (!put.ok) throw new Error(`PATCH ${CONTEXT_BACKFILL_MARKER} failed: ${put.status} ${await put.text()}`);
+  return plan;
+}
+
 async function reconcileDeployStatuses() {
   const byConclusion = (value) => runQuery({
     from: [{ collectionId: "backlogItems" }],
@@ -8800,6 +8862,11 @@ async function main() {
     console.error(`[train-stuck] sweep failed: ${err.message}`);
   }
   try {
+    await sweepContextBackfill();
+  } catch (err) {
+    console.error(`[context-backfill] sweep failed: ${err.message}`);
+  }
+  try {
     await sweepRebuildRequests();
   } catch (err) {
     console.error(`[rebuild] sweep failed: ${err.message}`);
@@ -9024,6 +9091,8 @@ if (require.main === module) {
 module.exports = {
   toolsRetryPlan, autoReviewFields, autoReviewPending, autoReviewRequestFields, sweepModelSuggestions,
   sweepStuckTrains,
+  // test/context-backfill-dispatch.test.js — the search index is re-built after a pipeline deploy
+  contextBackfillPlan, sweepContextBackfill, CONTEXT_BACKFILL_WORKFLOW,
   // test/self-heal.test.js — rebuild, wait for the release, or ask a person
   dependencyIdsOf, dependencyMigration, dependencyNote, DEPENDENCY_REASON, sweepDependencyWaits, releaseDependents, sweepBuildQueue,
   // test/contract-review.test.js — contract-change review flags

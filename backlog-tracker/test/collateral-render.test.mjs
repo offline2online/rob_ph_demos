@@ -122,6 +122,65 @@ await test("the brand skill's own collateral stylesheet is applied after the def
   assert.strictEqual(r.m.eyebrow, "rgb(196, 61, 130)");
 });
 
+// Ebq2oqSH3Lp1UrHWnfgJ: a one-pager that runs over is printed through the fit
+// steps (cl.FIT_STEPS), the way collateral-pdf.js → renderPdf does, until it is
+// one page; a plain document (cta: false) carries no sales call to action.
+const overLong = (extra) => [ONE_PAGER, "", "## Proof", "", para(extra, "Proof")].join("\n");
+const ONE_PAGER_FORMAT = cc.FORMATS["one-pager"];
+async function fitPage() {
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  const page = await context.newPage();
+  await page.route("**/*", (route) => (route.request().url().startsWith("data:") ? route.continue() : route.abort("blockedbyclient")));
+  let shown = null;
+  const pagesAt = async (md, st) => {
+    const html = cl.collateralHtml({ documentMd: md, format: ONE_PAGER_FORMAT, industry: "Grocery & Supermarkets", prospect: { name: "CP Group" }, brand: BRAND, tight: st.tight });
+    if (html !== shown) { await page.setContent(html, { waitUntil: "load" }); shown = html; }
+    return cc.pdfPageCount(Buffer.from(await page.pdf(cl.PDF_OPTIONS(ONE_PAGER_FORMAT, { scale: st.scale }))));
+  };
+  return { pagesAt, close: () => context.close() };
+}
+async function fitted(md) {
+  const fp = await fitPage();
+  const counts = [];
+  for (const st of cl.FIT_STEPS) {
+    counts.push(await fp.pagesAt(md, st));
+    if (counts[counts.length - 1] === 1) break;
+  }
+  await fp.close();
+  return counts;
+}
+// The shortest "Proof" paragraph that runs onto a second page at fit step `st`.
+// Measured, not hard-coded: the runner's fallback fonts set differently from a
+// cloud session's, so a fixed length that needs scaling in one is too long in
+// the other (failed on the train with 44 sentences: 2,2,2,2).
+async function firstOverflow(st) {
+  const fp = await fitPage();
+  let lo = 0, hi = 400; // pagesAt(lo) is 1, pagesAt(hi) is more than 1
+  assert.equal(await fp.pagesAt(overLong(lo), st), 1, "the base one-pager fits one page");
+  assert.ok((await fp.pagesAt(overLong(hi), st)) > 1, "a very long one-pager runs over");
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if ((await fp.pagesAt(overLong(mid), st)) > 1) hi = mid; else lo = mid;
+  }
+  await fp.close();
+  return hi;
+}
+
+await test("a one-pager that runs onto a second page is fitted to one: the tight page first, then scaled, never below 0.85", async () => {
+  const [plain, tight, last] = [cl.FIT_STEPS[0], cl.FIT_STEPS[1], cl.FIT_STEPS[cl.FIT_STEPS.length - 1]];
+  assert.deepStrictEqual(await fitted(overLong(await firstOverflow(plain))), [2, 1], "just over one page: the tight page is enough");
+  const scaled = await fitted(overLong(await firstOverflow(tight)));
+  assert.ok(scaled.length >= 3 && scaled[0] === 2 && scaled[scaled.length - 1] === 1, `just over the tight page: scaled down to fit: ${scaled}`);
+  const tooLong = await fitted(overLong((await firstOverflow(last)) + 40));
+  assert.ok(tooLong.length === cl.FIT_STEPS.length && tooLong.every((n) => n > 1), `far too long never fits by printing alone: ${tooLong}`);
+  assert.ok(cl.FIT_STEPS.every((st) => st.scale >= cl.MIN_FIT_SCALE) && cl.PDF_OPTIONS(ONE_PAGER_FORMAT, { scale: 0.5 }).scale === cl.MIN_FIT_SCALE, "never below the readable floor");
+});
+
+await test("a document Aidan sends that isn't collateral is printed without the sales call to action", async () => {
+  const html = cl.collateralHtml({ documentMd: "# AWS onboarding pack\n\nFor Kestrel.", format: Object.assign({}, cc.FORMATS.overview, { label: "Document" }), cta: false, brand: BRAND });
+  assert.ok(!html.includes(`<section class="c-cta"`) && !html.includes("Try free on AWS Marketplace") && !html.includes(`<p class="c-eyebrow"`) && html.includes("For Kestrel."));
+});
+
 await browser.close();
 console.log(failed ? `\n${failed} failed` : "\ncollateral-render: all passed");
 process.exit(failed ? 1 : 0);

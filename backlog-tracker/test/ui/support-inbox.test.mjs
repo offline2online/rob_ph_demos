@@ -382,7 +382,7 @@ try {
   });
   // Aidan (EeAljfWIiY8SOPsKXlXD): the allowed senders are set here by an admin, shown masked, never in full.
   const aidanStatus = (aidan) => ({ ...connected, aidan });
-  for (const width of [390, 1280]) await run(`Aidan's settings as an admin @${width}px`, { seed: seedFor("admin", { supportStatus: aidanStatus({ enabled: true, switchedOn: true, senderCount: 2, requireSenderAuth: true, fromName: "Aidan Hubbot", fromFirstName: "Aidan", fromLastName: "Hubbot", sendersMasked: ["o***@example.com", "o***@example.com"] }) }), width, hash: "#settings/support" }, async (page, o) => {
+  for (const width of [390, 1280]) await run(`Aidan's settings as an admin @${width}px`, { seed: seedFor("admin", { supportStatus: aidanStatus({ enabled: true, switchedOn: true, senderCount: 2, requireSenderAuth: true, fromName: "Aidan H", fromFirstName: "Aidan", fromLastName: "H", sendersMasked: ["o***@example.com", "o***@example.com"] }) }), width, hash: "#settings/support" }, async (page, o) => {
     await until(() => page.locator("#support-aidan-settings").count(), "the Aidan block", 15000);
     const text = await page.textContent("#support-aidan-settings");
     assert.ok(text.includes("2 allowed senders: o***@example.com, o***@example.com"), text);
@@ -399,9 +399,9 @@ try {
     assert.strictEqual(await page.isDisabled('[data-ss-act="save-aidan"]'), false, "the signature switch changed: Save Aidan enables");
     await page.fill("#support-aidan-sigline", "PH's digital assistant");
     // The sender name (QVpqiMuwipZ4mKSXHplM): first and last name, editable here.
-    assert.deepStrictEqual([await page.inputValue("#support-aidan-first"), await page.inputValue("#support-aidan-last")], ["Aidan", "Hubbot"]);
-    assert.ok((await page.textContent("#support-aidan-name-hint")).includes("Emails from Aidan show as Aidan Hubbot"));
-    assert.ok((await page.textContent("#support-aidan-settings")).includes('under "Aidan Hubbot, Personalisation Hub"'), "the signature line names the sender name");
+    assert.deepStrictEqual([await page.inputValue("#support-aidan-first"), await page.inputValue("#support-aidan-last")], ["Aidan", "H"]);
+    assert.ok((await page.textContent("#support-aidan-name-hint")).includes("Emails from Aidan show as Aidan H"));
+    assert.ok((await page.textContent("#support-aidan-settings")).includes('under "Aidan H, Personalisation Hub"'), "the signature line names the sender name");
     await page.fill("#support-aidan-last", "Botsworth");
     await page.fill("#support-aidan-senders", "owner@example.com, owner.alias@example.com");
     await page.click('[data-ss-act="save-aidan"]');
