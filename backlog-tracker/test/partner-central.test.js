@@ -481,6 +481,22 @@ check("funding: the reply's JSON block is read defensively; submit-like writes a
   assert.ok(buildFundingPrompt({ lead: {}, catalog: "Sandbox" }).includes("(no details on the lead yet)"));
 });
 
+check("lead enrichment: only the four engagement/prospecting operations were added, and sandbox:true forces the Sandbox catalogue", async () => {
+  for (const op of ["CreateEngagement", "GetEngagement", "StartProspectingFromEngagementTask", "GetProspectingFromEngagementTask"]) assert.strictEqual(OPERATIONS[op].service, "selling", op);
+  assert.ok(!Object.keys(OPERATIONS).some((o) => /Delete|Submit|Accept|Reject|Disassociate/i.test(o)), "nothing that deletes, submits, accepts or rejects");
+  const { api, db, calls } = makeApi({ awsReply: () => ({ status: 200, body: { Id: "eng-1" } }) });
+  db.state.partnerCentralState = { config: { catalog: "AWS" } };
+  assert.strictEqual((await api.loadConfig()).autoPromote, true, "Hot Lead promotion is on unless switched off");
+  await api.callAws("CreateEngagement", { ClientToken: "t1", Catalog: "AWS" }, { sandbox: true });
+  const sent = JSON.parse(calls[calls.length - 1].init.body);
+  assert.strictEqual(sent.Catalog, "Sandbox", "a test lead never reaches the live catalogue, even when the payload names it");
+  assert.strictEqual(calls[calls.length - 1].init.headers["x-amz-target"], "AWSPartnerCentralSelling.CreateEngagement");
+  await api.callAws("GetEngagement", { Identifier: "eng-1" });
+  assert.strictEqual(JSON.parse(calls[calls.length - 1].init.body).Catalog, "AWS", "a real lead follows the live setting");
+  db.state.partnerCentralState.config.autoPromote = false;
+  assert.strictEqual((await api.loadConfig()).autoPromote, false);
+});
+
 (async () => {
   let failed = 0;
   for (const [name, fn] of checks) {

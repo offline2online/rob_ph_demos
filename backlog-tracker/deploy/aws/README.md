@@ -87,3 +87,19 @@ eligibility** sends one agent message with the account context and asks for draf
 Sandbox credits with estimates, that two `CreateBenefitApplication` drafts wait in the agent panel, and
 that nothing was submitted (no `SubmitBenefitApplication` in CloudTrail; the console refuses to approve
 one).
+
+## Lead enrichment and prospecting
+
+Every new company lead in Promote -> Leads is sent to Partner Central lead enrichment by itself
+(`functions/pc-lead-enrich.js`): `CreateEngagement` with a Lead context, then
+`StartProspectingFromEngagementTask`; the write trigger follows the task with
+`GetProspectingFromEngagementTask` and reads the result with `GetEngagement`. The role needs the
+`LeadEnrichmentAndProspecting` policy in `partner-central-role.yaml`: **redeploy the stack to add
+it**; until then each lead shows "Enrichment failed" with AWS's message, and Send again retries it.
+Test leads always use the **Sandbox** catalogue, with placeholder contact details. Partner Central has
+no call to delete an engagement, so deleting a lead deletes only the console record. Test: submit a
+test lead (website test flag, or `POST /leadIngest/v1/submit` with `test=true`), open it, and check the
+AWS Partner Central section goes from "Partner Central is enriching this lead..." to "Enriched by
+Partner Central" with a Sandbox badge. Each call shows in the audit list (`CreateEngagement`,
+`StartProspectingFromEngagementTask`, ...). Hot Lead promotion acts only on live (AWS catalogue)
+results; switch it off with `autoPromote: false` on `partnerCentralState/config`.

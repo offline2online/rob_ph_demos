@@ -40,6 +40,8 @@ async function check(label, expectation, run) {
 async function main() {
   env = await initializeTestEnvironment({ projectId: "demo-backlog-tracker", firestore: { rules: RULES, host: "127.0.0.1", port: 8080 } });
 
+  await check("An editor's save keeps the Partner Central enrichment the functions wrote", "allow", () => setDoc(doc(as(MEMBER), "leads/l1"), { ...LEAD, partnerCentral: { status: "done", catalog: "Sandbox", insights: { leadReadiness: "High" } } }));
+  await check("partnerCentral must be a map", "deny", () => updateDoc(doc(as(MEMBER), "leads/l1"), { partnerCentral: "done" }));
   await check("An editor can set a lead's priority in its lane", "allow", () => updateDoc(doc(as(MEMBER), "leads/l1"), { rank: 1536.5 }));
   await check("A lead's priority must be a number", "deny", () => updateDoc(doc(as(MEMBER), "leads/l1"), { rank: "top" }));
   await check("An editor can clear a lead's priority", "allow", () => updateDoc(doc(as(MEMBER), "leads/l2"), { rank: deleteField() }));

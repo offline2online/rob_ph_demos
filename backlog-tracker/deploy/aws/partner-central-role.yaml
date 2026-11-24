@@ -76,6 +76,21 @@ Resources:
                 Action:
                   - partnercentral:UseSession
                 Resource: "*"
+        # Promote › Leads lead enrichment (functions/pc-lead-enrich.js): an engagement
+        # with a Lead context, the prospecting task on it, and reading both back.
+        # Nothing that deletes, submits, accepts or rejects an engagement. Action
+        # names follow the Selling API operations; verify on the first Sandbox call.
+        - PolicyName: LeadEnrichmentAndProspecting
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - partnercentral:CreateEngagement
+                  - partnercentral:GetEngagement
+                  - partnercentral:StartProspectingFromEngagementTask
+                  - partnercentral:GetProspectingFromEngagementTask
+                Resource: "*"
         # Promote › License Manager (functions/marketplace-agreements.js): read the
         # Marketplace agreements PH sells and each one's buyer contacts. Read-only.
         - PolicyName: MarketplaceAgreementsRead

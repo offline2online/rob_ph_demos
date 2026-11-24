@@ -6239,6 +6239,64 @@ opportunities, Benefits API for funding drafts) with no long-lived AWS keys.
 - **Partner Central agent over MCP (24 Nov 2026, ticket Eo1w5YvY0Xw8YhHDalWj)**: the console calls the AWS-hosted **Partner Central agents MCP server** (`https://partnercentral-agents-mcp.us-east-1.api.aws/mcp`, JSON-RPC 2.0 `tools/call`, answered as JSON or SSE, SigV4 signing name `partnercentral-agents-mcp`) with the same keyless role credentials as the Selling API. Only two MCP tools may be called (`AGENT_TOOLS`): `sendMessage` (`{content, catalog, sessionId?}`) and `getSession`; the catalogue is always the console's own (Sandbox until an admin types `LIVE`). **Settings → Integrations & MCP → AWS Partner Central → Ask the Partner Central agent** (admins only, as every route here): pick a session (New session, or one of the last 20 in this catalogue), optionally link a **Lead** and an **ACE opportunity ID**, type a request (e.g. list opportunities, build a customer profile, draft an opportunity) and press **Ask agent** (AI gradient button). The reply text and the **AI session id** show under it. **Every write waits for an admin**: when the agent answers `requires_approval`, each `tool_approval_request` is shown as an amber card with the AWS operation name and its full parameters, and **Approve** / **Reject** send a `tool_approval_response` for that `toolUseId` only. The server answers only a `toolUseId` it recorded as pending for that session, and only once (409 after); there is no "override" and nothing approves on its own. **AI session id logging**: each session is kept in `partnerCentralAgentSessions/{sessionId}` (server-only: catalogue, who started it, 48-hour expiry, linked lead/opportunity, the last reply, every approval with who decided and when). The first time a session is linked to a lead, one line is added to that lead's history ("Partner Central AI session <id> (<catalogue> catalogue) for ACE opportunity <id>, started from the console.", kind `note`) and the id goes in `leads/{id}.aiSessionIds`. An opportunity ID with no lead links the lead whose `aceOpportunityId` matches. A session from the other catalogue (409) or older than 48 hours (410) is refused, never silently replaced. Every call and decision is in `partnerCentralAudit` (`agent:sendMessage`, `agent:getSession`, `agent:approve`, `agent:reject`). Routes: `GET /v1/agent`, `POST /v1/agent/messages`, `POST /v1/agent/sessions/{id}` (re-read from AWS, the **Refresh session** button), `POST /v1/agent/sessions/{id}/approvals/{toolUseId}`. The role gains `partnercentral:UseSession` (`deploy/aws/partner-central-role.yaml`); benefit submission stays denied. The function's timeout is 180 s, but a Hosting rewrite still ends the browser's wait at 60 s: when a long answer times out, **Refresh session** reads it. Limits: endpoint, signing name and reply shapes come from AWS's getting-started guide as mirrored by a public client and are untested live until the Partner Central role link works; console MCP tools for staff agents are not part of this (a later ticket). Tests: `test/partner-central.test.js` (signing, both reply shapes, approval gate, logging, expiry), `test/ui/console-click.test.mjs` ("Partner Central agent" scenario).
 - **AWS funding drafts on the lead card (24 Nov 2026, ticket O37hnP69Cnn8N32HpHot)**: when a company lead becomes a **Hot Lead** (or is at Demo / Post-demo) or has an ACE opportunity (`leads/{id}.aceOpportunityId`), its summary drawer (Promote › Leads) shows an **AWS funding** section reading "Funding check suggested: Hot Lead" (or "ACE opportunity"); nothing runs by itself (no AWS call on a stage change, an import or in LIVE without an admin). An admin presses **Check funding eligibility** (AI gradient button; **Check again** afterwards) → `POST /partnerCentral/v1/funding/{leadId}/check`: one new Partner Central agent session (`sendMessage`, the console's catalogue, Sandbox until LIVE), linked to the lead and its ACE opportunity like any agent session, carrying the account context (customer, website, industry, countries, stores, customer AWS account ID, lead stage, ACE opportunity ID, research summary; never contact addresses). It asks the agent to check eligibility for POC funding, MAP, Innovation Sandbox credits and any other programme, estimate each amount, give the remaining budget where Partner Central shows it, and **draft** (never submit) the POC funding and Innovation Sandbox credit applications, ending with a fenced JSON block (`schemaVersion` 1: `programs[]` of program, eligible, reason, estimatedAmount, currency, budgetAvailable, draftId; null where unknown) that `parseFundingReply` reads defensively (last block wins; bad values become null; with no block the plain answer is shown instead). The result is kept in `leadFunding/{leadId}` (written only by the function, read by members; `firestore.rules`) and one line goes in the lead's history ("AWS funding checked (Sandbox catalogue): POC funding eligible, est. USD 25,000; … 2 drafts wait for an admin's approval. Drafts only; nothing was submitted."). The section lists each programme in the order POC, Innovation Sandbox, MAP, other, with a green/red/amber dot (Eligible / Not eligible / Unclear), the agent's estimate, **Budget available only when AWS returned it**, the reason and the draft state ("Draft waits for an admin's approval", "Draft <id>: submit it in Partner Central", "No draft yet"); then "N drafts wait for approval" with **Review drafts** (→ Settings → Integrations & MCP, the agent panel, where each `CreateBenefitApplication` waits for Approve / Reject), and the check's date, who ran it, the ACE opportunity and AI session id. **Refresh** (`…/refresh`) re-reads the session from AWS (a long answer, or draft ids after approval). **Drafts only**: the console refuses to approve any write whose operation name contains "submit" or whose parameters set an action/status/stage to submit (403, audited as `agent:approve` not ok, "submit refused: drafts only"); it can still be rejected; the role's IAM deny on `SubmitBenefitApplication` stays as the second layer. The account lead submits each draft in Partner Central as before. **After POC approval** an admin presses **POC approved** (`…/poc-approved`, optional amount, currency and reference; **Undo** clears it): the section shows "POC approved" and "Claim sign-off document due · Proof of execution · Skill: aws-ace-poc-claim", the existing claim / proof-of-execution sign-off document made by that skill, unchanged; a history line records it. Editors and viewers see the section read-only (the buttons are admin only, as every Partner Central route except `/v1/ace`). `leads` now accepts the function-written `aiSessionIds`, `aceOpportunityId` and `gaClientIds` keys in an editor's save (before, a lead the agent had logged a session on could no longer be edited). Limits: the reply format and budget fields are what the agent is asked for, untested live until the Partner Central role link works; MAP and other programmes are checked and shown but not drafted. Tests: `test/partner-central.test.js` (Sandbox eligibility on a test opportunity produces held drafts and no submit; a submit approval is refused; refresh; POC approved; parser), `test/leads.test.mjs` (funding-core.js), `test/ui/console-click.test.mjs` ("AWS funding" scenario).
 
+### Leads: AWS Partner Central lead enrichment, the lead score and Hot Lead promotion (24 Nov 2026)
+
+Every company lead captured in the console (website forms, calculator downloads, demo requests,
+New lead) is sent to AWS Partner Central lead enrichment and prospecting (us-east-1) by itself.
+Code: `functions/pc-lead-enrich.js`, wired in `functions/index.js` (`partnerCentralLeadOnWrite`, a
+write trigger on `leads/{id}`); the AWS calls go through `functions/partner-central.js`, whose
+closed operation list gained `CreateEngagement`, `GetEngagement`,
+`StartProspectingFromEngagementTask` and `GetProspectingFromEngagementTask` (nothing that deletes,
+submits, accepts or rejects). The IAM role needs the `LeadEnrichmentAndProspecting` policy in
+`deploy/aws/partner-central-role.yaml`.
+
+- **Flow.** A new lead -> `CreateEngagement` with a Lead context (company name, website, industry,
+  country code when known, and one interaction: source, date and the first contact with a name and
+  email; a missing job title or surname is sent as "Not provided") -> `StartProspectingFromEngagementTask`.
+  The enrichment is asynchronous: the trigger follows the task every 30 seconds for up to seven
+  minutes, then bumps `partnerCentral.checks`, which fires it again, up to 40 times (about five
+  hours) before the lead says it failed. There is no Cloud Scheduler in this project, on purpose.
+  On COMPLETED it reads the engagement: the ProspectingResult context (AWS customer classification
+  — geo, region, country, industry, segment, company size — eligible AWS programs such as Greenfield,
+  the public profile summary, AWS Marketplace engagement, solution score and category) and the Lead
+  context's insights (lead readiness, recommended channel and outreach windows).
+- **Stored** on the lead as `partnerCentral` (server-written; `firestore.rules` allows the key and an
+  editor's save keeps it): `{status: sending | running | done | not-sent | error, reason, catalog,
+  engagementId, taskId, attempts, checks, sentAt, finishedAt, autoPromotedAt, customer{…}, insights{…}}`.
+- **Not sent**, with the reason on the lead: a network operator inquiry (a person, not a company), an
+  archived lead, a lead with no company name, and a real lead with no contact having a name and an
+  email. Contact details are never invented for a real lead; when a person completes the contact, it
+  is sent by itself.
+- **Which leads.** A lead is sent when it is created (the website, New lead, an agent). A lead that
+  existed before this shipped, or one whose catalogue moved, is sent only when an editor presses
+  **Send to Partner Central** in its summary. A network operator inquiry's summary shows the section
+  with the reason it is not sent.
+- **Test leads** (`test: true`) always use the **Sandbox** catalogue, whatever the live setting, with
+  placeholder contact details, so the enrichment can be seen without anything reaching the live
+  catalogue. Partner Central has no way to delete an engagement: deleting a lead deletes the console
+  record only, and a follow-up that finds the lead gone stops without recreating it.
+- **Idempotent.** ClientTokens are `ph-lead-<id>-<attempt>` and `ph-task-<id>-<attempt>`; the lead is
+  claimed in a transaction before anything is sent, and the engagement id is saved before the task
+  starts, so a retry never creates a second engagement. Switching the catalogue to AWS sends only
+  leads created (or sent again) afterwards.
+- **Lead score** (`leadScore` in `public/js/leads-core.js`, also used by the server): 0-100 from lead
+  readiness (35), AWS Marketplace engagement (20), solution fit (20), eligible AWS programs (10, two or
+  more is full marks), inbound interest (10 at three or more submissions, 5 at two) and a decision
+  maker among the contacts (5). A Partner Central signal not given yet counts as neutral (about a third
+  of its weight), never zero. The card shows "Score N" (accented at the Hot Lead threshold, muted until
+  Partner Central has answered); the lead summary's **AWS Partner Central** section shows the status,
+  each signal, the eligible programs, segment, classification, geography, best channel, the public
+  profile and how the score is made.
+- **Hot Lead promotion** (`shouldAutoPromote`): when a live (AWS catalogue) result brings a lead in the
+  Lead stage to `HOT_LEAD_SCORE` (70) or more, it moves to Hot Lead with a history entry saying why.
+  Only once per lead (`partnerCentral.autoPromotedAt`: a lead someone drags back stays put), never a
+  demotion, never from a later stage, never a test lead, never on a Sandbox result. Off switch:
+  `autoPromote: false` on `partnerCentralState/config`.
+- **Send again / Refresh** (editors, in the summary): `POST /partnerCentral/v1/leads/{id}/enrich`
+  reuses the engagement and starts a new prospecting task.
+- Tests: `node test/pc-lead-enrich.test.js`, `node test/leads.test.mjs` (the score), and the
+  console-click scenario "Promote: Leads - AWS Partner Central enrichment".
+
 ### Prospects (TAM): company detail view (6 Nov 2026)
 
 - A company name in the Prospects grid is a button that opens that company's

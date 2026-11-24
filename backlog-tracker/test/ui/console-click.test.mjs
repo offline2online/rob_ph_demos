@@ -2315,6 +2315,47 @@ const scenarios = [
     },
   },
   {
+    name: "Promote: Leads - AWS Partner Central enrichment: the score on the card, the section in the summary, Send again for a test lead (Sandbox)",
+    seed: () => seed({ leads: {
+      pe: { company: { name: "Enriched Grocer", website: "https://grocer.example", industry: "Grocery", countries: ["UK"], storeCount: 120 }, contacts: [{ id: "k1", name: "Jo Bloggs", jobTitle: "CMO", buyingRole: "decision-maker", email: "jo@grocer.example", linkedin: "" }],
+        stage: "hot-lead", source: "website", assignee: "", customerAccount: null, inboundCount: 3, createdAt: t(T0), updatedAt: t(T0),
+        partnerCentral: { status: "done", catalog: "AWS", engagementId: "eng-abcdefghijklmn", finishedAt: t(T0), autoPromotedAt: t(T0),
+          customer: { accountName: "Enriched Grocer", geo: "EMEA", region: "UKIR", country: "GB", industry: "Retail", subIndustry: "Grocery", segment: "Enterprise", companySize: "1000+", eligiblePrograms: ["Greenfield", "Pioneer Credits"], publicProfileSummary: "A UK grocer with 120 stores." },
+          insights: { leadReadiness: "High", marketplaceEngagement: "High", solutionScore: "High", solutionCategory: "Analytics", solutionSubCategory: "Retail media", recommendedChannel: "EMAIL", outreachWindows: [{ day: "TUESDAY", start: "09:00", end: "11:00" }] } } },
+      pt: { company: { name: "Test Shop", website: "", industry: "", countries: [], storeCount: null }, contacts: [], stage: "lead", source: "website", test: true, assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0),
+        partnerCentral: { status: "error", catalog: "Sandbox", reason: "AccessDeniedException: not authorised" } },
+    } }),
+    async run(c) {
+      const posts = [];
+      await c.page.route("**/partnerCentral/v1/leads/**", async (route) => {
+        posts.push(new URL(route.request().url()).pathname);
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, status: "running", catalog: "Sandbox" }) });
+      });
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
+      await c.visible('.lead-lane[data-stage="hot-lead"] .lead-card', "the enriched lead is in Hot Lead");
+      const chip = await c.text('.lead-card[data-lead-id="pe"] .lead-score');
+      assert.strictEqual(chip.trim(), "Score 100", "the card shows the lead score: " + chip);
+      assert.ok(await c.page.locator('.lead-card[data-lead-id="pe"] .lead-score-hot').count() === 1, "a hot score is accented");
+      assert.ok(await c.page.locator('.lead-card[data-lead-id="pt"] .lead-score-pending').count() === 1, "a lead Partner Central has not enriched shows a muted score");
+      await c.page.click('.lead-card[data-lead-id="pe"] .lead-card-name');
+      await c.visible("#lead-sum-pc", "the summary has the AWS Partner Central section");
+      const pc = await c.text("#lead-sum-pc");
+      for (const want of ["AWS Partner Central", "100 of 100", "Enriched by Partner Central", "Lead readiness", "High", "Marketplace engagement", "Analytics › Retail media", "Greenfield", "Pioneer Credits", "Enterprise · 1000+", "Email · Tue 09:00–11:00 UTC", "A UK grocer with 120 stores.", "How the score is made", "Refresh from Partner Central"]) {
+        assert.ok(pc.includes(want), `the section shows ${want}: ${pc}`);
+      }
+      await c.page.keyboard.press("Escape");
+      await c.page.click('.lead-card[data-lead-id="pt"] .lead-card-name');
+      await c.visible("#lead-sum-pc", "the test lead has the section too");
+      const tpc = await c.text("#lead-sum-pc");
+      assert.ok(tpc.includes("Enrichment failed: AccessDeniedException") && /sandbox/i.test(tpc), "a failure and the Sandbox catalogue show: " + tpc);
+      await c.page.click("#lead-pc-send");
+      await until(async () => posts.length === 1, "Send again to call the console's endpoint", 5000);
+      assert.strictEqual(posts[0], "/partnerCentral/v1/leads/pt/enrich");
+      await c.waitText("#lead-sum-status", "Sent to Partner Central", "the drawer says it was sent");
+    },
+  },
+  {
     name: "Promote: Leads - a network operator inquiry shows the industry they want to run and their message; the form saves the industry and an edit keeps the message",
     seed: () => seed({ leads: {
       fg: { leadType: "operator", company: { name: "", website: "", industry: "", countries: [], storeCount: null }, operator: { region: "Leeds, UK", background: "adtech", audience: "team", networkIndustry: "Golf clubs", message: "Hello, please send the pack.", form: "request" },

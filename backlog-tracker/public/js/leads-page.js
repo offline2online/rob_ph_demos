@@ -20,6 +20,11 @@
 // planInbound): a second person from the same company and country joins that
 // company's lead, and anyone from AWS goes to the AWS tile, from which an editor
 // attaches them to a customer account's AWS team (prospectCompanies awsTeam).
+// AWS Partner Central lead enrichment (functions/pc-lead-enrich.js) is sent for
+// every new company lead by itself; its answer arrives through the same
+// snapshot. A card shows the lead score (leads-core.js leadScore) and the
+// drawer's Partner Central section shows what AWS said, the score breakdown
+// and, for editors, Send again (POST /partnerCentral/v1/leads/{id}/enrich).
 // Network operator inquiries (leadType "operator", from the Run Your Own RMN
 // page's product tour gate) are people, not companies: the Companies / Network
 // operators switch shows one pipeline at a time, each with its own lanes,
@@ -31,6 +36,7 @@ import {
   BUYING_ROLES, normaliseLead, groupByStage, leadFromForm, blankContact, stageLabel, roleLabel,
   companyLine, conversionFields, isStageFor, mergeInbound, inboundLabel,
   stagesFor, defaultStageFor, leadName, leadTypeLabel, BACKGROUNDS, backgroundLabel, AUDIENCES, audienceLabel, planLaneOrder, topRank,
+  leadScore, partnerCentralStatusText, HOT_LEAD_SCORE,
 } from "./leads-core.js";
 import { normaliseProspect, planInbound, awsContactFrom, mergeContact, isAwsProspect, companyKey, AWS_PROSPECT_ID } from "./prospects-core.js";
 import { kpis, formatMonthly } from "./ace-core.js";
@@ -241,6 +247,14 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
       </div>
     </article>`;
   }
+  // The lead score on a card: "Score 78", accented when it is at the Hot Lead
+  // threshold, with a dot while Partner Central has not answered yet.
+  function scoreChipHTML(l) {
+    const s = leadScore(l);
+    const pc = l.partnerCentral;
+    const title = `Lead score ${s.score} of 100${s.enriched ? ` (Partner Central${pc && pc.catalog === "Sandbox" ? ", Sandbox" : ""})` : ` (${partnerCentralStatusText(pc).replace(/…$/, "")})`}`;
+    return `<span class="lead-score${s.hot ? " lead-score-hot" : ""}${s.enriched ? "" : " lead-score-pending"}" title="${esc(title)}" data-score="${s.score}">Score ${s.score}</span>`;
+  }
   function cardHTML(l) {
     if (isOperator(l)) return operatorCardHTML(l);
     const line = companyLine(l);
@@ -248,7 +262,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     const who = l.assignee ? memberName(l.assignee) : "";
     return `<article class="lead-card" draggable="${canEdit() ? "true" : "false"}" data-lead-id="${esc(l.id)}" data-industry="${esc(entry.key)}" style="${industryStyle(entry)}" tabindex="0" role="button" aria-label="${esc(l.company.name)}, open lead summary">
       <div class="lead-card-top">${logoHTML(l.enrichment, l.company.name, "lead-logo")}<h4 class="lead-card-name">${esc(l.company.name)}</h4></div>
-      <div class="lead-card-chips">${chipHTML(l)}${l.inboundCount ? `<span class="lead-inbound" title="Inbound contacts and submissions from this company">${esc(inboundLabel(l))}</span>` : ""}${l.test ? '<span class="lead-test-badge">Test</span>' : ""}</div>
+      <div class="lead-card-chips">${chipHTML(l)}${l.inboundCount ? `<span class="lead-inbound" title="Inbound contacts and submissions from this company">${esc(inboundLabel(l))}</span>` : ""}${scoreChipHTML(l)}${l.test ? '<span class="lead-test-badge">Test</span>' : ""}</div>
       ${line ? `<p class="lead-card-line">${esc(line)}</p>` : ""}
       ${compactHTML(l)}
       <div class="lead-card-foot">
@@ -517,6 +531,40 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
       btns.forEach((b) => { b.disabled = false; });
     }
   }
+  // AWS Partner Central lead enrichment and the lead score, in the drawer.
+  const levelPill = (v) => (v ? `<span class="lead-pc-level lead-pc-level-${esc(v.toLowerCase())}">${esc(v)}</span>` : "");
+  function partnerCentralHTML(l) {
+    const pc = l.partnerCentral;
+    const s = leadScore(l);
+    const c = pc ? pc.customer : null;
+    const i = pc ? pc.insights : null;
+    const done = !!(pc && pc.status === "done");
+    const busy = !!(pc && (pc.status === "sending" || pc.status === "running"));
+    const programs = done && c.eligiblePrograms.length ? c.eligiblePrograms.map((p) => pill(p)).join(" ") : "";
+    const windows = done && i.outreachWindows.length ? i.outreachWindows.map((w) => `${w.day.charAt(0)}${w.day.slice(1, 3).toLowerCase()} ${w.start}–${w.end}`).join(", ") + " UTC" : "";
+    const rows = [
+      row("Lead score", `<span class="lead-score${s.hot ? " lead-score-hot" : ""}${s.enriched ? "" : " lead-score-pending"}">${s.score} of 100</span>${s.hot ? ` <span class="ap-row-sub">Hot Lead from ${HOT_LEAD_SCORE}</span>` : ""}`),
+      row("Status", esc(partnerCentralStatusText(pc)) + (pc && pc.catalog === "Sandbox" ? ' <span class="lead-test-badge">Sandbox</span>' : "")),
+      done ? row("Lead readiness", levelPill(i.leadReadiness)) : "",
+      done ? row("Marketplace engagement", levelPill(i.marketplaceEngagement)) : "",
+      done ? row("Solution fit", esc([i.solutionScore, [i.solutionCategory, i.solutionSubCategory].filter(Boolean).join(" › ")].filter(Boolean).join(" · "))) : "",
+      done ? row("Eligible programs", programs || esc("None listed")) : "",
+      done ? row("Segment", esc([c.segment, c.companySize].filter(Boolean).join(" · "))) : "",
+      done ? row("AWS classification", esc([c.industry, c.subIndustry].filter(Boolean).join(" › "))) : "",
+      done ? row("AWS geography", esc([c.geo, c.region, c.subRegion, c.country].filter(Boolean).join(" · "))) : "",
+      done ? row("Best channel", esc([i.recommendedChannel === "CALL" ? "Call" : i.recommendedChannel === "EMAIL" ? "Email" : i.recommendedChannel, windows].filter(Boolean).join(" · "))) : "",
+      done && c.publicProfileSummary ? stackRow(`<p class="ap-row-sub">Public profile</p><p class="ap-row-text">${esc(c.publicProfileSummary)}</p>`) : "",
+      stackRow(`<p class="ap-row-sub">How the score is made</p><ul class="lead-score-parts">${s.parts.map((p) => `<li><span>${esc(p.label)}</span><span>${p.points} / ${p.max}${p.from !== "Partner Central" && p.from !== "console" ? ` <span class="ap-row-sub">(${esc(p.from)})</span>` : ""}</span></li>`).join("")}</ul>`),
+      canEdit() && !busy ? `<button type="button" class="ap-row-btn" id="lead-pc-send" data-editor-only>${done ? "Refresh from Partner Central" : pc && pc.status ? "Send to Partner Central again" : "Send to Partner Central"}</button>` : "",
+    ].join("");
+    return group("AWS Partner Central", rows, { id: "lead-sum-pc", tipText: "Lead enrichment and prospecting from AWS Partner Central: propensity to buy, AWS Marketplace engagement, solution fit and the AWS programs the company is eligible for. New leads are sent by themselves; a test lead uses the Sandbox catalogue." });
+  }
+  async function sendToPartnerCentral(id) {
+    const resp = await fetch(`/partnerCentral/v1/leads/${encodeURIComponent(id)}/enrich`, { method: "POST", headers: await apiHeaders(), body: "{}" });
+    const body = await resp.json().catch(() => ({}));
+    if (!resp.ok) return body.reason || body.error || `Partner Central didn't take it (HTTP ${resp.status}).`;
+    return body.ok ? "Sent to Partner Central. The enrichment appears here when AWS has finished it." : `Not sent: ${body.reason || "no reason given"}`;
+  }
   // A network operator inquiry's summary: the person, their details, the pipeline, website activity and history.
   function renderOperatorSummary(l) {
     const stageOptions = stagesFor(l.leadType).map((s) => `<option value="${s.key}"${s.key === l.stage ? " selected" : ""}>${esc(s.label)}</option>`).join("");
@@ -548,6 +596,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
         row("Created", esc(fmtDate(l.createdAtMs))),
         row("Updated", esc(fmtDate(l.updatedAtMs))),
       ].join(""), { id: "lead-sum-lead" })}
+      ${group("AWS Partner Central", row("Status", esc("Not sent: network operator inquiries are people, not companies")), { id: "lead-sum-pc" })}
       ${l.websiteActivity.length ? group("Website activity", [...l.websiteActivity].reverse().map((a) => stackRow(`<p class="ap-row-text">${esc(a.label || "Website form")}${a.detail ? ` · ${esc(a.detail)}` : ""}</p><p class="ap-row-sub">${esc(a.atMs ? fmtDate(a.atMs) : "")}</p>`)).join(""), { id: "lead-sum-activity" }) : ""}
       ${historyHTML(l)}`;
     $("lead-sum-delete").hidden = !canEdit();
@@ -576,6 +625,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     $("lead-sum-body").innerHTML = `
       ${contactsHTML(l)}
       ${awsHTML(l)}
+      ${partnerCentralHTML(l)}
       ${fundingHTML(l)}
       <div id="lead-sum-research">${researchGroupsHTML(e)}</div>
       ${group("Lead", [
@@ -632,7 +682,13 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     if (e.shiftKey && document.activeElement === f[0]) { e.preventDefault(); f[f.length - 1].focus(); }
     else if (!e.shiftKey && document.activeElement === f[f.length - 1]) { e.preventDefault(); f[0].focus(); }
   });
-  $("lead-sum-body").addEventListener("click", (e) => {
+  $("lead-sum-body").addEventListener("click", async (e) => {
+    const pcBtn = e.target.closest && e.target.closest("#lead-pc-send");
+    if (pcBtn && summaryId && canEdit()) {
+      pcBtn.disabled = true; $("lead-sum-status").textContent = "Sending to Partner Central…";
+      try { $("lead-sum-status").textContent = await sendToPartnerCentral(summaryId); } catch (err) { $("lead-sum-status").textContent = `Couldn't send: ${err && err.message ? err.message : err}`; pcBtn.disabled = false; }
+      return;
+    }
     const fund = e.target.closest && e.target.closest("[data-funding]");
     if (fund && summaryId && !fund.disabled) { runFunding(summaryId, fund.dataset.funding); return; }
     const prio = e.target.closest && e.target.closest(".lead-prio-btn");

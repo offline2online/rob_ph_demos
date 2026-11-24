@@ -721,7 +721,7 @@ service cloud.firestore {
       // "tour" or "").
       return d.keys().hasOnly(["company", "contacts", "stage", "source", "assignee", "customerAccount", "prospectId", "enrichment", "test", "sourcePage", "sourceIndustry",
           "sourceLabel", "sourceDetail", "websiteActivity", "history", "archivedAt", "archivedByEmail", "inboundCount",
-          "leadType", "operator", "tam", "rank", "aiSessionIds", "aceOpportunityId", "gaClientIds",
+          "leadType", "operator", "tam", "rank", "aiSessionIds", "aceOpportunityId", "gaClientIds", "partnerCentral",
           "createdAt", "updatedAt", "stageChangedAt", "createdByEmail", "updatedByEmail"])
         // Written by the functions, kept by an editor's save: the Partner Central AI
         // session ids (partner-central.js), the linked ACE opportunity and the
@@ -729,6 +729,9 @@ service cloud.firestore {
         && (d.get("aiSessionIds", null) == null || d.get("aiSessionIds", null) is list)
         && (d.get("aceOpportunityId", "") is string && d.get("aceOpportunityId", "").size() <= 64)
         && (d.get("gaClientIds", null) == null || d.get("gaClientIds", null) is list)
+        // `partnerCentral`: AWS Partner Central lead enrichment, written only by
+        // functions/pc-lead-enrich.js (service account); an editor's save keeps it.
+        && (d.get("partnerCentral", null) == null || d.get("partnerCentral", null) is map)
         // `rank`: its priority within its lane, lower is higher (set by dragging it up or down the lane).
         && (d.get("rank", null) == null || d.get("rank", null) is number)
         // `tam`: a readable copy of the linked TAM record's own fields, written by

@@ -2778,6 +2778,14 @@ body { overflow-x: clip; }
 .lead-ind-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--ind-bar, var(--text-muted)); }
 :root[data-theme="dark"] .lead-ind-dot { background: var(--ind-bar-d, var(--text-muted)); }
 .lead-inbound { padding: 0 8px; border-radius: 999px; background: var(--primary-tint); color: var(--primary-text); font-size: 12px; font-weight: 600; line-height: 20px; white-space: nowrap; }
+.lead-score { padding: 0 8px; border-radius: 999px; background: rgba(120, 120, 128, .12); color: var(--text); font-size: 12px; font-weight: 600; line-height: 20px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.lead-score-hot { background: var(--primary-tint); color: var(--primary-text); }
+.lead-score-pending { color: var(--text-muted); font-weight: 500; }
+.lead-pc-level { padding: 0 8px; border-radius: 999px; background: rgba(120, 120, 128, .12); font-size: 12px; font-weight: 600; line-height: 20px; }
+.lead-pc-level-high { background: var(--primary-tint); color: var(--primary-text); }
+.lead-score-parts { margin: 4px 0 0; padding: 0; list-style: none; font-size: 13px; }
+.lead-score-parts li { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; }
+.lead-score-parts li > span:last-child { flex: none; font-variant-numeric: tabular-nums; }
 .lead-test-badge { padding: 0 6px; border-radius: 6px; background: rgba(120, 120, 128, .12); color: var(--text-muted); font-size: 11px; font-weight: 600; line-height: 20px; letter-spacing: .04em; text-transform: uppercase; }
 .lead-card-line { margin: 0; min-width: 0; font-size: 13px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lead-card-detail { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding-top: 8px; border-top: .5px solid var(--ap-divider); font-size: 12px; color: var(--text-muted); }

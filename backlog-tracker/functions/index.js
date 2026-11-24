@@ -2876,8 +2876,25 @@ function getPartnerCentralApi() {
   }
   return partnerCentralApi;
 }
+// Promote › Leads: AWS Partner Central lead enrichment and prospecting
+// (pc-lead-enrich.js). A new company lead is sent by the write trigger, which
+// then follows AWS's asynchronous prospecting task (re-firing itself through
+// partnerCentral.checks while it runs; no Cloud Scheduler here, on purpose) and
+// moves a lead to Hot Lead when its score says so. Editors send a lead again
+// at /partnerCentral/v1/leads/{id}/enrich, answered before the admin routes.
+const { createPcLeadEnrich } = require("./pc-lead-enrich");
+let pcLeadEnrich = null;
+function getPcLeadEnrich() {
+  if (!pcLeadEnrich) pcLeadEnrich = createPcLeadEnrich({ db: getFirestore(), partnerCentral: getPartnerCentralApi(), logger });
+  return pcLeadEnrich;
+}
 // 180 s: the Partner Central agent (MCP) can take up to two minutes on a multi-step answer.
-exports.partnerCentral = onRequest({ cors: false, timeoutSeconds: 180, maxInstances: 3 }, (req, res) => getPartnerCentralApi().handle(req, res));
+exports.partnerCentral = onRequest({ cors: false, timeoutSeconds: 180, maxInstances: 3 }, async (req, res) => {
+  if (await getPcLeadEnrich().handle(req, res)) return;
+  return getPartnerCentralApi().handle(req, res);
+});
+exports.partnerCentralLeadOnWrite = onDocumentWritten({ document: "leads/{leadId}", timeoutSeconds: 540, maxInstances: 5 },
+  (event) => getPcLeadEnrich().onLeadWrite(event));
 
 // ACE opportunity stages → GA4 Measurement Protocol, keyed on the GA4
 // client_id the website captured with each lead (ace-ga4.js). Run hourly by

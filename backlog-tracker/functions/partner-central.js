@@ -44,6 +44,8 @@
 //   POST  /v1/funding/{leadId}/check {opportunityId?}   AWS funding eligibility + drafts for a lead
 //   POST  /v1/funding/{leadId}/refresh     re-read that check's agent session
 //   POST  /v1/funding/{leadId}/poc-approved {amount?, currency?, reference?, clear?}  POC approved: claim sign-off due
+//   POST  /v1/leads/{id}/enrich             send a lead to lead enrichment again (editors;
+//                                          answered by pc-lead-enrich.js, wired in index.js)
 //   POST  /v1/licences/sync  POST /v1/licences/link   Promote › License Manager (editors; the
 //                                          AWS Marketplace agreements and their buyer contacts, read-only
 //                                          on the AWS side; marketplace-agreements.js has its own closed list)
@@ -67,6 +69,13 @@ const OPERATIONS = {
   CreateOpportunity: { service: "selling" },
   UpdateOpportunity: { service: "selling" },
   CreateBenefitApplication: { service: "benefits", draftOnly: true },
+  // Lead enrichment and prospecting (functions/pc-lead-enrich.js): an engagement with a Lead
+  // context, the prospecting task on it, and reading both back. Nothing that deletes, submits,
+  // accepts or rejects an engagement.
+  CreateEngagement: { service: "selling" },
+  GetEngagement: { service: "selling" },
+  StartProspectingFromEngagementTask: { service: "selling" },
+  GetProspectingFromEngagementTask: { service: "selling" },
 };
 // Hosts are the documented dual-stack `*.api.aws` endpoints; the old
 // `*.amazonaws.com` names do not resolve (that was the "fetch failed", 7 Nov
@@ -439,7 +448,8 @@ function createPartnerCentralApi({
   async function loadConfig() {
     const snap = await ref(CONFIG_DOC).get();
     const d = snap.exists ? snap.data() || {} : {};
-    return { catalog: CATALOGS.includes(d.catalog) ? d.catalog : "Sandbox", roleArn: String(d.roleArn || defaultRoleArn), updatedBy: d.updatedBy || null, updatedAt: iso(d.updatedAt) };
+    // autoPromote: lead enrichment may move a lead to Hot Lead (pc-lead-enrich.js); false switches it off.
+    return { catalog: CATALOGS.includes(d.catalog) ? d.catalog : "Sandbox", roleArn: String(d.roleArn || defaultRoleArn), autoPromote: d.autoPromote !== false, updatedBy: d.updatedBy || null, updatedAt: iso(d.updatedAt) };
   }
 
   async function audit(entry) {
@@ -470,16 +480,18 @@ function createPartnerCentralApi({
     return creds;
   }
 
-  // The single door to AWS. Refuses anything not in OPERATIONS.
-  async function callAws(operation, payload, { by, config } = {}) {
+  // The single door to AWS. Refuses anything not in OPERATIONS. `sandbox: true`
+  // forces the Sandbox catalogue whatever the live setting (test leads).
+  async function callAws(operation, payload, { by, config, sandbox = false } = {}) {
     const spec = OPERATIONS[operation];
-    const cfg = config || (await loadConfig());
+    const loaded = config || (await loadConfig());
+    const cfg = sandbox ? { ...loaded, catalog: "Sandbox" } : loaded;
     const started = now();
     if (!spec) {
       await audit({ operation, catalog: cfg.catalog, by: by || null, ok: false, error: "operation not allowed" });
       throw Object.assign(new Error(`operation not allowed: ${operation}`), { status: 400 });
     }
-    const body = { Catalog: cfg.catalog, ...payload };
+    const body = sandbox ? { ...payload, Catalog: "Sandbox" } : { Catalog: cfg.catalog, ...payload };
     let result = null; let error = null; let httpStatus = null; let awsType = null; let host = null;
     try {
       const creds = await assumeRole(cfg.roleArn);
@@ -953,7 +965,7 @@ function createPartnerCentralApi({
   // The role's short-lived credentials, for the S3 export reader (pc-export.js). Never sent to a browser.
   const awsCredentials = async () => assumeRole((await loadConfig()).roleArn);
 
-  return { handle, status, licences, awsCredentials, fundingCheck, fundingRefresh, fundingPocApproved, agentMessage, agentRefresh, agentDecide, agentOverview, callAgent, aceOpportunities, aceCreate, aceUpdate, aceOne, callAws, listOpportunities, getOpportunity, createOpportunity, updateOpportunity, createBenefitDraft };
+  return { handle, status, loadConfig, authorise: requireAdmin, licences, awsCredentials, fundingCheck, fundingRefresh, fundingPocApproved, agentMessage, agentRefresh, agentDecide, agentOverview, callAgent, aceOpportunities, aceCreate, aceUpdate, aceOne, callAws, listOpportunities, getOpportunity, createOpportunity, updateOpportunity, createBenefitDraft };
 }
 
 module.exports = { createPartnerCentralApi, buildFundingPrompt, parseFundingReply, isSubmitLike, fundingProgramKey, FUNDING, FUNDING_PROGRAMS, FUNDING_STAGES, FUNDING_SCHEMA_VERSION, parseAgentResult, parseMcpBody, AGENT_MCP, AGENT_TOOLS, AGENT_SESSIONS, sanitiseAceInput, buildUpdate, buildCreate, EDITABLE, describeNetworkError, normaliseOpportunity, signRequest, OPERATIONS, SERVICES, CATALOGS, AUDIT, DEFAULT_ROLE_ARN };
