@@ -2818,6 +2818,17 @@ html[data-console-role="viewer"] .lead-prio-tools { display: none; }
 .lead-detail .lead-sum-actions .lead-delete, .lead-form-actions .lead-delete { margin-right: auto; }
 .lead-sum-contact-name { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin: 0; font-weight: 600; overflow-wrap: anywhere; }
 .lead-sum-role { font-weight: 500; }
+/* Lead summary → AWS funding (leads-page.js fundingHTML; rules in funding-core.js) */
+.lead-fund-prog { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.lead-fund-dot { width: 8px; height: 8px; border-radius: 9999px; flex: none; display: inline-block; margin-right: 6px; vertical-align: 1px; }
+.lead-fund-dot.is-green { background: #52c41a; } .lead-fund-dot.is-amber { background: #faad14; } .lead-fund-dot.is-red { background: #ff4d4f; }
+.lead-fund-prog .lead-fund-dot { margin-right: 0; }
+.lead-fund-pill { font-size: 11.5px; line-height: 20px; }
+.lead-fund-draft { color: var(--primary-text); }
+.lead-fund-reply { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; }
+.lead-fund-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.lead-fund-actions button, .lead-fund-link { min-height: 44px; }
+.lead-fund-link { display: inline-flex; align-items: center; text-decoration: none; white-space: nowrap; }
 /* The lead form: a sheet of grouped rows. */
 .lead-panel { max-width: 600px; max-height: 90vh; overflow-y: auto; }
 #lead-contacts, #lead-existing, #lead-enrichment { display: flex; flex-direction: column; gap: 24px; }

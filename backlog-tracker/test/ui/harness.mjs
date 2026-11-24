@@ -189,6 +189,21 @@ export async function startHarness() {
           const body = url.pathname.endsWith("/sync") ? { ok: true, count: 2, contactErrors: 0, truncated: false } : { ok: true, agreementId: input.agreementId, prospectId: input.prospectId };
           return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
         }
+        // AWS funding for a lead (functions/partner-central.js /v1/funding/{leadId}/*): a check answers
+        // seed.fundingAnswer (else POC + Innovation Sandbox eligible, two drafts waiting); calls go in pcAgentCalls.
+        const fund = /^\/partnerCentral\/v1\/funding\/([^/]+)\/(check|refresh|poc-approved)$/.exec(url.pathname);
+        if (fund) {
+          const body = JSON.parse(route.request().postData() || "{}");
+          pcAgentCalls.push({ method: route.request().method(), path: url.pathname, body });
+          const checked = seed.fundingAnswer || { leadId: fund[1], catalog: "Sandbox", sessionId: "fund-1", opportunityId: "O-TEST-1", status: "requires_approval", structured: true, pendingApprovals: 2, checkedAt: "2026-11-24T10:00:00Z", checkedBy: "admin@ph.example", replyText: "",
+            programs: [
+              { key: "poc", name: "POC funding", eligible: true, reason: "Technical validation on AWS", estimatedAmount: 25000, currency: "USD", budgetAvailable: 80000, draftId: null },
+              { key: "sandbox", name: "Innovation Sandbox credits", eligible: true, reason: "", estimatedAmount: 5000, currency: "USD", budgetAvailable: null, draftId: null },
+              { key: "map", name: "MAP", eligible: false, reason: "No migration in scope", estimatedAmount: null, currency: "USD", budgetAvailable: null, draftId: null },
+            ], pocApproved: null };
+          const funding = fund[2] === "poc-approved" ? { ...checked, pocApproved: body.clear ? null : { at: "2026-11-24T11:00:00Z", by: "admin@ph.example", amount: null, currency: "USD", reference: null } } : checked;
+          return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ funding }) });
+        }
         if (url.pathname.startsWith("/partnerCentral/")) {
           const body = url.pathname.endsWith("/audit") ? { entries: [] } : { state: "not-linked", catalog: "Sandbox", roleArn: "arn:aws:iam::817173160653:role/PH-Console-PartnerCentral", lastSuccessAt: null, lastError: null, note: "Not linked yet" };
           return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });

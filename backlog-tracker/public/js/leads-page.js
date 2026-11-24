@@ -40,6 +40,7 @@ import { normaliseDetail, compactSummary, mailto, companyDocId, COMPANY_COLLECTI
 import { leadIndustryEntry, industryChipText, industryStyle } from "./industry-palette.js";
 import { researchGroupsHTML, enrichmentRunning, enrichmentSkipped, enrichButtonLabel, enrichmentStatus, logoHTML, wireLogoFallback } from "./enrichment-view.js";
 import { group, row, stackRow, lineRow, iconLink, linkedinLink, pill, tip } from "./ap-components.js";
+import { normaliseFunding, fundingSuggestion, programView, claimDue, fundingMoney, CLAIM_SKILL } from "./funding-core.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 // Addresses come from Firestore, which an agent can write: http(s) only.
@@ -55,6 +56,8 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
   let members = [];
   let unsub = null;
   let unsubAws = null;
+  let unsubFunding = null;
+  const funding = new Map(); // leadId -> its AWS funding check (leadFunding, written only by the partnerCentral function)
   let openId = null;          // the lead in the form, null for a new one
   let draft = { contacts: [] }; // contact rows held in memory while the form is open
   let started = false;
@@ -88,10 +91,15 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
       awsRecord = s.exists() ? normaliseProspect(s.id, s.data()) : null;
       renderAws();
     }, () => {});
+    unsubFunding = onSnapshot(collection(db, "leadFunding"), (snap) => {
+      funding.clear();
+      for (const d of snap.docs) { const f = normaliseFunding(d.data({ serverTimestamps: "estimate" })); if (f) funding.set(d.id, f); }
+      if (summaryId && !sumBackdrop.hidden) renderSummary();
+    }, () => {});
     fillStages();
     loadAce();
   }
-  function stop() { if (unsub) unsub(); if (unsubAws) unsubAws(); unsub = null; unsubAws = null; started = false; }
+  function stop() { if (unsub) unsub(); if (unsubAws) unsubAws(); if (unsubFunding) unsubFunding(); unsub = null; unsubAws = null; unsubFunding = null; started = false; }
 
   // The compact org chart and AWS team on a card come from the company's shared detail (prospectCompanies).
   function loadDetails() {
@@ -457,6 +465,58 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
       iconLink(mailto(m.email, `${l.company.name} opportunity`), "mail", `Email ${m.name}`))).join("");
     return group("AWS team", rows || lineRow("No AWS team yet"), { id: "lead-sum-aws" });
   }
+  // AWS funding (ticket O37hnP69Cnn8N32HpHot): suggested once the lead is a Hot Lead or has an ACE
+  // opportunity. An admin runs the check (the Partner Central agent, functions/partner-central.js); the
+  // agent's drafts wait for an admin's approval in Settings → Integrations & MCP, and nothing is submitted.
+  function fundingHTML(l) {
+    const f = funding.get(l.id) || null;
+    const s = fundingSuggestion(l, f);
+    if (!s.show) return "";
+    const btn = (act, label, cls, icon) => `<button type="button" class="${cls}" data-funding="${act}" data-admin-only>${icon ? `<span class="material-symbols-outlined notify-claude-icon" aria-hidden="true">${icon}</span><span class="notify-claude-label">${esc(label)}</span>` : esc(label)}</button>`;
+    const rows = [];
+    if (!f || !f.checkedAtMs) rows.push(lineRow(s.suggested ? `Funding check suggested: ${s.reason}` : "No funding check yet", "lead-fund-suggest"));
+    if (f && f.checkedAtMs) {
+      for (const p of f.programs) {
+        const v = programView(p, f);
+        rows.push(stackRow(`<p class="lead-sum-contact-name lead-fund-prog"><span class="lead-fund-dot is-${v.tone}" aria-hidden="true"></span>${esc(p.name)} ${pill(v.label, `lead-fund-pill is-${v.tone}`)}</p>
+          ${v.detail ? `<p class="ap-row-sub">${esc(v.detail)}</p>` : ""}
+          ${v.draft ? `<p class="ap-row-sub lead-fund-draft">${esc(v.draft)}</p>` : ""}
+          ${v.reason ? `<p class="ap-row-sub">${esc(v.reason)}</p>` : ""}`, "", "lead-fund-row"));
+      }
+      if (!f.structured && f.replyText) rows.push(stackRow(`<p class="ap-row-text lead-fund-reply">${esc(f.replyText)}</p>`, "", "lead-fund-row"));
+      if (f.pendingApprovals) rows.push(stackRow(`<p class="ap-row-text"><span class="lead-fund-dot is-amber" aria-hidden="true"></span>${f.pendingApprovals} ${f.pendingApprovals === 1 ? "draft waits" : "drafts wait"} for approval</p>`, '<a class="btn-ghost lead-fund-link" href="#settings/integrations" data-admin-only>Review drafts</a>', "lead-fund-pending"));
+      rows.push(stackRow(`<p class="ap-row-sub">Checked ${esc(fmtDate(f.checkedAtMs))}${f.checkedBy ? ` by ${esc(memberName(f.checkedBy))}` : ""}${f.opportunityId ? ` · ACE ${esc(f.opportunityId)}` : ""}${f.sessionId ? ` · AI session ${esc(f.sessionId)}` : ""}</p>`, "", "lead-fund-meta"));
+    }
+    if (claimDue(f)) {
+      const a = f.pocApproved;
+      rows.push(stackRow(`<p class="lead-sum-contact-name"><span class="lead-fund-dot is-green" aria-hidden="true"></span>POC approved</p><p class="ap-row-sub">${esc([fmtDate(a.atMs), a.reference, a.amount !== null ? fundingMoney(a.amount, a.currency) : ""].filter(Boolean).join(" · "))}</p>`, btn("poc-clear", "Undo", "btn-ghost"), "lead-fund-poc"));
+      rows.push(stackRow(`<p class="lead-sum-contact-name"><span class="lead-fund-dot is-amber" aria-hidden="true"></span>Claim sign-off document due</p><p class="ap-row-sub">Proof of execution · Skill: ${esc(CLAIM_SKILL)}</p>`, "", "lead-fund-claim"));
+    }
+    const checked = !!(f && f.checkedAtMs);
+    rows.push(`<div class="ap-row lead-fund-actions" data-admin-only>${btn("run-check", checked ? "Check again" : "Check funding eligibility", "notify-claude-btn", "auto_awesome")}${checked ? btn("re-read", "Refresh", "btn-ghost") : ""}${claimDue(f) ? "" : btn("poc", "POC approved", "btn-ghost")}</div>`);
+    const aside = f && f.catalog === "Sandbox" ? '<span class="lead-test-badge">Sandbox</span>' : "";
+    return group("AWS funding", rows.join(""), { id: "lead-sum-funding", aside, tipText: "Eligibility, agent estimates and budget from AWS Partner Central for POC funding, Innovation Sandbox credits, MAP and other programmes. The agent drafts the POC and Innovation Sandbox requests; an admin approves each draft, and the account lead submits it in Partner Central. Nothing is submitted from the console." });
+  }
+  async function runFunding(id, act) {
+    const status = $("lead-sum-status");
+    const path = { "run-check": "/check", "re-read": "/refresh" }[act] || "/poc-approved"; // leading "/": a bare quoted word reads as an icon name to test/icon-font.test.mjs
+    const verb = { "run-check": "check AWS funding", "re-read": "refresh the funding check" }[act] || "record the POC approval";
+    status.textContent = act === "run-check" ? "Checking AWS funding… this can take a minute." : act === "re-read" ? "Reading the check from Partner Central…" : "Saving…";
+    const btns = [...$("lead-sum-body").querySelectorAll("[data-funding]")];
+    btns.forEach((b) => { b.disabled = true; });
+    try {
+      const resp = await fetch(`/partnerCentral/v1/funding/${encodeURIComponent(id)}${path}`, { method: "POST", headers: await apiHeaders(), body: JSON.stringify(act === "poc-clear" ? { clear: true } : {}) });
+      const body = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(body.error || `HTTP ${resp.status}`);
+      const f = normaliseFunding(body.funding);
+      if (f) funding.set(id, f);
+      if (summaryId === id) renderSummary();
+      status.textContent = act === "run-check" || act === "re-read" ? (f && f.pendingApprovals ? "Done. Drafts wait for an admin's approval; nothing was submitted." : "Done. Nothing was submitted.") : "Saved.";
+    } catch (err) {
+      status.textContent = `Couldn't ${verb}: ${err && err.message ? err.message : err}`;
+      btns.forEach((b) => { b.disabled = false; });
+    }
+  }
   // A network operator inquiry's summary: the person, their details, the pipeline, website activity and history.
   function renderOperatorSummary(l) {
     const stageOptions = stagesFor(l.leadType).map((s) => `<option value="${s.key}"${s.key === l.stage ? " selected" : ""}>${esc(s.label)}</option>`).join("");
@@ -516,6 +576,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     $("lead-sum-body").innerHTML = `
       ${contactsHTML(l)}
       ${awsHTML(l)}
+      ${fundingHTML(l)}
       <div id="lead-sum-research">${researchGroupsHTML(e)}</div>
       ${group("Lead", [
         row("Stage", `<select id="lead-sum-stage" class="lead-sum-stage" aria-label="Stage" data-editor-only>${stageOptions}</select><span class="lead-sum-stage-ro">${esc(stageLabel(l.stage))}</span>`),
@@ -572,6 +633,8 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     else if (!e.shiftKey && document.activeElement === f[f.length - 1]) { e.preventDefault(); f[0].focus(); }
   });
   $("lead-sum-body").addEventListener("click", (e) => {
+    const fund = e.target.closest && e.target.closest("[data-funding]");
+    if (fund && summaryId && !fund.disabled) { runFunding(summaryId, fund.dataset.funding); return; }
     const prio = e.target.closest && e.target.closest(".lead-prio-btn");
     if (prio && summaryId && !prio.disabled) {
       const act = prio.dataset.prio;

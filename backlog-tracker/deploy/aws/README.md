@@ -80,3 +80,10 @@ admin's Approve or Reject in the panel. Test in the **Sandbox** catalogue first:
 ask for a customer profile, ask it to draft a test opportunity (not submitted) and check the approval
 card appears before anything is written. An authentication error answers `-32001` and shows in the audit
 list as `agent:sendMessage`.
+
+**AWS funding check (lead card).** Promote -> Leads -> a Hot Lead -> AWS funding -> **Check funding
+eligibility** sends one agent message with the account context and asks for drafts only. Test in the
+**Sandbox** catalogue: run it on a test opportunity, check the section lists POC funding and Innovation
+Sandbox credits with estimates, that two `CreateBenefitApplication` drafts wait in the agent panel, and
+that nothing was submitted (no `SubmitBenefitApplication` in CloudTrail; the console refuses to approve
+one).

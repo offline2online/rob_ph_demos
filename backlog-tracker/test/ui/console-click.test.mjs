@@ -2730,6 +2730,48 @@ const scenarios = [
     },
   },
   {
+    // O37hnP69Cnn8N32HpHot: a Hot Lead (or a lead with an ACE opportunity) suggests an AWS funding check on its
+    // card; an admin runs it, sees eligibility, estimates, budget and drafts waiting, and nothing is submitted.
+    name: "Promote: Leads - AWS funding: suggested for a Hot Lead, check shows programmes and drafts, POC approved makes the claim due",
+    seed: () => ({ ...seed({ leads: {
+      h1: { company: { name: "Hot Grocer", website: "", industry: "Grocery", countries: ["UK"], storeCount: 50 }, contacts: [], stage: "hot-lead", source: "Manual", assignee: "", customerAccount: null, aceOpportunityId: "O-TEST-1", createdAt: t(T0), updatedAt: t(T0) },
+      c1: { company: { name: "Cold Co", website: "", industry: "", countries: [], storeCount: null }, contacts: [], stage: "lead", source: "Manual", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
+    } }), user: { email: "admin@ph.example", role: "admin" } }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
+      c.at("a plain lead has no funding section");
+      await c.page.click('.lead-card[data-lead-id="c1"]');
+      await c.visible("#lead-summary-panel", "the summary opens");
+      assert.strictEqual(await c.page.locator("#lead-sum-funding").count(), 0);
+      await c.click("#lead-sum-close", "close"); await c.hidden("#lead-summary-panel");
+
+      c.at("a Hot Lead with an ACE opportunity suggests the check");
+      await c.page.click('.lead-card[data-lead-id="h1"]');
+      await c.visible("#lead-sum-funding", "the AWS funding section");
+      assert.match(await c.text("#lead-sum-funding"), /Funding check suggested: ACE opportunity/);
+      assert.strictEqual(c.pcAgentCalls.length, 0, "nothing runs by itself");
+      await c.click('#lead-sum-funding [data-funding="run-check"]', "Check funding eligibility");
+      await c.waitText("#lead-sum-status", "Done. Drafts wait for an admin's approval; nothing was submitted.", "the check finishes");
+      assert.deepStrictEqual(c.pcAgentCalls.map((x) => x.path), ["/partnerCentral/v1/funding/h1/check"]);
+      const box = await c.text("#lead-sum-funding");
+      for (const want of ["POC funding", "Eligible", "Agent estimate US$25,000 · Budget available US$80,000", "Innovation Sandbox credits", "Agent estimate US$5,000", "MAP", "Not eligible", "No migration in scope", "Draft waits for an admin's approval", "2 drafts wait for approval", "AI session fund-1", "Sandbox"]) assert.ok(box.includes(want), `the section shows "${want}"`);
+      assert.strictEqual(await c.page.locator('#lead-sum-funding a[href="#settings/integrations"]').count(), 1, "Review drafts goes to the agent panel");
+      assert.match(await c.text('#lead-sum-funding [data-funding="run-check"]'), /Check again/);
+
+      c.at("POC approved: the claim sign-off document is due");
+      await c.click('#lead-sum-funding [data-funding="poc"]', "POC approved");
+      await c.waitText("#lead-sum-status", "Saved.", "saved");
+      assert.match(await c.text("#lead-sum-funding"), /Claim sign-off document due/);
+      assert.match(await c.text("#lead-sum-funding"), /Skill: aws-ace-poc-claim/);
+      assert.strictEqual(await c.page.locator('#lead-sum-funding [data-funding="poc"]').count(), 0, "marked once");
+      await c.click('#lead-sum-funding [data-funding="poc-clear"]', "Undo");
+      await c.waitText("#lead-sum-status", "Saved.", "undone");
+      assert.strictEqual(await c.page.locator("#lead-sum-funding .lead-fund-claim").count(), 0);
+      assert.deepStrictEqual(c.pcAgentCalls.slice(1).map((x) => [x.path, x.body]), [["/partnerCentral/v1/funding/h1/poc-approved", {}], ["/partnerCentral/v1/funding/h1/poc-approved", { clear: true }]]);
+    },
+  },
+  {
     name: "Promote: Leads tiles - industry colours, nothing overflows, summary opens, stage changes, Esc closes",
     seed: () => seed({ leads: {
       w1: { company: { name: "Telco With A Really Long Company Name That Keeps Going And Going Plc", website: "https://telco.example", industry: "", countries: ["UK"], storeCount: 1200 }, contacts: [{ id: "k1", name: "Ana Lyst", jobTitle: "CTO", buyingRole: "decision-maker", email: "ana@telco.example", linkedin: "https://linkedin.com/in/ana" }], stage: "lead", source: "website", sourcePage: "https://personalisationhub.com/industries/telco/", sourceIndustry: "Telco retail", test: true, assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },

@@ -2120,6 +2120,16 @@ approval card (operation + parameters) until an admin clicks **Approve** or
 once to the linked lead's history and `aiSessionIds`. See `REQUIREMENTS.md` →
 "Partner Central agent over MCP".
 
+**AWS funding drafts on the lead card (24 Nov 2026).** A Hot Lead, or a lead with an ACE
+opportunity, shows an **AWS funding** section in its summary drawer with "Funding check suggested".
+An admin's **Check funding eligibility** (`POST /partnerCentral/v1/funding/{leadId}/check`) asks the
+Partner Central agent, with the account context, for eligibility (POC, MAP, Innovation Sandbox credits,
+others), estimates and budget, and to draft the POC and Innovation Sandbox applications; each draft
+waits for an admin's Approve in the agent panel, and the console refuses to approve anything that
+submits. Results are in `leadFunding/{leadId}` (server-written, member-readable); rules in
+`public/js/funding-core.js`. **POC approved** marks the claim sign-off document (skill
+`aws-ace-poc-claim`) as due. See `REQUIREMENTS.md` → "AWS funding drafts on the lead card".
+
 **ACE stages → GA4 (9 Nov 2026).** `functions/ace-ga4.js`, the HTTP function `aceToGa4`, run hourly by `.github/workflows/ace-ga4.yml` (POST with `X-Board-Key`; not Cloud Scheduler, which this project deliberately has none of — the deploy account can't create scheduler jobs): website leads now carry the visitor's GA4 client_id (`leads/{id}.gaClientIds`, from the website's PH GA4 snippet via `leadIngest`), and the job sends `ace_opportunity_qualified` / `_launched` / `_won` once each to GA4 by Measurement Protocol, keyed on that client_id, with `ace_stage`, `company_name`, `industry`, `lead_source` and the original `session_id`. *won* is the console lead reaching Closed Won (ACE has no won stage). It sends for real only while the Partner Central catalogue is "AWS"; in Sandbox it only calls GA4's validation endpoint. What was sent is in `aceGa4Sync/{opportunityId}` (server-only), so nothing is sent twice. Secret: `GA4_MP_API_SECRET` (repo secret, synced by the deploy). Test: `node test/ace-ga4.test.js`. Full GA4 setup: `docs/ga4-industry-attribution.md`.
 
 **ACE opportunities in the console (7 Nov 2026).** Promote › Leads lists Customer, Opportunity, stage, review status, Score, revenue, Expected delivery date, Created and Last updated. Clicking an opportunity opens `public/js/ace-detail.js`: edit and **Save to ACE** (`PATCH /partnerCentral/v1/ace/{id}`, read-merge-write `UpdateOpportunity`, score re-read), **New opportunity** (`POST /partnerCentral/v1/ace`), and documents in Storage `ace/{id}/` (`public/js/ace-docs.js`, `storage.rules`; not sent to AWS). Live sync needs the role link in `deploy/aws/README.md`. See REQUIREMENTS.md → "ACE opportunities managed in the console".

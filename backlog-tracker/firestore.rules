@@ -721,8 +721,14 @@ service cloud.firestore {
       // "tour" or "").
       return d.keys().hasOnly(["company", "contacts", "stage", "source", "assignee", "customerAccount", "prospectId", "enrichment", "test", "sourcePage", "sourceIndustry",
           "sourceLabel", "sourceDetail", "websiteActivity", "history", "archivedAt", "archivedByEmail", "inboundCount",
-          "leadType", "operator", "tam", "rank",
+          "leadType", "operator", "tam", "rank", "aiSessionIds", "aceOpportunityId", "gaClientIds",
           "createdAt", "updatedAt", "stageChangedAt", "createdByEmail", "updatedByEmail"])
+        // Written by the functions, kept by an editor's save: the Partner Central AI
+        // session ids (partner-central.js), the linked ACE opportunity and the
+        // website's GA4 client ids (lead-ingest.js).
+        && (d.get("aiSessionIds", null) == null || d.get("aiSessionIds", null) is list)
+        && (d.get("aceOpportunityId", "") is string && d.get("aceOpportunityId", "").size() <= 64)
+        && (d.get("gaClientIds", null) == null || d.get("gaClientIds", null) is list)
         // `rank`: its priority within its lane, lower is higher (set by dragging it up or down the lane).
         && (d.get("rank", null) == null || d.get("rank", null) is number)
         // `tam`: a readable copy of the linked TAM record's own fields, written by
@@ -1116,6 +1122,13 @@ service cloud.firestore {
     }
     match /partnerCentralState/{doc} {
       allow read, write: if false;
+    }
+    // A lead's AWS funding check (POST /partnerCentral/v1/funding/{leadId}/check):
+    // eligibility, estimates, budget and draft state, written only by the function;
+    // members read it on the lead card. Nothing here submits anything.
+    match /leadFunding/{leadId} {
+      allow read: if isBoardReader();
+      allow write: if false;
     }
 
     // ── Staff pronunciations (functions/kanban.js) ─────────────────────────

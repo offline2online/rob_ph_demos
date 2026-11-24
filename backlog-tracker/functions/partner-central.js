@@ -40,6 +40,10 @@
 //   POST  /v1/agent/sessions/{id}          re-read a session from AWS (getSession)
 //   POST  /v1/agent/sessions/{id}/approvals/{toolUseId} {decision: approve|reject, message?}
 //                                          answer a write the agent is holding for approval
+//                                          (a submit-like write is refused: drafts only)
+//   POST  /v1/funding/{leadId}/check {opportunityId?}   AWS funding eligibility + drafts for a lead
+//   POST  /v1/funding/{leadId}/refresh     re-read that check's agent session
+//   POST  /v1/funding/{leadId}/poc-approved {amount?, currency?, reference?, clear?}  POC approved: claim sign-off due
 //   POST  /v1/licences/sync  POST /v1/licences/link   Promote › License Manager (editors; the
 //                                          AWS Marketplace agreements and their buyer contacts, read-only
 //                                          on the AWS side; marketplace-agreements.js has its own closed list)
@@ -328,6 +332,96 @@ function parseAgentResult(result) {
     for (let i = src.events.length - 1; i >= 0 && !approvals.length; i--) collectApprovals(src.events[i], true, approvals, seen);
   }
   return { sessionId: text(first(src.sessionId, r.sessionId), 128) || null, status, text: text(replyText, 20000), approvals, isError: r.isError === true };
+}
+
+// ── AWS funding drafts (ticket O37hnP69Cnn8N32HpHot) ─────────────────────
+// A lead's "Check funding eligibility" asks the same agent, in one message
+// carrying the account context, which funding programmes the opportunity
+// qualifies for (POC, MAP, Innovation Sandbox credits and any other), what
+// each could be worth, what budget is left where AWS says, and to DRAFT the
+// POC funding and Innovation Sandbox credit applications. A draft the agent
+// wants to create comes back as a write held for an admin's approval (the
+// agent panel), and nothing that submits can be approved: isSubmitLike below,
+// with the role's IAM deny on SubmitBenefitApplication as the second layer.
+// The answer ends with a JSON block (FUNDING_SCHEMA_VERSION) that
+// parseFundingReply reads defensively; the plain text is always kept too.
+const FUNDING = "leadFunding"; // server-written, member-readable: leadFunding/{leadId}
+const FUNDING_SCHEMA_VERSION = 1;
+const FUNDING_PROGRAMS = [
+  { key: "poc", name: "POC funding", draft: true },
+  { key: "sandbox", name: "Innovation Sandbox credits", draft: true },
+  { key: "map", name: "MAP (Migration Acceleration Program)", draft: false },
+];
+const FUNDING_STAGES = ["hot-lead", "demo", "post-demo"]; // a check is suggested from Hot Lead on (and whenever an ACE opportunity is linked)
+function fundingProgramKey(name) {
+  const s = String(name == null ? "" : name);
+  if (/\bpoc\b|proof[\s-]*of[\s-]*concept/i.test(s)) return "poc";
+  if (/sandbox|\bcredit/i.test(s)) return "sandbox";
+  if (/\bmap\b|migration acceleration/i.test(s)) return "map";
+  return "other";
+}
+// An operation that submits (or otherwise sends to AWS for review) is never approvable from the console.
+function isSubmitLike(toolName, parameters) {
+  if (/submit/i.test(String(toolName || ""))) return true;
+  let p = "";
+  try { p = JSON.stringify(parameters || {}); } catch { p = ""; }
+  return /"(action|operation|status|stage)"\s*:\s*"[^"]*submit/i.test(p);
+}
+// The one message sent for a funding check: account context + the ask + the reply format.
+function buildFundingPrompt({ lead, opportunityId, catalog }) {
+  const l = lead && typeof lead === "object" ? lead : {};
+  const c = l.company && typeof l.company === "object" ? l.company : {};
+  const e = l.enrichment && typeof l.enrichment === "object" ? l.enrichment : {};
+  const ctx = [
+    ["Customer", text(c.name, 120)],
+    ["Website", text(c.website, 300)],
+    ["Industry", text(c.industry, 120)],
+    ["Countries", Array.isArray(c.countries) ? c.countries.map((x) => text(x, 60)).filter(Boolean).join(", ") : ""],
+    ["Stores", typeof c.storeCount === "number" ? String(c.storeCount) : ""],
+    ["Customer AWS account ID", /^\d{12}$/.test(String(c.awsAccountId || "")) ? c.awsAccountId : ""],
+    ["Console lead stage", text(l.stage, 40)],
+    ["ACE opportunity ID", text(opportunityId, 64)],
+    ["Company summary", text(e.summary, 1200)],
+  ].filter(([, v]) => v).map(([k, v]) => `- ${k}: ${v}`).join("\n");
+  return [
+    `Check AWS partner funding for this account (${catalog} catalogue).`,
+    "",
+    "Account context:",
+    ctx || "- (no details on the lead yet)",
+    "",
+    "1. Check eligibility for every funding programme that could apply: POC funding, MAP and Innovation Sandbox credits, and name any other programme that fits.",
+    "2. Estimate the amount for each eligible programme, and give the remaining budget available where Partner Central shows it.",
+    "3. Draft (create as DRAFT only) a POC funding application and an Innovation Sandbox credits application where eligible, with this account context attached. Never submit anything: the account lead reviews and submits each draft in Partner Central.",
+    "",
+    "End your answer with one fenced ```json block shaped exactly like:",
+    `{"schemaVersion":${FUNDING_SCHEMA_VERSION},"programs":[{"program":"POC funding","eligible":true,"reason":"...","estimatedAmount":25000,"currency":"USD","budgetAvailable":null,"draftId":null}]}`,
+    "Use null for any amount, budget or draft id you do not know; do not guess figures.",
+  ].join("\n").slice(0, AGENT_MESSAGE_MAX);
+}
+const fundNum = (v) => { if (v === null || v === undefined || v === "") return null; const n = Number(String(v).replace(/[,\s]/g, "")); return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : null; };
+// The last fenced JSON block in the reply → programmes, coerced. { structured, programs }.
+function parseFundingReply(replyText) {
+  const s = String(replyText || "");
+  const blocks = [...s.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)].map((m) => m[1]);
+  let data = null;
+  for (let i = blocks.length - 1; i >= 0 && !data; i--) {
+    try { const j = JSON.parse(blocks[i]); if (j && typeof j === "object" && Array.isArray(j.programs)) data = j; } catch { /* not the block */ }
+  }
+  if (!data) return { structured: false, programs: [] };
+  const programs = data.programs.filter((p) => p && typeof p === "object").slice(0, 12).map((p) => {
+    const name = text(first(p.program, p.name), 120) || "Funding programme";
+    const key = fundingProgramKey(name);
+    return {
+      key, name,
+      eligible: p.eligible === true ? true : p.eligible === false ? false : null,
+      reason: text(p.reason, 600),
+      estimatedAmount: fundNum(p.estimatedAmount),
+      currency: /^[A-Z]{3}$/.test(String(p.currency || "")) ? p.currency : "USD",
+      budgetAvailable: fundNum(p.budgetAvailable),
+      draftId: text(p.draftId, 128) || null,
+    };
+  });
+  return { structured: true, programs };
 }
 
 const xmlTag = (xml, tag) => { const m = new RegExp(`<${tag}>([^<]*)</${tag}>`).exec(xml); return m ? m[1] : null; };
@@ -663,6 +757,11 @@ function createPartnerCentralApi({
     const i = approvals.findIndex((a) => a.toolUseId === toolUseId);
     if (i < 0) throw Object.assign(new Error("No such write is waiting for approval in this session."), { status: 404 });
     if (approvals[i].state !== "pending") throw Object.assign(new Error(`That write was already ${approvals[i].state}.`), { status: 409 });
+    // Drafts only: a submit is never approved from the console (the account lead submits in Partner Central).
+    if (decision === "approve" && isSubmitLike(approvals[i].toolName, approvals[i].parameters)) {
+      await audit({ operation: "agent:approve", catalog: cfg.catalog, by: ctx.by, ok: false, error: "submit refused: drafts only", target: id, toolName: approvals[i].toolName || null, toolUseId });
+      throw Object.assign(new Error("The console never submits: reject this, and submit the draft yourself in Partner Central."), { status: 403 });
+    }
     const note = text(body.message, 1000);
     const block = { type: "tool_approval_response", toolUseId, decision, ...(note ? { message: note } : {}) };
     const reply = await callAgent("sendMessage", { content: [block], sessionId: id }, { by: ctx.by, config: cfg });
@@ -683,6 +782,104 @@ function createPartnerCentralApi({
         .filter((l) => l.name && !l.archived).map(({ id, name }) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)).slice(0, 500);
     } catch { leads = []; }
     return { catalog: cfg.catalog, sessions, leads };
+  }
+
+  // ── AWS funding drafts for a lead (leadFunding/{leadId}) ──
+  const LEAD_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
+  const fundingRef = (leadId) => db.collection(FUNDING).doc(leadId);
+  function fundingView(leadId, d) {
+    const x = d || {};
+    return {
+      leadId, catalog: x.catalog || null, sessionId: x.sessionId || null, opportunityId: x.opportunityId || null,
+      status: x.status || null, structured: x.structured === true, programs: Array.isArray(x.programs) ? x.programs : [],
+      replyText: x.replyText || "", pendingApprovals: Number(x.pendingApprovals) || 0,
+      checkedAt: iso(x.checkedAt), checkedBy: x.checkedBy || null,
+      pocApproved: x.pocApproved ? { ...x.pocApproved, at: iso(x.pocApproved.at) } : null,
+    };
+  }
+  async function loadFundingLead(leadId) {
+    if (!LEAD_ID_RE.test(String(leadId || ""))) throw Object.assign(new Error("That lead was not found."), { status: 404 });
+    const snap = await db.collection("leads").doc(leadId).get();
+    if (!snap.exists) throw Object.assign(new Error("That lead was not found."), { status: 404 });
+    const lead = snap.data() || {};
+    if (lead.leadType === "operator") throw Object.assign(new Error("AWS funding applies to company leads only."), { status: 400 });
+    return lead;
+  }
+  async function appendLeadHistory(leadId, line, by) {
+    try {
+      const ref = db.collection("leads").doc(leadId);
+      const snap = await ref.get();
+      if (!snap.exists) return;
+      const lead = snap.data() || {};
+      const history = [...(Array.isArray(lead.history) ? lead.history : []), { at: now().toISOString(), by: String(by || "").slice(0, 200), kind: "note", text: line }].slice(-100);
+      await ref.set({ history, updatedAt: now(), updatedByEmail: by || null }, { merge: true });
+    } catch (err) {
+      logger.warn("partnerCentral could not add to the lead's history", { error: String(err) });
+    }
+  }
+  const money = (n, cur) => `${cur || "USD"} ${Number(n).toLocaleString("en-US")}`;
+  function fundingLine(cfg, programs, structured, pending) {
+    const parts = structured ? programs.map((p) => `${p.name} ${p.eligible === true ? "eligible" : p.eligible === false ? "not eligible" : "unclear"}${p.estimatedAmount !== null ? `, est. ${money(p.estimatedAmount, p.currency)}` : ""}`) : ["answer in the agent panel"];
+    return `AWS funding checked (${cfg.catalog} catalogue): ${parts.join("; ")}.${pending ? ` ${pending} draft${pending === 1 ? "" : "s"} wait${pending === 1 ? "s" : ""} for an admin's approval.` : ""} Drafts only; nothing was submitted.`.slice(0, 2000);
+  }
+  // Run the check: one new agent session, linked to the lead (and its ACE opportunity).
+  async function fundingCheck(leadId, input, ctx) {
+    const lead = await loadFundingLead(leadId);
+    const body = input && typeof input === "object" ? input : {};
+    const prevSnap = await fundingRef(leadId).get();
+    const prev = prevSnap.exists ? prevSnap.data() || {} : {};
+    const opportunityId = text(first(body.opportunityId, lead.aceOpportunityId, prev.opportunityId), 64);
+    if (opportunityId && !/^[A-Za-z0-9._-]{1,64}$/.test(opportunityId)) throw Object.assign(new Error("That is not an ACE opportunity id."), { status: 400 });
+    const cfg = await loadConfig();
+    const out = await agentMessage({ text: buildFundingPrompt({ lead, opportunityId, catalog: cfg.catalog }), leadId, ...(opportunityId ? { opportunityId } : {}) }, ctx);
+    const parsed = parseFundingReply(out.reply.text);
+    const pending = out.session ? out.session.approvals.filter((a) => a.state === "pending").length : 0;
+    const doc = {
+      leadId, catalog: cfg.catalog, sessionId: out.session ? out.session.sessionId : null, opportunityId: opportunityId || null,
+      status: out.reply.status, structured: parsed.structured, programs: parsed.programs, schemaVersion: FUNDING_SCHEMA_VERSION,
+      replyText: text(out.reply.text, 6000), pendingApprovals: pending, checkedAt: now(), checkedBy: ctx.by,
+    };
+    await fundingRef(leadId).set(doc, { merge: true });
+    await audit({ operation: "funding:check", catalog: cfg.catalog, by: ctx.by, ok: true, target: leadId });
+    await appendLeadHistory(leadId, fundingLine(cfg, parsed.programs, parsed.structured, pending), ctx.by);
+    return { funding: fundingView(leadId, { ...prev, ...doc }) };
+  }
+  // Re-read the check's session from AWS (a long answer, or after drafts were approved).
+  async function fundingRefresh(leadId, ctx) {
+    await loadFundingLead(leadId);
+    const snap = await fundingRef(leadId).get();
+    const prev = snap.exists ? snap.data() || {} : null;
+    if (!prev || !prev.sessionId) throw Object.assign(new Error("Run Check funding eligibility first."), { status: 404 });
+    const out = await agentRefresh(prev.sessionId, ctx);
+    const parsed = parseFundingReply(out.reply.text);
+    const doc = {
+      status: out.reply.status, pendingApprovals: out.session.approvals.filter((a) => a.state === "pending").length,
+      ...(parsed.structured ? { structured: true, programs: parsed.programs, replyText: text(out.reply.text, 6000) } : {}),
+    };
+    await fundingRef(leadId).set(doc, { merge: true });
+    return { funding: fundingView(leadId, { ...prev, ...doc }) };
+  }
+  // The POC was approved by AWS (recorded by hand): the claim / proof-of-execution
+  // sign-off document is due next, made by the aws-ace-poc-claim skill as before.
+  async function fundingPocApproved(leadId, input, ctx) {
+    await loadFundingLead(leadId);
+    const body = input && typeof input === "object" ? input : {};
+    const snap = await fundingRef(leadId).get();
+    const prev = snap.exists ? snap.data() || {} : {};
+    if (body.clear === true) {
+      await fundingRef(leadId).set({ leadId, pocApproved: null }, { merge: true });
+      await appendLeadHistory(leadId, "POC funding approval cleared.", ctx.by);
+      return { funding: fundingView(leadId, { ...prev, pocApproved: null }) };
+    }
+    const amount = fundNum(body.amount);
+    const currency = /^[A-Z]{3}$/.test(String(body.currency || "")) ? body.currency : "USD";
+    const reference = text(body.reference, 80);
+    if (reference && !/^[A-Za-z0-9._:/ -]{1,80}$/.test(reference)) throw Object.assign(new Error("Use letters, numbers and - . _ : / for the funding reference."), { status: 400 });
+    const pocApproved = { at: now(), by: ctx.by, amount, currency, reference: reference || null };
+    await fundingRef(leadId).set({ leadId, pocApproved }, { merge: true });
+    await audit({ operation: "funding:poc-approved", by: ctx.by, ok: true, target: leadId });
+    await appendLeadHistory(leadId, `POC funding approved${reference ? ` (${reference})` : ""}${amount !== null ? `, ${money(amount, currency)}` : ""}: the claim sign-off document (proof of execution) is due.`, ctx.by);
+    return { funding: fundingView(leadId, { ...prev, pocApproved }) };
   }
 
   async function requireAdmin(req, min = "admin") {
@@ -725,6 +922,12 @@ function createPartnerCentralApi({
       const a = /^\/v1\/ace\/([A-Za-z0-9._-]{1,64})$/.exec(path);
       if (a && req.method === "GET") return send(res, 200, { opportunity: await aceOne(a[1], ctx) });
       if (a && req.method === "PATCH") return send(res, 200, await aceUpdate(a[1], body, ctx));
+      const f = /^\/v1\/funding\/([A-Za-z0-9_-]{1,128})\/(check|refresh|poc-approved)$/.exec(path);
+      if (f && req.method === "POST") {
+        if (f[2] === "check") return send(res, 200, await fundingCheck(f[1], body, ctx));
+        if (f[2] === "refresh") return send(res, 200, await fundingRefresh(f[1], ctx));
+        return send(res, 200, await fundingPocApproved(f[1], body, ctx));
+      }
       if (path === "/v1/agent" && req.method === "GET") return send(res, 200, await agentOverview());
       if (path === "/v1/agent/messages" && req.method === "POST") return send(res, 200, await agentMessage(body, ctx));
       const g = /^\/v1\/agent\/sessions\/([A-Za-z0-9._:-]{1,128})$/.exec(path);
@@ -750,7 +953,7 @@ function createPartnerCentralApi({
   // The role's short-lived credentials, for the S3 export reader (pc-export.js). Never sent to a browser.
   const awsCredentials = async () => assumeRole((await loadConfig()).roleArn);
 
-  return { handle, status, licences, awsCredentials, agentMessage, agentRefresh, agentDecide, agentOverview, callAgent, aceOpportunities, aceCreate, aceUpdate, aceOne, callAws, listOpportunities, getOpportunity, createOpportunity, updateOpportunity, createBenefitDraft };
+  return { handle, status, licences, awsCredentials, fundingCheck, fundingRefresh, fundingPocApproved, agentMessage, agentRefresh, agentDecide, agentOverview, callAgent, aceOpportunities, aceCreate, aceUpdate, aceOne, callAws, listOpportunities, getOpportunity, createOpportunity, updateOpportunity, createBenefitDraft };
 }
 
-module.exports = { createPartnerCentralApi, parseAgentResult, parseMcpBody, AGENT_MCP, AGENT_TOOLS, AGENT_SESSIONS, sanitiseAceInput, buildUpdate, buildCreate, EDITABLE, describeNetworkError, normaliseOpportunity, signRequest, OPERATIONS, SERVICES, CATALOGS, AUDIT, DEFAULT_ROLE_ARN };
+module.exports = { createPartnerCentralApi, buildFundingPrompt, parseFundingReply, isSubmitLike, fundingProgramKey, FUNDING, FUNDING_PROGRAMS, FUNDING_STAGES, FUNDING_SCHEMA_VERSION, parseAgentResult, parseMcpBody, AGENT_MCP, AGENT_TOOLS, AGENT_SESSIONS, sanitiseAceInput, buildUpdate, buildCreate, EDITABLE, describeNetworkError, normaliseOpportunity, signRequest, OPERATIONS, SERVICES, CATALOGS, AUDIT, DEFAULT_ROLE_ARN };

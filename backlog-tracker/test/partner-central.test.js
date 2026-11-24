@@ -3,7 +3,7 @@
 // Run: node test/partner-central.test.js
 "use strict";
 const assert = require("assert");
-const { createPartnerCentralApi, signRequest, normaliseOpportunity, sanitiseAceInput, OPERATIONS, parseAgentResult, parseMcpBody, AGENT_MCP, AGENT_TOOLS } = require("../functions/partner-central");
+const { createPartnerCentralApi, signRequest, normaliseOpportunity, sanitiseAceInput, OPERATIONS, parseAgentResult, parseMcpBody, AGENT_MCP, AGENT_TOOLS, buildFundingPrompt, parseFundingReply, isSubmitLike } = require("../functions/partner-central");
 
 function fakeDb() {
   const state = {};
@@ -382,6 +382,103 @@ check("parseAgentResult reads both reply shapes and approval events", () => {
   assert.deepStrictEqual(done.approvals, [], "a read tool in a complete reply is not an approval");
   assert.strictEqual(parseMcpBody("event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}\n\n", "text/event-stream").id, 1);
   assert.strictEqual(parseMcpBody("not json", "application/json"), null);
+});
+
+// ── AWS funding drafts for a lead (ticket O37hnP69Cnn8N32HpHot) ──
+// A fake agent for the funding check: it answers eligibility with the JSON
+// block, proposes CreateBenefitApplication drafts (held for approval), and a
+// later message proposes a submit, which the console must refuse.
+const FUNDING_JSON = { schemaVersion: 1, programs: [
+  { program: "POC funding", eligible: true, reason: "Technical validation with an AWS workload", estimatedAmount: 25000, currency: "USD", budgetAvailable: 80000, draftId: null },
+  { program: "Innovation Sandbox credits", eligible: true, reason: "Build and test environment", estimatedAmount: "5,000", currency: "USD", budgetAvailable: null, draftId: null },
+  { program: "MAP", eligible: false, reason: "No migration in scope", estimatedAmount: null, currency: "USD", budgetAvailable: null, draftId: null },
+] };
+function fundingAgent({ onCall } = {}) {
+  return (url, init) => {
+    if (!url.startsWith("https://partnercentral-agents-mcp.us-east-1.api.aws/mcp")) return { status: 200, body: {} };
+    const rpc = JSON.parse(init.body); if (onCall) onCall(rpc);
+    const args = rpc.params.arguments; const firstBlock = args.content && args.content[0];
+    const reply = (o) => ({ status: 200, body: { jsonrpc: "2.0", id: rpc.id, ...agentPayload(o) } });
+    if (rpc.params.name === "getSession") return reply({ sessionId: args.sessionId, status: "complete", content: [{ type: "text", text: "Drafts created.\n```json\n" + JSON.stringify({ ...FUNDING_JSON, programs: FUNDING_JSON.programs.map((p, i) => (i === 0 ? { ...p, draftId: "ba-poc-1" } : p)) }) + "\n```" }] });
+    if (firstBlock && firstBlock.type === "tool_approval_response") return reply({ sessionId: args.sessionId, status: "complete", content: [{ type: "text", text: "Draft created (not submitted)." }] });
+    if (/Submit it/.test(firstBlock.text)) return reply({ sessionId: args.sessionId, status: "requires_approval", content: [{ type: "tool_approval_request", toolUseId: "tu-sub", toolName: "SubmitBenefitApplication", parameters: { Identifier: "ba-poc-1" } }] });
+    return reply({ sessionId: "fund-1", status: "requires_approval", content: [
+      { type: "text", text: "POC funding and Innovation Sandbox credits look eligible.\n```json\n" + JSON.stringify(FUNDING_JSON) + "\n```" },
+      { type: "tool_approval_request", toolUseId: "tu-poc", toolName: "CreateBenefitApplication", parameters: { BenefitId: "POC", Status: "DRAFT" } },
+      { type: "tool_approval_request", toolUseId: "tu-sbx", toolName: "CreateBenefitApplication", parameters: { BenefitId: "INNOVATION_SANDBOX", Status: "DRAFT" } },
+    ] });
+  };
+}
+
+check("funding: routes are admin only, and only for an existing company lead", async () => {
+  const { api, db } = makeApi({ awsReply: fundingAgent() });
+  db.state.leads = { L1: { company: { name: "Acme Retail" }, stage: "hot-lead", history: [] }, OP: { leadType: "operator", company: { name: "" }, history: [] } };
+  assert.strictEqual((await call(api, "POST", "/v1/funding/L1/check", { token: "ed@x.example", body: {} })).statusCode, 403);
+  assert.strictEqual((await call(api, "POST", "/v1/funding/L1/check", { token: "", body: {} })).statusCode, 401);
+  assert.strictEqual((await call(api, "POST", "/v1/funding/nope/check", { body: {} })).statusCode, 404);
+  assert.strictEqual((await call(api, "POST", "/v1/funding/OP/check", { body: {} })).statusCode, 400);
+  assert.strictEqual((await call(api, "POST", "/v1/funding/L1/refresh", { body: {} })).statusCode, 404, "nothing to refresh before a check");
+});
+
+check("funding: Sandbox eligibility on a test opportunity produces drafts held for approval, and nothing is submitted", async () => {
+  const seen = [];
+  const { api, db } = makeApi({ awsReply: fundingAgent({ onCall: (r) => seen.push(r) }) });
+  db.state.leads = { L1: { company: { name: "Acme Retail", industry: "Grocery", countries: ["UK"], storeCount: 120, awsAccountId: "123456789012" }, contacts: [{ name: "Sam", email: "sam@acme.example" }], stage: "hot-lead", aceOpportunityId: "O-TEST-1", enrichment: { summary: "UK grocer." }, history: [] } };
+  const r = await call(api, "POST", "/v1/funding/L1/check", { body: {} });
+  assert.strictEqual(r.statusCode, 200, JSON.stringify(r.body));
+  // one sendMessage, in the Sandbox catalogue, carrying the account context and the drafts-only ask
+  assert.strictEqual(seen.length, 1); assert.strictEqual(seen[0].params.name, "sendMessage"); assert.strictEqual(seen[0].params.arguments.catalog, "Sandbox");
+  const msg = seen[0].params.arguments.content[0].text;
+  for (const s of ["Customer: Acme Retail", "Industry: Grocery", "ACE opportunity ID: O-TEST-1", "Customer AWS account ID: 123456789012", "POC funding, MAP and Innovation Sandbox credits", "DRAFT only", "Never submit"]) assert.ok(msg.includes(s), `prompt has ${s}`);
+  assert.ok(!msg.includes("sam@acme.example"), "no contact addresses are sent");
+  const f = r.body.funding;
+  assert.strictEqual(f.catalog, "Sandbox"); assert.strictEqual(f.sessionId, "fund-1"); assert.strictEqual(f.opportunityId, "O-TEST-1");
+  assert.strictEqual(f.structured, true); assert.strictEqual(f.pendingApprovals, 2);
+  assert.deepStrictEqual(f.programs.map((p) => [p.key, p.eligible, p.estimatedAmount, p.budgetAvailable]), [["poc", true, 25000, 80000], ["sandbox", true, 5000, null], ["map", false, null, null]]);
+  // stored for the lead card, the session linked to the lead, a line in its history
+  assert.strictEqual(db.state.leadFunding.L1.sessionId, "fund-1");
+  assert.strictEqual(db.state.partnerCentralAgentSessions["fund-1"].leadId, "L1");
+  const lines = db.state.leads.L1.history.map((h) => h.text);
+  assert.ok(lines.some((t) => /^AWS funding checked \(Sandbox catalogue\): POC funding eligible, est\. USD 25,000; Innovation Sandbox credits eligible, est\. USD 5,000; MAP not eligible\. 2 drafts wait for an admin's approval\. Drafts only; nothing was submitted\.$/.test(t)), lines.join("\n"));
+  // the drafts wait: approving one creates a DRAFT; nothing else was sent
+  assert.deepStrictEqual(db.state.partnerCentralAgentSessions["fund-1"].approvals.map((a) => [a.toolUseId, a.toolName, a.state]), [["tu-poc", "CreateBenefitApplication", "pending"], ["tu-sbx", "CreateBenefitApplication", "pending"]]);
+  const ok = await call(api, "POST", "/v1/agent/sessions/fund-1/approvals/tu-poc", { body: { decision: "approve" } });
+  assert.strictEqual(ok.statusCode, 200, JSON.stringify(ok.body));
+  // a submit the agent proposes is refused, even by an admin, and audited
+  await call(api, "POST", "/v1/agent/messages", { body: { text: "Submit it", sessionId: "fund-1" } });
+  const sub = await call(api, "POST", "/v1/agent/sessions/fund-1/approvals/tu-sub", { body: { decision: "approve" } });
+  assert.strictEqual(sub.statusCode, 403); assert.match(sub.body.error, /never submits/);
+  assert.ok(!seen.some((x) => JSON.stringify(x).includes('"toolUseId":"tu-sub","decision":"approve"')), "the submit approval never reaches AWS");
+  assert.ok(Object.values(db.state.partnerCentralAudit).some((e) => e.operation === "agent:approve" && e.ok === false && /drafts only/.test(e.error)));
+  assert.strictEqual((await call(api, "POST", "/v1/agent/sessions/fund-1/approvals/tu-sub", { body: { decision: "reject" } })).statusCode, 200, "it can still be rejected");
+  // refresh re-reads the session: the POC draft id comes back
+  const rf = await call(api, "POST", "/v1/funding/L1/refresh", { body: {} });
+  assert.strictEqual(rf.statusCode, 200, JSON.stringify(rf.body));
+  assert.strictEqual(rf.body.funding.programs[0].draftId, "ba-poc-1"); assert.strictEqual(rf.body.funding.pendingApprovals, 1);
+  assert.ok(!Object.values(db.state.partnerCentralAudit).some((e) => /SubmitBenefitApplication/.test(e.operation || "")), "no submit call was made");
+});
+
+check("funding: POC approved marks the claim sign-off document due, and can be undone", async () => {
+  const { api, db } = makeApi({ awsReply: fundingAgent() });
+  db.state.leads = { L1: { company: { name: "Acme Retail" }, stage: "post-demo", history: [] } };
+  const r = await call(api, "POST", "/v1/funding/L1/poc-approved", { body: { amount: 25000, reference: "FR-2026-1" } });
+  assert.strictEqual(r.statusCode, 200, JSON.stringify(r.body));
+  assert.strictEqual(r.body.funding.pocApproved.reference, "FR-2026-1"); assert.strictEqual(r.body.funding.pocApproved.by, "owner@example.com");
+  assert.match(db.state.leads.L1.history.at(-1).text, /POC funding approved \(FR-2026-1\), USD 25,000: the claim sign-off document \(proof of execution\) is due\./);
+  assert.strictEqual((await call(api, "POST", "/v1/funding/L1/poc-approved", { body: { reference: "<b>" } })).statusCode, 400);
+  const u = await call(api, "POST", "/v1/funding/L1/poc-approved", { body: { clear: true } });
+  assert.strictEqual(u.body.funding.pocApproved, null); assert.strictEqual(db.state.leadFunding.L1.pocApproved, null);
+});
+
+check("funding: the reply's JSON block is read defensively; submit-like writes are recognised", () => {
+  assert.deepStrictEqual(parseFundingReply("No block here."), { structured: false, programs: [] });
+  assert.deepStrictEqual(parseFundingReply("```json\n{not json}\n```"), { structured: false, programs: [] });
+  const two = parseFundingReply("```json\n{\"programs\":[{\"program\":\"MAP\"}]}\n```\nthen\n```json\n{\"programs\":[{\"program\":\"Proof of concept\",\"eligible\":\"yes\",\"estimatedAmount\":-5,\"currency\":\"usd\"}]}\n```");
+  assert.deepStrictEqual(two.programs, [{ key: "poc", name: "Proof of concept", eligible: null, reason: "", estimatedAmount: null, currency: "USD", budgetAvailable: null, draftId: null }], "the last block wins; bad values become null");
+  assert.ok(isSubmitLike("SubmitBenefitApplication", {})); assert.ok(isSubmitLike("UpdateBenefitApplication", { Action: "Submit" }));
+  assert.ok(isSubmitLike("UpdateBenefitApplication", { action: "SUBMIT" }));
+  assert.ok(!isSubmitLike("CreateBenefitApplication", { Status: "DRAFT" }));
+  assert.ok(buildFundingPrompt({ lead: {}, catalog: "Sandbox" }).includes("(no details on the lead yet)"));
 });
 
 (async () => {
