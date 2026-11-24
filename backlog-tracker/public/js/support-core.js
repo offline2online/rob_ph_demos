@@ -30,12 +30,22 @@ export const isPlainInbox = (key) => !!inboxOf(key).plain;
 export const inInbox = (t, key) => (t.inboxes && t.inboxes.length ? t.inboxes : [DEFAULT_INBOX]).includes(inboxOf(key).key);
 
 const open = (t) => t.status === "open";
+// A support query: a question about the platform or Personalisation Hub that
+// came in as Support mail. Not an Aidan request (a thread that carries an
+// `aidan` record started at aidan@; Aidan's reply goes out from support@, so a
+// reply to it also files the thread under the Support Inbox), and not mail
+// triage found automated, not about PH or spam-like. Needs a person holds
+// support queries only; the rest of what needs a person is Aidan's (his tab
+// says so) or falls to "Automated & not about PH".
+export const isSupportQuery = (t) => !t.aidan && !t.automated && !t.unrelated && !t.spamLikely;
+const needsPerson = (t) => open(t) && !!t.needsHuman && isSupportQuery(t);
+const aiDraftWaiting = (t) => open(t) && !t.needsHuman && !!t.aiDraft;
 // The queues down the left of the Support Inbox, in working order. A ticket is
 // in exactly one of the first six. Hello and Aidan have none (plain inboxes).
 export const QUEUES = [
-  { key: "needs-person", label: "Needs a person", icon: "support_agent", test: (t) => open(t) && !!t.needsHuman },
-  { key: "ai-drafts", label: "AI drafts to approve", icon: "auto_awesome", test: (t) => open(t) && !t.needsHuman && !!t.aiDraft },
-  { key: "to-sort", label: "Automated & not about PH", icon: "mark_email_unread", test: (t) => open(t) && !t.needsHuman && !t.aiDraft },
+  { key: "needs-person", label: "Needs a person", icon: "support_agent", test: needsPerson },
+  { key: "ai-drafts", label: "AI drafts to approve", icon: "auto_awesome", test: aiDraftWaiting },
+  { key: "to-sort", label: "Automated & not about PH", icon: "mark_email_unread", test: (t) => open(t) && !needsPerson(t) && !aiDraftWaiting(t) },
   { key: "pending", label: "Waiting on customer", icon: "schedule", test: (t) => t.status === "pending" },
   { key: "resolved", label: "Resolved", icon: "task_alt", test: (t) => t.status === "resolved" },
   { key: "spam", label: "Spam", icon: "report", test: (t) => t.status === "spam" },

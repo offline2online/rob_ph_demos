@@ -79,6 +79,7 @@ function makeCtx(o, width) {
   const at = (step, selector = "") => { ctx.step = step; ctx.selector = selector; };
   ctx.at = at;
   ctx.aceWrites = o.aceWrites;
+  ctx.pcAgentCalls = o.pcAgentCalls;
   ctx.enrichCalls = o.enrichCalls;
   ctx.supportCalls = o.supportCalls;
   ctx.routineWrites = o.routineWrites;
@@ -535,7 +536,7 @@ const scenarios = [
     async run(c) {
       await c.boardReady();
       c.at("open the palette");
-      if (c.width <= 640) await c.click('#tabbar .tab[data-tab="search"]'); else await c.page.keyboard.press("Control+k");
+      await c.page.keyboard.press("Control+k");
       await c.visible("#cmdk-backdrop", "palette shows");
       assert.strictEqual(await c.page.evaluate(() => document.activeElement && document.activeElement.id), "cmdk-input", "focus lands in the search box");
       await c.page.keyboard.type("purple");
@@ -543,16 +544,57 @@ const scenarios = [
       await c.page.keyboard.press("Escape");
       await c.hidden("#cmdk-backdrop", "Escape closes it");
       c.at("jump to the ticket");
-      if (c.width <= 640) await c.click('#tabbar .tab[data-tab="search"]'); else await c.page.keyboard.press("Control+k");
+      await c.page.keyboard.press("Control+k");
       await c.page.keyboard.type("Demo Proj");
       await c.waitText("#cmdk-list", "Demo Project", "project is listed");
       await c.page.keyboard.press("Enter");
       await c.hidden("#cmdk-backdrop", "palette closes on choose");
-      if (c.width <= 640) await c.click('#tabbar .tab[data-tab="search"]'); else await c.page.keyboard.press("Control+k");
+      await c.page.keyboard.press("Control+k");
       await c.page.keyboard.type("purple");
       await c.waitText("#cmdk-list", "Purple widget");
       await c.page.keyboard.press("Enter");
       await c.visible("#ei-backdrop", "the ticket opens");
+    },
+  },
+  {
+    // LJrgkj70zFIXSG6PuwGg: on a phone Profile moved out of the bottom tab bar
+    // to the top right, as on the web, and Search left the phone entirely.
+    name: "nav: Profile is the top-right avatar at every width; the phone tab bar is Build, Promote, Support, Settings",
+    seed: () => seed(),
+    async run(c) {
+      await c.boardReady();
+      c.at("the tab bar holds no Search or Profile tab");
+      const tabs = await c.page.$$eval("#tabbar .tab", (els) => els.map((e) => e.dataset.tab));
+      assert.deepStrictEqual(tabs, ["build", "promote", "publish", "settings"]);
+      if (c.width <= 640) {
+        assert.ok(await c.page.$eval("#tabbar", (e) => e.getClientRects().length > 0), "the phone tab bar shows");
+        assert.strictEqual(await c.page.locator("#cmdk-open-btn:visible").count(), 0, "no Search entry on a phone");
+      }
+      c.at("the avatar sits at the top right of the topbar");
+      await c.visible("#profile-btn", "profile button shows");
+      const where = await c.page.evaluate(() => {
+        const b = document.getElementById("profile-btn").getBoundingClientRect(), bar = document.querySelector(".topbar").getBoundingClientRect();
+        return { right: innerWidth - b.right, inBar: b.top >= bar.top - 1 && b.bottom <= bar.bottom + 1, h: b.height, w: b.width };
+      });
+      assert.ok(where.inBar, "avatar is inside the topbar");
+      assert.ok(where.right < 40, `avatar is at the right edge (${where.right}px from it)`);
+      if (c.width <= 640) assert.ok(where.h >= 44 && where.w >= 44, `avatar is a 44px tap target (${where.w}x${where.h})`);
+      c.at("it opens the profile menu as a dropdown under it");
+      await c.click("#profile-btn", "tap the avatar");
+      await c.visible("#profile-menu", "profile menu opens");
+      const menu = await c.page.evaluate(() => {
+        const m = document.getElementById("profile-menu").getBoundingClientRect(), b = document.getElementById("profile-btn").getBoundingClientRect();
+        return { below: m.top >= b.bottom - 2 && m.top < b.bottom + 24, inside: m.left >= 0 && m.right <= innerWidth + 1, tab: !!document.querySelector("#tabbar .tab.active[data-tab='profile']") };
+      });
+      assert.ok(menu.below, "menu drops down under the avatar");
+      assert.ok(menu.inside, "menu stays inside the screen");
+      await c.visible("#topbar-signout", "Sign out is in the menu");
+      assert.strictEqual(await c.page.getAttribute("#profile-btn", "aria-expanded"), "true");
+      await c.page.keyboard.press("Escape");
+      await c.hidden("#profile-menu", "Escape closes it");
+      assert.strictEqual(await c.page.getAttribute("#profile-btn", "aria-expanded"), "false");
+      const sw = await c.page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
+      assert.ok(sw, "no sideways scroll");
     },
   },
   {
@@ -1935,7 +1977,7 @@ const scenarios = [
       assert.strictEqual(await c.page.locator(".perm-table").count(), 0, "there is no permissions matrix");
       await c.visible("#role-permissions .role-perm-row", "the permissions render");
       const rows = await c.page.evaluate(() => [...document.querySelectorAll("#role-permissions .role-perm-row label")].map((e) => e.textContent.trim()));
-      assert.deepStrictEqual(rows, ["Agent Board", "Staff Kanban", "Concepts", "Whiteboard", "Brand Guidelines", "Leads", "Prospects (TAM)", "Conversion Funnel", "Support Inbox", "Help Centre", "Documentation", "Settings", "Settings > User Management", "Releases", "Skills & phase bindings", "Project docs"]);
+      assert.deepStrictEqual(rows, ["Agent Board", "Staff Kanban", "Concepts", "Whiteboard", "Brand Guidelines", "Leads", "Prospects (TAM)", "Conversion Funnel", "License Manager", "Support Inbox", "Help Centre", "Documentation", "Settings", "Settings > User Management", "Releases", "Skills & phase bindings", "Project docs"]);
       await c.page.selectOption("#role-perm-concepts", "none");
       await c.click("#role-save", "Save role");
       await until(async () => (await c.page.evaluate(() => (globalThis.__fbStub.col("roles").get("rEng").permissions || {}).concepts)) === "none", "the change to persist", 5000);
@@ -2003,7 +2045,8 @@ const scenarios = [
   },
   {
     // ZvkZpVZBXCDHb34MQegP: Brand Guidelines › Partners, one page per partner, listed from the brand-partner-* mirrors.
-    name: "Promote: Brand Guidelines lists Partners and opens the miPharmacy co-branding page",
+    // ssPtNYI8TSv2vzVSAFPk: picked from the Partners dropdown at the top of the page; no list at the bottom.
+    name: "Promote: Brand Guidelines Partners dropdown opens the miPharmacy co-branding page and returns to PH",
     seed: () => seed({ projectDocs: {
       bg: { projectId: PID, name: "6 — Brand Guidelines (Promote)", mirrorKey: "brand-guidelines", sourcePath: "backlog-tracker/promote/brand-guidelines.md",
         sourcePrefix: "", contentMd: "# Brand Guidelines\n\n## Logo usage\n\nUse the real files.", createdAt: t(T0), updatedAt: t(T0) },
@@ -2013,9 +2056,14 @@ const scenarios = [
     async run(c) {
       await c.boardReady();
       await openFromNav(c, "promote", "promote-brand-btn", "promote-page");
-      await c.waitText("#promote-partners", "miPharmacy", "the Partners subsection lists miPharmacy");
-      assert.ok((await c.text("#promote-partners")).includes("Partners") && (await c.text("#promote-partners")).includes("Pharmacy"));
-      await c.page.locator('#promote-partners a.partner-card').first().click();
+      await c.waitText("#promote-partner-select", "miPharmacy", "the Partners dropdown lists miPharmacy");
+      assert.strictEqual(await c.page.locator("#promote-partner-select").inputValue(), "", "PH brand guidelines is the default");
+      assert.ok(/partners/i.test(await c.text("#promote-pickers")) && (await c.text("#promote-partner-select")).includes("PH brand guidelines"));
+      assert.ok(await c.page.locator("#promote-market-field").isHidden(), "no Markets dropdown when there are no markets");
+      const pickTop = (await c.page.locator("#promote-pickers").boundingBox()).y;
+      assert.ok(pickTop < (await c.page.locator("#promote-guidelines").boundingBox()).y && pickTop < (await c.page.locator("#promote-brand-header").boundingBox()).y, "the dropdowns sit at the top of the page");
+      assert.strictEqual(await c.page.locator("#promote-partners, #promote-markets, a.partner-card").count(), 0, "the old lists at the bottom are gone");
+      await c.page.locator("#promote-partner-select").selectOption("mipharmacy");
       await c.waitText("#promote-title", "miPharmacy", "the partner page opens");
       assert.strictEqual(new URL(c.page.url()).hash, "#promote/brand-guidelines/partners/mipharmacy", "the partner page has its own URL");
       const body = await c.text("#promote-guidelines");
@@ -2025,16 +2073,23 @@ const scenarios = [
       assert.strictEqual(await c.page.locator("#promote-partner-lockups figure.lockup").count(), 4, "partner-led and PH-led lockups, light and dark");
       assert.strictEqual(await c.page.locator('#promote-partner-lockups img[src="img/brand/ph-logo-white.svg"]').count(), 2, "the official white PH logo on dark");
       assert.strictEqual(await c.page.locator("#promote-partner-lockups .lockup-missing").count(), 4, "the partner logo slot waits for its Brand assets file");
-      assert.ok(await c.page.locator("#promote-brand-header").isHidden() && await c.page.locator("#promote-partners").isHidden(), "the guidelines header and list are not on a partner page");
-      await c.page.locator("#promote-back").click();
-      await c.waitText("#promote-title", "Brand Guidelines", "back to the guidelines");
+      assert.ok(await c.page.locator("#promote-brand-header").isHidden(), "the guidelines header is not on a partner page");
+      assert.ok(await c.page.locator("#promote-pickers").isVisible() && await c.page.locator("#promote-partner-select").inputValue() === "mipharmacy", "the dropdown stays at the top, showing the partner");
+      await c.page.locator("#promote-partner-select").selectOption("");
+      await c.waitText("#promote-title", "Brand Guidelines", "PH brand guidelines from the dropdown");
       assert.strictEqual(new URL(c.page.url()).hash, "#promote/brand-guidelines");
       assert.ok(await c.page.locator("#promote-partner-lockups").isHidden() && await c.page.locator("#promote-back").isHidden());
+      await c.page.locator("#promote-partner-select").selectOption("mipharmacy");
+      await c.waitText("#promote-title", "miPharmacy", "the partner page opens again");
+      await c.page.locator("#promote-back").click();
+      await c.waitText("#promote-title", "Brand Guidelines", "back link to the guidelines");
+      assert.strictEqual(await c.page.locator("#promote-partner-select").inputValue(), "", "the dropdown is back on PH");
     },
   },
   {
     // mErc7MPAkrKjF9fWgqXb: Brand Guidelines › Markets, one page per market, listed from the brand-market-* mirrors.
-    name: "Promote: Brand Guidelines lists Markets and opens the Thailand page with every section",
+    // ssPtNYI8TSv2vzVSAFPk: picked from the Markets dropdown at the top of the page.
+    name: "Promote: Brand Guidelines Markets dropdown opens the Thailand page with every section",
     seed: () => seed({ projectDocs: {
       bg: { projectId: PID, name: "6 — Brand Guidelines (Promote)", mirrorKey: "brand-guidelines", sourcePath: "backlog-tracker/promote/brand-guidelines.md",
         sourcePrefix: "", contentMd: "# Brand Guidelines\n\n## Logo usage\n\nUse the real files.", createdAt: t(T0), updatedAt: t(T0) },
@@ -2046,22 +2101,28 @@ const scenarios = [
     async run(c) {
       await c.boardReady();
       await openFromNav(c, "promote", "promote-brand-btn", "promote-page");
-      await c.waitText("#promote-markets", "Thailand", "the Markets subsection lists Thailand");
-      const list = await c.text("#promote-markets");
-      assert.ok(list.includes("Markets") && list.includes("United States") && list.includes("Southeast Asia"));
-      assert.ok(list.indexOf("Thailand") < list.indexOf("United States"), "sorted by name");
-      await c.page.locator('#promote-markets a.partner-card[href="#promote/brand-guidelines/markets/thailand"]').click();
+      await c.waitText("#promote-market-select", "Thailand", "the Markets dropdown lists Thailand");
+      const list = await c.text("#promote-market-select");
+      assert.ok(list.includes("PH brand guidelines") && list.includes("United States"));
+      assert.ok(list.indexOf("PH brand guidelines") < list.indexOf("Thailand") && list.indexOf("Thailand") < list.indexOf("United States"), "PH first, then sorted by name");
+      assert.ok(await c.page.locator("#promote-partner-field").isHidden(), "no Partners dropdown when there are no partners");
+      await c.page.locator("#promote-market-select").selectOption("thailand");
       await c.waitText("#promote-title", "Thailand", "the market page opens");
       assert.strictEqual(new URL(c.page.url()).hash, "#promote/brand-guidelines/markets/thailand", "the market page has its own URL");
       const body = await c.text("#promote-guidelines");
       for (const h of ["Communication style", "Cultural sensitivities", "Local conventions", "Business etiquette", "Regulatory notes"]) assert.ok(body.includes(h), `the page shows ${h}`);
       assert.ok(!body.includes("Agent market detail") && !body.includes("countries:") && !body.includes("Copy of the file"), "agent-only detail, the market block and the copy line are not shown");
-      assert.ok(await c.page.locator("#promote-brand-header").isHidden() && await c.page.locator("#promote-markets").isHidden() && await c.page.locator("#promote-partner-lockups").isHidden(), "the guidelines header, the list and lockups are not on a market page");
+      assert.ok(await c.page.locator("#promote-brand-header").isHidden() && await c.page.locator("#promote-partner-lockups").isHidden(), "the guidelines header and lockups are not on a market page");
+      assert.strictEqual(await c.page.locator("#promote-market-select").inputValue(), "thailand", "the dropdown shows the open market");
+      await c.page.locator("#promote-market-select").selectOption("united-states");
+      await c.waitText("#promote-title", "United States", "switch market from the dropdown");
+      assert.strictEqual(new URL(c.page.url()).hash, "#promote/brand-guidelines/markets/united-states");
       assert.ok((await c.page.title()).includes("Brand Guidelines — PH Agent Console"), "the tab title is Brand Guidelines");
       await c.page.locator("#promote-back").click();
       await c.waitText("#promote-title", "Brand Guidelines", "back to the guidelines");
       assert.strictEqual(new URL(c.page.url()).hash, "#promote/brand-guidelines");
-      assert.ok(await c.page.locator("#promote-markets").isVisible() && await c.page.locator("#promote-back").isHidden());
+      assert.ok(await c.page.locator("#promote-pickers").isVisible() && await c.page.locator("#promote-back").isHidden());
+      assert.strictEqual(await c.page.locator("#promote-market-select").inputValue(), "", "the dropdown is back on PH");
     },
   },
   {
@@ -2669,6 +2730,48 @@ const scenarios = [
     },
   },
   {
+    // O37hnP69Cnn8N32HpHot: a Hot Lead (or a lead with an ACE opportunity) suggests an AWS funding check on its
+    // card; an admin runs it, sees eligibility, estimates, budget and drafts waiting, and nothing is submitted.
+    name: "Promote: Leads - AWS funding: suggested for a Hot Lead, check shows programmes and drafts, POC approved makes the claim due",
+    seed: () => ({ ...seed({ leads: {
+      h1: { company: { name: "Hot Grocer", website: "", industry: "Grocery", countries: ["UK"], storeCount: 50 }, contacts: [], stage: "hot-lead", source: "Manual", assignee: "", customerAccount: null, aceOpportunityId: "O-TEST-1", createdAt: t(T0), updatedAt: t(T0) },
+      c1: { company: { name: "Cold Co", website: "", industry: "", countries: [], storeCount: null }, contacts: [], stage: "lead", source: "Manual", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
+    } }), user: { email: "admin@ph.example", role: "admin" } }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
+      c.at("a plain lead has no funding section");
+      await c.page.click('.lead-card[data-lead-id="c1"]');
+      await c.visible("#lead-summary-panel", "the summary opens");
+      assert.strictEqual(await c.page.locator("#lead-sum-funding").count(), 0);
+      await c.click("#lead-sum-close", "close"); await c.hidden("#lead-summary-panel");
+
+      c.at("a Hot Lead with an ACE opportunity suggests the check");
+      await c.page.click('.lead-card[data-lead-id="h1"]');
+      await c.visible("#lead-sum-funding", "the AWS funding section");
+      assert.match(await c.text("#lead-sum-funding"), /Funding check suggested: ACE opportunity/);
+      assert.strictEqual(c.pcAgentCalls.length, 0, "nothing runs by itself");
+      await c.click('#lead-sum-funding [data-funding="run-check"]', "Check funding eligibility");
+      await c.waitText("#lead-sum-status", "Done. Drafts wait for an admin's approval; nothing was submitted.", "the check finishes");
+      assert.deepStrictEqual(c.pcAgentCalls.map((x) => x.path), ["/partnerCentral/v1/funding/h1/check"]);
+      const box = await c.text("#lead-sum-funding");
+      for (const want of ["POC funding", "Eligible", "Agent estimate US$25,000 · Budget available US$80,000", "Innovation Sandbox credits", "Agent estimate US$5,000", "MAP", "Not eligible", "No migration in scope", "Draft waits for an admin's approval", "2 drafts wait for approval", "AI session fund-1", "Sandbox"]) assert.ok(box.includes(want), `the section shows "${want}"`);
+      assert.strictEqual(await c.page.locator('#lead-sum-funding a[href="#settings/integrations"]').count(), 1, "Review drafts goes to the agent panel");
+      assert.match(await c.text('#lead-sum-funding [data-funding="run-check"]'), /Check again/);
+
+      c.at("POC approved: the claim sign-off document is due");
+      await c.click('#lead-sum-funding [data-funding="poc"]', "POC approved");
+      await c.waitText("#lead-sum-status", "Saved.", "saved");
+      assert.match(await c.text("#lead-sum-funding"), /Claim sign-off document due/);
+      assert.match(await c.text("#lead-sum-funding"), /Skill: aws-ace-poc-claim/);
+      assert.strictEqual(await c.page.locator('#lead-sum-funding [data-funding="poc"]').count(), 0, "marked once");
+      await c.click('#lead-sum-funding [data-funding="poc-clear"]', "Undo");
+      await c.waitText("#lead-sum-status", "Saved.", "undone");
+      assert.strictEqual(await c.page.locator("#lead-sum-funding .lead-fund-claim").count(), 0);
+      assert.deepStrictEqual(c.pcAgentCalls.slice(1).map((x) => [x.path, x.body]), [["/partnerCentral/v1/funding/h1/poc-approved", {}], ["/partnerCentral/v1/funding/h1/poc-approved", { clear: true }]]);
+    },
+  },
+  {
     name: "Promote: Leads tiles - industry colours, nothing overflows, summary opens, stage changes, Esc closes",
     seed: () => seed({ leads: {
       w1: { company: { name: "Telco With A Really Long Company Name That Keeps Going And Going Plc", website: "https://telco.example", industry: "", countries: ["UK"], storeCount: 1200 }, contacts: [{ id: "k1", name: "Ana Lyst", jobTitle: "CTO", buyingRole: "decision-maker", email: "ana@telco.example", linkedin: "https://linkedin.com/in/ana" }], stage: "lead", source: "website", sourcePage: "https://personalisationhub.com/industries/telco/", sourceIndustry: "Telco retail", test: true, assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
@@ -2734,6 +2837,72 @@ const scenarios = [
       assert.ok((await c.text("#lead-sum-delete")).includes("Click again"), "the first click asks to confirm");
       await c.page.click("#lead-sum-delete");
       await until(async () => (await c.page.evaluate(() => [...globalThis.__fbStub.col("leads").entries()].map(([k]) => k))).join() === "real,t2", "only that lead to be deleted", 5000);
+    },
+  },
+  {
+    name: "Promote: Prospects (TAM) - AWS Account Mapping: upload file, import results, propensity rank and a joint planning draft",
+    seed: () => seed({ prospects: {
+      pa: { name: "Alpha Grocer", country: "United Kingdom", priority: "medium", storeCount: 400, status: "new", leadId: "", markets: [], vendors: [], campaigns: [], createdAt: t(T0), updatedAt: t(T0),
+        awsMapping: { matched: true, awsAccountId: "123456789012", propensity: "high", propensityRaw: "High", signals: ["Cloud migration"], greenfieldEligible: true, salesMotionEligible: false, lastSyncedAt: t(Date.now() - 2 * 864e5), source: "csv-import" } },
+      pb: { name: "Beta Pharmacy", country: "Germany", website: "https://beta.example", priority: "high", status: "new", leadId: "", markets: [], vendors: [], campaigns: [], createdAt: t(T0), updatedAt: t(T0) },
+      pc: { name: "Gamma Fashion", country: "France", status: "new", leadId: "", markets: [], vendors: [], campaigns: [], createdAt: t(T0), updatedAt: t(T0) },
+    }, prospectCompanies: {} }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-prospects-btn", "prospects-page");
+      // In display order (AG Grid keeps row elements in insertion order and positions them by row-index).
+      const rowIds = () => c.page.evaluate(() => [...document.querySelectorAll("#prospects-grid .ag-center-cols-container .ag-row")].sort((a, b) => Number(a.getAttribute("row-index")) - Number(b.getAttribute("row-index"))).map((r) => r.getAttribute("row-id")).join());
+      await until(async () => (await rowIds()).split(",").sort().join() === "pa,pb,pc", "the grid to show the three prospects", 8000);
+      const cell = (id, col) => c.text(`#prospects-grid .ag-row[row-id="${id}"] [col-id="${col}"]`);
+      // The panel: two companies are due a re-sync, and the upload file is those two.
+      assert.strictEqual(await c.page.getAttribute("#prospects-awsmap-btn", "type"), "button", "a real button (iPad taps)");
+      await c.page.click("#prospects-awsmap-btn");
+      await c.visible("#prospect-awsmap", "the AWS Account Mapping panel");
+      assert.match(await c.text("#prospect-awsmap-sub"), /1 of 3 companies synced · last import/);
+      assert.match(await c.text("#prospect-awsmap-body"), /2 companies are due a re-sync/);
+      assert.strictEqual((await c.text("#prospect-awsmap-export")).trim(), "Export upload file (2 due)");
+      const [dl] = await Promise.all([c.page.waitForEvent("download"), c.page.click("#prospect-awsmap-export")]);
+      const csv = fs.readFileSync(await dl.path(), "utf8").trim().split("\r\n");
+      assert.strictEqual(csv[0], "Record ID,Company name,Website,Domain,Country,AWS account ID");
+      assert.deepStrictEqual(csv.slice(1).sort(), ["pb,Beta Pharmacy,https://beta.example,beta.example,Germany,", "pc,Gamma Fashion,,,France,"]);
+      // AWS's results come back: Beta by its record id, Gamma by name in its country; one row matches nothing.
+      await c.page.setInputFiles("#prospect-awsmap-file", { name: "results.csv", mimeType: "text/csv", buffer: Buffer.from(
+        "Record ID,Company name,Country,Matched AWS account ID,Match status,Propensity score,Partner Greenfield Program eligibility,Partner-led sales motion eligibility,Territory\r\n"
+        + "pb,Beta Pharmacy,Germany,210987654321,Matched,95,Eligible,Eligible,DACH\r\n"
+        + ",Gamma Fashion,France,,Matched,45,No,No,FR\r\n"
+        + ",Nobody Ltd,Spain,,No match,,,,ES\r\n") });
+      await until(async () => /Updated 2 companies from AWS Account Mapping\. 1 row matched no company: line 4 \(Nobody Ltd\)\. Columns not read: Territory\./.test(await c.text("#prospect-awsmap-result")), "the import to report what it did", 5000);
+      const beta = await c.page.evaluate(() => globalThis.__fbStub.col("prospects").get("pb"));
+      assert.strictEqual(beta.awsMapping.propensity, "high"); assert.strictEqual(beta.awsMapping.greenfieldEligible, true); assert.strictEqual(beta.awsMapping.matched, true);
+      assert.ok(beta.awsMapping.lastSyncedAt, "the last-synced date is stamped");
+      assert.strictEqual(beta.awsAccountId, "210987654321", "AWS's account ID fills a blank one");
+      assert.strictEqual((await c.page.evaluate(() => globalThis.__fbStub.col("prospects").get("pc"))).awsMapping.propensity, "medium");
+      // Rank by propensity: shows the AWS columns, Beta (High, high priority) first, Alpha (High, medium) second, Gamma (Medium) third.
+      await c.page.click("#prospect-awsmap-show");
+      await until(async () => (await rowIds()) === "pb,pa,pc", "the grid sorted by awareness rank", 5000);
+      assert.ok(await c.page.evaluate(() => document.getElementById("prospect-awsmap-backdrop").hidden), "the panel closes");
+      assert.strictEqual((await c.text('#prospects-grid .ag-row[row-id="pa"] [col-id="awsPropensity"] .prospect-prop')).trim(), "High", "Alpha's AWS propensity shows as a pill");
+      assert.strictEqual(await c.page.locator('#prospects-grid .ag-row[row-id="pa"] [col-id="awsPropensity"] .prospect-hp').count(), 1, "with the high-potential star");
+      assert.deepStrictEqual([(await cell("pb", "awarenessRank")).trim(), (await cell("pa", "awarenessRank")).trim(), (await cell("pc", "awarenessRank")).trim()], ["1", "2", "3"]);
+      // Greenfield eligible: the filter keeps Alpha and Beta.
+      await c.page.click("#prospects-awsmap-btn");
+      await c.page.click("#prospect-awsmap-greenfield");
+      await until(async () => (await rowIds()) === "pb,pa", "the Greenfield filter", 5000);
+      assert.strictEqual((await cell("pa", "awsGreenfield")).trim(), "Yes");
+      // The profile shows the mapping; a high-potential shared account drafts a joint planning request.
+      await c.page.click('#prospects-grid .ag-row[row-id="pa"] [col-id="name"] button.prospect-name-btn');
+      await c.visible("#pd-mapping", "the AWS Account Mapping card on the profile");
+      const card = await c.text("#pd-mapping");
+      for (const want of ["High-potential shared account", "123456789012", "High", "Cloud migration", "Eligible", "Not eligible"]) assert.ok(card.includes(want), want);
+      await c.page.click('#pd-mapping [data-act="joint-edit"]');
+      await c.visible('#prospect-detail form[data-form="joint"]', "the draft form");
+      assert.match(await c.page.inputValue('#prospect-detail form[data-form="joint"] textarea'), /^Subject: Joint account planning request: Alpha Grocer \(United Kingdom\)/);
+      await c.page.click('#prospect-detail form[data-form="joint"] button[type="submit"]');
+      await until(async () => ((await c.page.evaluate(() => globalThis.__fbStub.col("prospects").get("pa").jointPlanning)) || {}).status === "draft", "the draft to be saved on the record", 5000);
+      await c.visible("#pd-joint", "the saved draft shows");
+      assert.match(await c.text("#pd-joint"), /Submit it from Partner Central/);
+      await c.page.click('#pd-joint [data-act="joint-submitted"]');
+      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("prospects").get("pa").jointPlanning.status)) === "submitted", "Mark submitted", 5000);
     },
   },
   {
@@ -2821,7 +2990,7 @@ const scenarios = [
       // The default columns, in order; the ticket's hidden ones are offered in Columns.
       const headers = await c.page.evaluate(() => [...document.querySelectorAll("#prospects-grid .ag-header-row-column .ag-header-cell[col-id]")].map((h) => h.getAttribute("col-id")).filter((i) => i !== "select"));
       assert.deepStrictEqual(headers, ["name", "country", "industry", "priority", "storeCount", "linkedin", "status", "actions"], "default columns");
-      for (const id of ["subIndustry", "hqCountry", "awsRegion", "sizeBand", "storePresence", "ownership", "insights", "decisionMakers", "contacts", "source", "vendors", "campaigns"]) assert.strictEqual(await c.page.locator(`#prospects-grid .ag-header-cell[col-id="${id}"]`).count(), 0, `${id} is hidden by default`);
+      for (const id of ["subIndustry", "hqCountry", "awsRegion", "sizeBand", "storePresence", "ownership", "insights", "decisionMakers", "contacts", "source", "vendors", "campaigns", "awsPropensity", "awsGreenfield", "awarenessRank", "awsMatch", "awsSalesMotion", "awsSyncedMs"]) assert.strictEqual(await c.page.locator(`#prospects-grid .ag-header-cell[col-id="${id}"]`).count(), 0, `${id} is hidden by default`);
       // No search box: all filtering is in the column filters.
       assert.strictEqual(await c.page.locator("#prospects-q").count(), 0, "no separate search box");
       // The company is a button that opens the drawer; LinkedIn is an icon link only where there is a page.
@@ -3322,13 +3491,15 @@ const scenarios = [
     },
   },
   {
-    name: "Promote: Conversion Funnel - sits below Prospects, nine stages, filters recalculate, empty state, compare",
+    name: "Promote: Conversion Funnel - sits below Prospects, nine stages and Revenue, filters recalculate, empty state, compare",
     seed: () => ({ ...seed({
       prospects: { pa: { name: "Alpha Grocer", country: "United Kingdom", industry: "Grocery", hqCountry: "United Kingdom", markets: ["United Kingdom"], campaigns: ["Spring"], status: "new", leadId: "", createdAt: t(T0), updatedAt: t(T0) } },
       funnelDaily: {
         a: { date: "2026-11-02", channel: "Google Ads", campaign: "Spring", industry: "Grocery", country: "United Kingdom", impressions: 1000, clicks: 100, visits: 80, demoRequests: 10, downloads: 5 },
         b: { date: "2026-11-03", channel: "Organic", campaign: "", industry: "QSR", country: "United Kingdom", impressions: 500, clicks: 20, visits: 20, demoRequests: 2, downloads: 1 },
         c: { date: "2026-10-10", channel: "Google Ads", campaign: "Spring", industry: "Grocery", country: "United Kingdom", impressions: 400, clicks: 40, visits: 30, demoRequests: 4, downloads: 2 },
+        // The Partner Central S3 export: one opportunity's revenue (attributed first) and funding.
+        x: { date: "2026-11-04", source: "pc-export", aceId: "F2", company: "Alpha Grocer", channel: "", campaign: "DC Launch", industry: "Grocery", country: "United Kingdom", currency: "USD", attributedRevenue: 12400, marketplaceRevenue: 9000, fundingUsed: 2500 },
       },
     }), aceOpportunities: [
       { id: "F1", name: "Menus", customer: "Alpha Grocer", stage: "Qualified", reviewStatus: "Approved", createdDate: "2026-11-02T12:00:00", partnerCentralUrl: "" },
@@ -3343,7 +3514,14 @@ const scenarios = [
       const setRange = async (from, to) => { await c.page.fill("#funnel-from", from); await c.page.fill("#funnel-to", to); await c.page.dispatchEvent("#funnel-to", "change"); await c.page.dispatchEvent("#funnel-from", "change"); };
       await setRange("2026-11-01", "2026-11-30");
       const counts = () => c.page.evaluate(() => [...document.querySelectorAll("#funnel-stages .funnel-stage")].map((li) => li.dataset.stage + "=" + li.querySelector(".funnel-bar b").textContent.replace(/,/g, "")).join());
-      await until(async () => (await counts()) === "impressions=1500,clicks=120,visits=100,demos=12,downloads=6,aceCreated=2,aceOpen=1,aceClosed=1,deployed=1", "all nine stages with their counts", 8000);
+      await until(async () => (await counts()) === "impressions=1500,clicks=120,visits=100,demos=12,downloads=6,aceCreated=2,aceOpen=1,aceClosed=1,deployed=1,revenue=US$12400", "all nine stages with their counts, then Revenue", 8000);
+      const revRow = await c.text('[data-stage="revenue"]');
+      assert.ok(revRow.includes("US$2,500 funding used") && !revRow.includes("of previous") && !revRow.includes("of top"), `Revenue is an amount with funding used, no %: ${revRow}`);
+      assert.ok((await c.text("#funnel-count")).includes("US$12,400 revenue"), "the count line carries revenue");
+      // A Demand Center campaign on the export traces to its opportunity.
+      await c.page.selectOption("#funnel-campaign", "DC Launch");
+      await until(async () => (await counts()).endsWith("aceCreated=1,aceOpen=0,aceClosed=1,deployed=1,revenue=US$12400"), "the export's campaign to filter the ACE stages and revenue", 5000);
+      await c.page.selectOption("#funnel-campaign", "");
       assert.ok((await c.text("#funnel-stages")).includes("8% of previous"), "clicks are 8% of impressions");
       const cut = await c.page.$$eval("#funnel-stages .funnel-bar", (bars) => bars.filter((b) => b.scrollWidth > b.clientWidth + 1 || b.querySelector("b").getBoundingClientRect().width > b.getBoundingClientRect().width).map((b) => b.textContent));
       assert.deepStrictEqual(cut, [], "every count fits inside its bar (a small stage was drawn ~28px wide, cutting 1,100 to ,100)");
@@ -3357,8 +3535,58 @@ const scenarios = [
       await c.page.click("#funnel-reset");
       await setRange("2026-11-01", "2026-11-30");
       await c.page.check("#funnel-compare");
-      await until(async () => (await c.page.locator(".funnel-delta").count()) === 9, "a change per stage when comparing", 5000);
+      await until(async () => (await c.page.locator(".funnel-delta").count()) === 10, "a change per stage when comparing", 5000);
       assert.ok((await c.text('[data-stage="impressions"] .funnel-delta')).includes("+1,100"), "change against the previous period");
+    },
+  },
+  {
+    // suRWbzW1CX0TSvHMNDr3: Promote › License Manager. Each Marketplace agreement shows the buyer's company and
+    // contact (GetAgreementContacts, stored raw by the sync), linked to the TAM company and its lead; a partial match
+    // waits in the review queue; a won lead with no agreement yet is listed.
+    name: "Promote: License Manager - licence shows company and contact, linked to TAM and lead, review queue links by hand, sync",
+    seed: () => seed({
+      prospects: {
+        "acme-united-kingdom": { name: "Acme Retail", country: "United Kingdom", website: "https://acme-retail.example", industry: "Grocery", hqCountry: "United Kingdom", markets: ["United Kingdom"], status: "converted", leadId: "prospect-acme-united-kingdom", createdAt: t(T0), updatedAt: t(T0) },
+        "globex-australia": { name: "Globex", country: "Australia", website: "globex.example", industry: "QSR", hqCountry: "Australia", markets: ["Australia"], status: "new", leadId: "", createdAt: t(T0), updatedAt: t(T0) },
+      },
+      leads: {
+        "prospect-acme-united-kingdom": { company: { name: "Acme Retail", countries: ["United Kingdom"] }, stage: "closed-won", prospectId: "acme-united-kingdom", contacts: [{ id: "c1", name: "Ann Smith", email: "ann@acme-retail.example" }], createdAt: t(T0), updatedAt: t(T0) },
+        "prospect-hooli": { company: { name: "Hooli", countries: ["United States"] }, stage: "closed-won", contacts: [{ id: "c2", name: "Hal", email: "hal@hooli.example" }], createdAt: t(T0), updatedAt: t(T0) },
+      },
+      licences: {
+        "agmt-acme": { agreementId: "agmt-acme", awsAccountId: "123456789012", status: "ACTIVE", contactsRaw: JSON.stringify({ agreementContacts: [{ name: "Ann Smith", emailAddress: "ann@acme-retail.example", companyName: "Acme Retail", country: "United Kingdom" }] }) },
+        "agmt-globex": { agreementId: "agmt-globex", awsAccountId: "210987654321", status: "ACTIVE", contactsRaw: JSON.stringify({ agreementContacts: [{ name: "Gus", emailAddress: "gus@gmail.com", companyName: "Globex", country: "Australia" }] }) },
+      },
+      consoleConfig: { licenceSync: { lastSyncAt: t(T0), count: 2, contactErrors: 0 } },
+    }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-licences-btn", "licences-page");
+      assert.strictEqual(new URL(c.page.url()).hash, "#promote/license-manager", "the page has its own URL");
+      const order = await c.page.evaluate(() => document.getElementById("promote-funnel-btn").nextElementSibling === document.getElementById("promote-licences-btn"));
+      assert.ok(order, "License Manager sits directly below the Conversion Funnel");
+      await until(async () => (await c.page.locator("#licences-grid .ag-row").count()) === 3, "two licences and one won lead awaiting an agreement", 8000);
+      const acme = c.page.locator('#licences-grid .ag-center-cols-container .ag-row[row-id="agmt-acme"]');
+      const acmeText = await acme.innerText();
+      for (const want of ["Acme Retail", "Ann Smith", "United Kingdom", "123456789012", "Linked", "Ready for onboarding"]) assert.ok(acmeText.includes(want), `the licence shows ${want}: ${acmeText}`);
+      assert.ok((await c.text("#licences-count")).includes("1 linked"), "the count line says how many are linked");
+      assert.ok((await c.text("#licences-count")).includes("1 to review"), "and how many wait for review");
+      const awaiting = await c.page.locator('#licences-grid .ag-center-cols-container .ag-row[row-id="lead:prospect-hooli"]').innerText();
+      assert.ok(awaiting.includes("Awaiting agreement"), "a won lead without an agreement is listed");
+      assert.ok((await c.page.getAttribute("#licences-info", "title")).length > 20, "help is an info tooltip");
+      await c.click("#licences-tab-review", "open the review queue");
+      await c.visible("#licences-review .licences-review-item", "the partial match waits for review");
+      assert.strictEqual(await c.page.locator("#licences-review .licences-review-item").count(), 1);
+      assert.ok((await c.text("#licences-review")).includes("Company name only"), "it says why it wasn't linked");
+      await c.click('#licences-review [data-link="agmt-globex"][data-prospect="globex-australia"]', "link the suggested TAM company");
+      await until(() => c.aceWrites.some((w) => w.path === "/partnerCentral/v1/licences/link"), "the link is sent to the server", 5000);
+      assert.deepStrictEqual(c.aceWrites.find((w) => w.path === "/partnerCentral/v1/licences/link").body, { agreementId: "agmt-globex", prospectId: "globex-australia" });
+      await until(async () => (await c.text("#licences-status")).includes("Linked to Globex"), "the page confirms the link", 5000);
+      await c.click("#licences-sync-btn", "sync from AWS Marketplace");
+      await until(() => c.aceWrites.some((w) => w.path === "/partnerCentral/v1/licences/sync"), "the sync is requested", 5000);
+      await until(async () => (await c.text("#licences-status")).includes("Synced 2 agreements"), "the page says what the sync did", 5000);
+      const overflow = await c.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      assert.ok(overflow <= 1, `no sideways page scroll (${overflow}px)`);
     },
   },
   {
@@ -3403,7 +3631,7 @@ const scenarios = [
       assert.strictEqual(await c.page.$eval(`${tile} .dash-status`, (el) => el.dataset.level), "alert", "the tile's status is red while a source failed");
       // The tile's summary panel says what failed and when the data was last updated.
       await c.page.mouse.move(2, 2);
-      await c.click(`${tile} .dash-tile`, "pin the funnel tile");
+      await c.click(`${tile} .dash-tile .dash-tile-head`, "pin the funnel tile");
       await c.visible("#dash-panel");
       const tipText = await c.text("#dash-panel");
       assert.ok(tipText.includes("GA4 didn't update") && tipText.includes("401") && tipText.includes("Updated"), `the panel says what failed and when the data was last updated: ${tipText}`);
@@ -3417,6 +3645,39 @@ const scenarios = [
       assert.ok(status.includes("GA4 didn't update") && status.includes("last good update"), `the failure and the last good update: ${status}`);
       assert.ok(await c.page.locator("#funnel-status.funnel-status-flag").count() === 1, "the line is styled as a failure");
       assert.ok((await c.text("#funnel-count")).includes("Updated"), "the count line says when the data was last updated");
+    },
+  },
+  {
+    // GA4 refused the console's service account (403, no access to the property): the page
+    // names the account and the property, and gives one-click copies and the access link.
+    name: "Conversion Funnel: GA4 refusing access names the service account, with copy buttons and the GA4 access link",
+    seed: () => {
+      const s = seed({});
+      const denied = "GA4 answered 403: User does not have sufficient permissions for this property.";
+      s.docs.consoleConfig = { funnelIngest: {
+        lastRunAt: new Date().toISOString(), ok: false, failed: ["ga4-total", "google-ads"],
+        sources: { "ga4-total": { ok: false, error: denied, lastSuccessAt: null }, "google-ads": { ok: false, error: denied, lastSuccessAt: null }, leads: { ok: true, lastSuccessAt: new Date().toISOString() } },
+        ga4Access: { ok: false, problem: "no-access", serviceAccount: "123-compute@developer.gserviceaccount.com", propertyId: "473743482", project: "backlog-tracker-e4ed2" },
+      } };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-funnel-btn", "funnel-page");
+      await c.visible("#funnel-access", "the fix's values and link show under the failure");
+      const status = await c.text("#funnel-status");
+      assert.ok(status.includes("123-compute@developer.gserviceaccount.com") && status.includes("473743482") && status.includes("Viewer"), `names the account, property and role: ${status}`);
+      assert.ok(!status.includes("Google Ads didn't update"), "one access line, not one per source");
+      const copies = await c.page.$$eval("#funnel-access [data-copy]", (els) => els.map((e) => e.dataset.copy));
+      assert.deepStrictEqual(copies, ["123-compute@developer.gserviceaccount.com", "473743482", "Viewer"]);
+      assert.ok(await c.page.$$eval("#funnel-access button[data-copy]", (els) => els.every((e) => e.type === "button")), "the copies are buttons (iPad taps)");
+      const link = c.page.locator("#funnel-access a");
+      assert.strictEqual(await link.getAttribute("href"), "https://analytics.google.com/analytics/web/#/p473743482/admin/suiteusermanagement/property");
+      assert.strictEqual(await link.getAttribute("target"), "_blank");
+      await c.page.evaluate(() => { window.__copied = []; navigator.clipboard.writeText = async (v) => { window.__copied.push(v); }; });
+      await c.click('#funnel-access [data-copy="473743482"]', "Copy property ID");
+      await until(async () => (await c.text('#funnel-access [data-copy="473743482"]')).includes("Copied"), "the button says it copied", 4000);
+      assert.deepStrictEqual(await c.page.evaluate(() => window.__copied), ["473743482"]);
     },
   },
   {
@@ -3602,9 +3863,15 @@ const scenarios = [
         s3: { subject: "Thanks", customerName: "Lee", status: "resolved", resolvedBy: "ai", resolvedAt: t(yday(11)), lastReplyAt: t(yday(11)), createdAt: t(yday(7)), lastMessageAt: t(yday(11)) },
         s5: { subject: "Resolved yesterday", customerName: "Ola", status: "resolved", resolvedBy: "editor@ph.example", resolvedAt: t(yday(16)), lastReplyAt: t(yday(16)), createdAt: t(yday(7)), lastMessageAt: t(yday(16)) },
         s6: { subject: "Custom fonts?", customerName: "Ivy", status: "pending", triageReason: "The help centre doesn't answer this.", lastReplyAt: today, createdAt: t(yday(6)), lastMessageAt: today },
-        // Written only to hello@ or aidan@: in none of the figures.
+        // Written only to hello@ or aidan@: not in Needs a person. AI drafts and Resolved count every
+        // inbox by default, with an inbox filter (ZCNIxvtORgZN0csAlO44).
+        h2: { subject: "Intro call", customerName: "Hal", status: "open", aiDraft: { text: "Hi Hal", confidence: 0.7, answerable: true }, inboxes: ["hello"], createdAt: t(yday(10)), lastMessageAt: t(yday(10)), lastInboundAt: t(yday(10)) },
         h1: { subject: "Partnership", customerName: "Hattie", status: "open", needsHuman: true, inboxes: ["hello"], createdAt: t(daysAgo(2, 8)), lastMessageAt: t(daysAgo(2, 8)), lastInboundAt: t(daysAgo(2, 8)) },
         a1: { subject: "For Aidan", customerName: "Abe", status: "resolved", resolvedBy: "ai", resolvedAt: t(yday(9)), lastReplyAt: t(yday(9)), inboxes: ["aidan"], createdAt: t(yday(7)), lastMessageAt: t(yday(9)) },
+        // Needs a person is support queries only: an Aidan request whose reply came back to support@,
+        // and mail to support@ that is not about PH (from a high-value sender, so it still needs a person).
+        a2: { subject: "One pager", customerName: "Ann", status: "open", needsHuman: true, inboxes: ["support", "aidan"], aidan: { status: "needs-person", kind: "generate", reason: "No skill matches." }, createdAt: t(yday(8)), lastMessageAt: t(yday(8)), lastInboundAt: t(yday(8)) },
+        u1: { subject: "Your invoice", customerName: "Vendor", status: "open", needsHuman: true, highValue: true, unrelated: true, category: "unrelated", inboxes: ["support"], createdAt: t(yday(8)), lastMessageAt: t(yday(8)), lastInboundAt: t(yday(8)) },
       };
       return s;
     },
@@ -3636,11 +3903,12 @@ const scenarios = [
       const fText = await tileText("funnel");
       assert.ok(fText.includes("Visitor to lead") && fText.includes("Opps"), `visitor-to-lead and the mini funnel: ${fText}`);
       assert.strictEqual(await c.page.locator('.dash-tile-wrap[data-tile="funnel"] .dash-mini-step.dash-drop-max').count(), 1, "the biggest drop-off is marked");
-      assert.strictEqual(await value("person"), "1", "one support@ ticket needs a person; hello@ is not counted");
+      assert.strictEqual(await value("person"), "1", "one support@ platform query needs a person; hello@, an Aidan request and mail not about PH are not counted");
+      assert.ok(!/One pager|Your invoice/.test(await c.page.locator('.dash-tile-wrap[data-tile="person"]').innerHTML()), "neither the Aidan request nor the non-support email is listed");
       assert.ok(/^(\d+h|1d( \d+h)?)$/.test((await tileText("person")).match(/Oldest\s*(\S+( \d+h)?)/)?.[1] || ""), `the age of the oldest: ${await tileText("person")}`);
-      assert.strictEqual(await value("drafts"), "1", "one AI draft to approve");
-      assert.strictEqual(await value("resolved"), "2", "two support@ tickets resolved yesterday; aidan@ is not counted");
-      assert.ok((await tileText("resolved")).includes("50%"), "half by the AI alone");
+      assert.strictEqual(await value("drafts"), "2", "two AI drafts to approve: support@'s and hello@'s (every inbox by default)");
+      assert.strictEqual(await value("resolved"), "3", "three resolved yesterday in every inbox: two support@ and one aidan@");
+      assert.ok((await tileText("resolved")).includes("67%"), "two of three by the AI alone");
       assert.strictEqual(await c.page.locator(".dash-tile p, .dash-tile div, .dash-tile-wrap > p").count(), 0, "no explanatory copy under the tiles, and nothing but phrasing content in a tile button");
       assert.strictEqual(await c.page.locator(".dash-tile-wrap .dash-info[aria-describedby]").count(), 8, "every tile has an info tooltip");
 
@@ -3689,7 +3957,7 @@ const scenarios = [
         if (Math.abs(pr.width - host.width) > 2) return `panel ${pr.width}px wide, the grid ${host.width}px`;
         return "ok";
       }, k);
-      const pinTile = async (k) => { await c.click(`.dash-tile-wrap[data-tile="${k}"] .dash-tile`, `pin the ${k} tile`); await c.visible(panel); };
+      const pinTile = async (k) => { await c.click(`.dash-tile-wrap[data-tile="${k}"] .dash-tile .dash-tile-head`, `pin the ${k} tile`); await c.visible(panel); };
       await c.page.mouse.move(2, 2);
       await pinTile("kanban");
       assert.strictEqual(new URL(c.page.url()).hash, "#dashboard", "a tile never navigates");
@@ -3703,7 +3971,24 @@ const scenarios = [
       assert.ok(await c.page.locator(panel).isVisible(), "the panel stays pinned when the pointer leaves");
       await pinTile("delivery");
       const dTip = await c.text(panel);
-      assert.ok(dTip.includes("Demo Project") && /Yesterday\s*1/.test(dTip) && dTip.includes("Lead time") && dTip.includes("First-time pass"), `another tile switches the panel: ${dTip}`);
+      assert.ok(dTip.includes("Demo Project") && /Tickets\s*1\s*arrow_upward\s*New/.test(dTip) && dTip.includes("Lead time") && /First-time pass\s*100%/.test(dTip), `another tile switches the panel: ${dTip}`);
+      // 7KcZdqFjytcmD9S85Fnq: a Yesterday / Last 7 days switch; every figure
+      // carries its change on the previous period of the same length.
+      const pressed = () => c.page.$$eval("#dash-panel [data-delivery-range]", (els) => els.filter((e) => e.getAttribute("aria-pressed") === "true").map((e) => e.dataset.deliveryRange));
+      assert.deepStrictEqual(await pressed(), ["yesterday"], "Yesterday is the default range");
+      assert.ok(dTip.includes("deployed yesterday, against the day before"), `the period and what it is compared with: ${dTip}`);
+      assert.strictEqual(await c.page.locator('#dash-panel li[data-project] .dash-change[data-dir="up"]').count(), 1, "the ticket count is up (New) on the day before");
+      assert.strictEqual(await c.page.locator('#dash-panel li[data-project] .dash-change[data-dir="none"]').count(), 1, "no pass rate the day before: nothing to compare");
+      await c.click('#dash-panel [data-delivery-range="week"]', "choose Last 7 days");
+      await until(async () => (await pressed()).join() === "week", "the Last 7 days range to be chosen", 3000);
+      const wTip = await c.text(panel);
+      assert.ok(wTip.includes("deployed in the last 7 days, against the 7 days before") && /Tickets\s*1\s*arrow_upward\s*New/.test(wTip), `the 7-day period: ${wTip}`);
+      assert.ok(/Deployed in the last 7 days/i.test(await tileText("delivery")), "the tile follows the range");
+      assert.ok(await c.page.evaluate(() => document.activeElement && document.activeElement.dataset.deliveryRange === "week"), "focus stays on the chosen option");
+      assert.ok(await c.page.locator(panel).isVisible(), "the panel stays pinned");
+      await c.click('#dash-panel [data-delivery-range="yesterday"]', "back to Yesterday");
+      await until(async () => (await pressed()).join() === "yesterday", "the Yesterday range to be chosen", 3000);
+      assert.ok(/Deployed yesterday/i.test(await tileText("delivery")), "the tile reads yesterday again");
       assert.strictEqual(await c.page.$eval('.dash-tile-wrap[data-tile="kanban"] .dash-tile', (b) => b.getAttribute("aria-expanded")), "false", "only one tile is pinned");
       await pinTile("flow");
       const flTip = await c.text(panel);
@@ -3724,16 +4009,41 @@ const scenarios = [
       await pinTile("drafts");
       const drTip = await c.text(panel);
       assert.ok(drTip.includes("Tom") && drTip.includes("90%"), `each draft with its confidence: ${drTip}`);
+      c.at("the inbox filter on AI drafts to approve");
+      const inboxPressed = () => c.page.$eval("#dash-panel [data-dash-inbox][aria-pressed=true]", (e) => e.dataset.dashInbox);
+      const choice = (key) => `#dash-panel [data-dash-inbox="${key}"]`;
+      assert.strictEqual(await inboxPressed(), "", "All inboxes by default");
+      assert.deepStrictEqual(await c.page.$$eval("#dash-panel [data-dash-inbox]", (els) => els.map((e) => e.innerText.replace(/\s+/g, " ").trim())), ["All inboxes 2", "Support Inbox 1", "Hello 1", "Aidan 0"], "each inbox with its count");
+      assert.ok(drTip.includes("Hello · Intro call") && drTip.includes("Support Inbox · Where is the menu editor?"), `each draft names its inbox: ${drTip}`);
+      await c.click(choice("hello"), "Hello");
+      assert.strictEqual(await value("drafts"), "1", "the tile follows the filter");
+      assert.ok((await tileText("drafts")).includes("Hello only"), "a filtered tile names the inbox");
+      assert.ok((await c.text(panel)).includes("Hal") && !(await c.text(panel)).includes("Tom"), "only Hello's drafts");
+      assert.strictEqual(await c.page.evaluate(() => document.activeElement?.dataset.dashInbox), "hello", "focus stays on the choice");
+      await c.click(choice("aidan"), "Aidan");
+      assert.ok((await c.text(panel)).includes("No drafts waiting in Aidan"), "the empty state names the inbox");
+      assert.strictEqual(await value("drafts"), "0");
+      await c.click(choice("support"), "Support Inbox");
+      assert.strictEqual(await value("drafts"), "1", "the Support Inbox's queue count");
       await pinTile("resolved");
       const rTip = await c.text(panel);
       assert.ok(rTip.includes("FAQ gaps") && rTip.includes("Custom fonts?"), `FAQ gaps: ${rTip}`);
+      c.at("the inbox filter on Resolved & automation");
+      assert.strictEqual(await inboxPressed(), "", "its own filter, on All inboxes");
+      await c.click(choice("aidan"), "Aidan");
+      assert.strictEqual(await value("resolved"), "1", "Aidan's resolved yesterday");
+      const raText = await tileText("resolved");
+      assert.ok(raText.includes("Aidan only") && raText.includes("100%"), `figures follow the filter: ${raText}`);
+      assert.ok((await c.text(panel)).includes("No gaps in Aidan"), "the FAQ gaps follow the filter");
+      await c.click(choice(""), "All inboxes");
+      assert.strictEqual(await value("resolved"), "3");
       c.at("close the panel");
       await c.click("#dash-panel .dash-panel-close", "Close");
       await c.hidden(panel);
       assert.strictEqual(await c.page.evaluate(() => document.activeElement && document.activeElement.closest(".dash-tile-wrap")?.dataset.tile), "resolved", "focus returns to the tile");
-      await c.click('.dash-tile-wrap[data-tile="leads"] .dash-tile', "pin leads again");
+      await c.click('.dash-tile-wrap[data-tile="leads"] .dash-tile .dash-tile-head', "pin leads again");
       await c.visible(panel);
-      await c.click('.dash-tile-wrap[data-tile="leads"] .dash-tile', "the pinned tile again closes it");
+      await c.click('.dash-tile-wrap[data-tile="leads"] .dash-tile .dash-tile-head', "the pinned tile again closes it");
       await c.hidden(panel);
       assert.strictEqual(new URL(c.page.url()).hash, "#dashboard", "still on the Dashboard");
 
@@ -3758,7 +4068,7 @@ const scenarios = [
         await settle(1180, 3, "funnel");
         await c.page.setViewportSize({ width: 820, height: 900 });
         await settle(820, 2, "funnel");
-        await c.click('.dash-tile-wrap[data-tile="funnel"] .dash-tile', "close the funnel panel");
+        await c.click('.dash-tile-wrap[data-tile="funnel"] .dash-tile .dash-tile-head', "close the funnel panel");
         await c.hidden(panel);
       }
 
@@ -3782,7 +4092,7 @@ const scenarios = [
       await until(async () => (await value("delivery")) === "2", "the Delivery figure to update after the write", 5000);
       assert.ok(await onDelivery(), `focus stays on the same Delivery tile (active: ${await c.page.evaluate(() => document.activeElement && document.activeElement.outerHTML.slice(0, 80))})`);
       assert.ok(await c.page.locator(panel).isVisible(), "its pinned panel stays open");
-      await until(async () => /Yesterday\s*2/.test(await c.text(panel)), "the open panel shows the new figures", 3000);
+      await until(async () => /Tickets\s*2\s*arrow_upward\s*New/.test(await c.text(panel)), "the open panel shows the new figures", 3000);
       assert.strictEqual(await value("flow"), "1", "the blocked ticket shipped: one still stuck");
       await c.page.keyboard.press("Escape");
       await c.hidden(panel, "Escape closes the panel");
@@ -3791,9 +4101,16 @@ const scenarios = [
       c.at("the panel's Open section goes to the section");
       await c.page.mouse.move(2, 2);
       await pinTile("drafts");
+      assert.strictEqual(await inboxPressed(), "support", "the filter is kept after the panel closed");
       await c.click("#dash-panel .dash-panel-open", "Open section for AI drafts");
       await c.visible("#support-page");
       assert.strictEqual(new URL(c.page.url()).hash, "#support?queue=ai-drafts", "AI drafts opens that Support Inbox queue");
+      await openFromNav(c, "build", "dashboard-btn", "dashboard-page");
+      if (!(await c.page.locator('.dash-tile-wrap[data-tile="drafts"].pinned').count())) await pinTile("drafts");
+      await c.click(choice("hello"), "Hello");
+      await c.click("#dash-panel .dash-panel-open", "Open section for Hello's drafts");
+      await c.visible("#support-page");
+      assert.strictEqual(new URL(c.page.url()).hash, "#support/hello", "a filtered tile opens that inbox's tab");
       await openFromNav(c, "build", "dashboard-btn", "dashboard-page");
       await pinTile("leads");
       await c.click("#dash-panel .dash-panel-open", "Open section");
@@ -3806,10 +4123,105 @@ const scenarios = [
       await c.boardReady();
       assert.strictEqual(new URL(c.page.url()).hash, "#board", "the Agent Board keeps an address of its own");
       assert.ok(await c.page.locator("#dashboard-page").isHidden(), "the Dashboard closed");
+      c.at("every count opens its own filtered list, and never just closes the overview (uAp6fukjDyNxKusotmcQ)");
+      await openFromNav(c, "build", "dashboard-btn", "dashboard-page");
+      await until(async () => (await c.page.locator('.dash-tile-wrap[data-tile="kanban"] .dash-value').first().innerText()) !== "…", "Staff Kanban to load", 8000);
+      await pinTile("kanban");
+      await c.click('.dash-tile-wrap[data-tile="kanban"] .dash-flag .dash-go[data-go*="show=waiting"]', "1 waiting on you, inside the pinned tile");
+      await c.visible("#staff-kanban-page", "the count opens Staff Kanban");
+      assert.ok(new URL(c.page.url()).hash.startsWith("#staff-kanban?show=waiting"), `the board's address keeps the filter: ${c.page.url()}`);
+      await until(async () => (await c.page.$$eval("#staff-kanban-page .kb-card", (els) => els.map((e) => e.dataset.key))).join() === "PH-4", "the board shows only the one task waiting on you", 8000);
+      assert.ok((await c.text("#kb-show-chip")).includes("Waiting on you in Testing"), "the board says which Dashboard filter it shows");
+      await c.click("#kb-show-clear", "clear the Dashboard filter");
+      await until(async () => (await c.page.locator("#staff-kanban-page .kb-card").count()) > 1, "the board shows every task again", 8000);
+      await openFromNav(c, "build", "dashboard-btn", "dashboard-page");
+      await c.page.evaluate(() => document.activeElement && document.activeElement.blur());
+      await c.click('.dash-tile-wrap[data-tile="kanban"] .dash-col[data-go*="column=todo"]', "the To do count");
+      await until(async () => (await c.page.$$eval("#staff-kanban-page .kb-card", (els) => els.map((e) => e.dataset.key).sort())).join() === "PH-1,PH-3", "To do shows its two open tasks", 8000);
+      await openFromNav(c, "build", "dashboard-btn", "dashboard-page");
+      const stuckCount = await c.page.locator('.dash-tile-wrap[data-tile="flow"] .dash-value').first().innerText();
+      await c.click('.dash-tile-wrap[data-tile="flow"] .dash-value .dash-go', "the Tickets stuck count");
+      await c.visible("#dash-list", "the count opens its list on the Dashboard");
+      assert.strictEqual(new URL(c.page.url()).hash, "#dashboard?list=flow-stuck");
+      assert.ok(await c.page.locator("#dash-panel").isHidden(), "the overview did not open");
+      assert.ok(await c.page.locator("#dash-groups").isHidden(), "the list replaces the tiles");
+      assert.strictEqual(await c.page.locator("#dash-list .dash-list-rows > li").count(), Number(stuckCount), "the list holds the count's tickets");
+      assert.strictEqual(await c.text("#dash-list .dash-list-count b"), stuckCount);
+      await c.click("#dash-list .dash-item", "open the stuck ticket");
+      await c.visible("#ei-backdrop", "a row opens its ticket");
+      await c.page.keyboard.press("Escape");
+      await c.hidden("#ei-backdrop");
+      await c.click("#dash-list .dash-list-back", "back to the Dashboard");
+      await c.visible("#dash-groups .dash-tile");
+      assert.strictEqual(new URL(c.page.url()).hash, "#dashboard");
+      await pinTile("leads");
+      const won = await c.page.locator('#dash-panel .dash-go[data-go*="stage=hot-lead"]').first().innerText();
+      await c.click('#dash-panel .dash-go[data-go*="stage=hot-lead"]', "Hot Lead in the panel's pipeline");
+      await c.visible("#dash-list");
+      assert.ok(await c.page.locator("#dash-panel").isHidden(), "a panel count opens the list, not the overview");
+      assert.strictEqual(String(await c.page.locator("#dash-list .dash-list-rows > li").count()), won, "the list holds the stage's companies");
+      assert.ok((await c.text("#dash-list")).includes("Old Grocer"));
+      await c.page.goBack();
+      await c.visible("#dash-groups .dash-tile", "Back returns to the tiles");
+      await pinTile("resolved");
+      await c.click('#dash-panel .dash-go[data-go*="list=faq-gaps"]', "the FAQ gaps count");
+      await c.visible("#dash-list");
+      assert.ok((await c.text("#dash-list")).includes("Custom fonts?"), "the FAQ gap is listed");
+      await c.click("#dash-list .dash-list-rows a.dash-go", "open the Support ticket");
+      await c.visible("#support-page");
+      assert.strictEqual(new URL(c.page.url()).hash, "#support/ticket/s6", "a Support row opens its ticket");
+      await openFromNav(c, "build", "dashboard-btn", "dashboard-page");
+      await c.click('.dash-tile-wrap[data-tile="person"] .dash-value .dash-go', "the Needs a person count");
+      await c.visible("#support-page");
+      assert.strictEqual(new URL(c.page.url()).hash, "#support", "Needs a person opens its queue, the Support Inbox's first");
+      await openFromNav(c, "build", "dashboard-btn", "dashboard-page");
+      await pinTile("delivery");
+      await c.click("#dash-panel .dash-panel-open", "Open section for Delivery");
+      await c.boardReady();
       c.at("a reload on the board stays on the board");
       await c.page.reload({ waitUntil: "domcontentloaded" });
       await c.boardReady();
       assert.ok(await c.page.locator("#dashboard-page").isHidden(), "still the board after a reload");
+    },
+  },
+  {
+    // 0I93kb0fqXL4Qr4qyzwv: Flow & blockers shows, beside the stuck count, the
+    // tickets that went back through retesting and how many times each, and
+    // its panel opens the filtered list of exactly those tickets (the Testing
+    // loops page's Retested view, every project, routed so a reload keeps it).
+    name: "Dashboard: Flow & blockers counts retested tickets and opens their list",
+    hash: "",
+    seed: () => {
+      const s = only("b1", "r1", "l1");
+      const sb = (iso, line, extra = {}) => ({ at: iso, by: "person", who: "tester@example.com", line, counted: true, ...extra });
+      Object.assign(s.docs.backlogItems.r1, { testRound: 3, sendBackCount: 3, countedSendBacks: 2,
+        sendBacks: [sb("2026-11-10T10:00:00Z", "chip missing"), sb("2026-11-11T10:00:00Z", "flaky", { by: "tests", counted: false }), sb("2026-11-12T10:00:00Z", "header count wrong", { by: "tests" })] });
+      Object.assign(s.docs.backlogItems.b1, { testRound: 2, sendBackCount: 1, countedSendBacks: 1, sendBacks: [sb("2026-11-13T10:00:00Z", "wrong purple")] });
+      return s;
+    },
+    async run(c) {
+      await c.visible("#dashboard-page");
+      const tile = '.dash-tile-wrap[data-tile="flow"]';
+      await until(async () => /2\s*retested/.test(await c.text(`${tile} .dash-tile`)), "the retested count beside Tickets stuck", 8000);
+      await c.click(`${tile} .dash-tile`, "pin Flow & blockers");
+      await c.visible("#dash-panel");
+      const panel = await c.text("#dash-panel");
+      assert.ok(panel.includes("Went back through retesting (2)"), `the retested section: ${panel}`);
+      assert.ok(/Fix the thing\s*Retested 2 times/.test(panel) && /Purple widget\s*Retested once/.test(panel), `each ticket with its retest count, most first: ${panel}`);
+      assert.ok(!panel.includes("Shipped thing"), "a ticket never sent back is not listed");
+      await c.click("#dash-panel .dash-tip-open", "Open list of retested tickets");
+      await c.visible("#testing-loops-page");
+      assert.strictEqual(new URL(c.page.url()).hash, "#testing-loops?view=retested", "the list has its own address");
+      assert.ok(await c.page.locator("#dashboard-page").isHidden(), "the Dashboard closed");
+      assert.strictEqual((await c.text("#testing-loops-heading")).trim(), "Retested tickets");
+      assert.strictEqual((await c.text("#testing-loops-project-name")).trim(), "All projects");
+      await until(async () => (await c.text("#testing-loops-count")).trim() === "2 tickets", "the list matches the tile's count", 5000);
+      await until(async () => { const l = await c.text("#testing-loops-grid"); return l.includes("Fix the thing") && l.includes("Purple widget"); }, "the list's rows to draw", 5000);
+      assert.ok(!(await c.text("#testing-loops-grid")).includes("Shipped thing"), "a ticket never sent back is not in the list");
+      c.at("a reload keeps the list");
+      await c.page.reload({ waitUntil: "domcontentloaded" });
+      await c.visible("#testing-loops-page");
+      await until(async () => (await c.text("#testing-loops-count")).trim() === "2 tickets", "the list after a reload", 8000);
     },
   },
   {
@@ -3835,7 +4247,7 @@ const scenarios = [
       await until(async () => (await c.page.locator(`${tile} .dash-value`).first().innerText()) === "2", "two open tasks across active projects", 8000);
       const text = await c.text(`${tile} .dash-tile`);
       assert.ok(text.includes("All open work") && /1\s*To do/.test(text) && /1\s*In progress/.test(text), `all open work, by column: ${text}`);
-      await c.click(`${tile} .dash-tile`, "pin the Staff Kanban tile");
+      await c.click(`${tile} .dash-tile .dash-tile-head`, "pin the Staff Kanban tile");
       await c.visible("#dash-panel");
       assert.ok((await c.text("#dash-panel")).includes("16h (2d)"), "workload in hours with days at 8h a day");
     },
@@ -4242,6 +4654,52 @@ const scenarios = [
     },
   },
   {
+    // Eo1w5YvY0Xw8YhHDalWj: Settings › Integrations › AWS Partner Central › Ask the Partner Central agent.
+    // A write the agent proposes shows as an approval card, and nothing is sent until Approve is clicked.
+    name: "Settings › Integrations › Partner Central agent: a draft waits for Approve, then shows approved",
+    hash: "#settings/integrations",
+    seed: () => {
+      const s = only("b1");
+      s.user = { email: "admin@ph.example", role: "admin" };
+      s.docs.consoleUsers = { "admin@ph.example": { email: "admin@ph.example", role: "admin", displayName: "Ada Admin" } };
+      return s;
+    },
+    run: async (c) => {
+      c.at("the agent panel");
+      await c.visible("#pca", "the Ask the Partner Central agent panel");
+      await until(async () => (await c.page.locator("#pca-lead option").count()) === 2, "the lead picker to fill", 4000);
+      assert.strictEqual(await c.page.inputValue("#pca-session"), "", "a new session by default");
+      await c.click("#pca-send", "Ask agent with nothing typed");
+      await c.waitText("#pca-status", "Type a message for the agent.", "an empty message is refused on the page");
+      assert.strictEqual(c.pcAgentCalls.filter((x) => x.method === "POST").length, 0, "nothing sent");
+
+      c.at("a draft request");
+      await c.page.selectOption("#pca-lead", "L1");
+      await c.page.fill("#pca-opportunity", "O123");
+      await c.page.fill("#pca-text", "Draft a test opportunity for Demo Brand, do not submit");
+      await c.click("#pca-send", "Ask agent");
+      await c.waitText("#pca-status", "Waiting for your approval.", "the agent holds the write");
+      const sent = c.pcAgentCalls.find((x) => x.path === "/partnerCentral/v1/agent/messages").body;
+      assert.deepStrictEqual([sent.leadId, sent.opportunityId, sent.sessionId], ["L1", "O123", undefined]);
+      await c.visible('.pca-approval[data-tool-use-id="tu-1"]', "the approval card");
+      assert.match(await c.text(".pca-approval-head"), /CreateOpportunity/);
+      assert.match(await c.text(".pca-params"), /"Title": "Test opportunity"/);
+      assert.match(await c.text(".pca-meta"), /AI session sess-1 · Sandbox · Lead: Demo Brand · Opportunity: O123/);
+      assert.strictEqual(await c.page.inputValue("#pca-session"), "sess-1", "the new session is selected to continue");
+      assert.strictEqual(await c.page.inputValue("#pca-text"), "", "the box clears after sending");
+      assert.strictEqual(c.pcAgentCalls.filter((x) => /approvals/.test(x.path)).length, 0, "nothing approved yet");
+
+      c.at("approve");
+      await c.click('.pca-approval [data-pca-decide="approve"]', "Approve");
+      await c.waitText("#pca-status", "Done.", "the approval goes through");
+      const decided = c.pcAgentCalls.find((x) => /approvals/.test(x.path));
+      assert.deepStrictEqual([decided.path, decided.body], ["/partnerCentral/v1/agent/sessions/sess-1/approvals/tu-1", { decision: "approve" }]);
+      assert.strictEqual(await c.page.locator(".pca-approval").count(), 0, "no approval left waiting");
+      assert.match(await c.text("#pca-approvals"), /CreateOpportunity: approved by admin@ph\.example/);
+      assert.match(await c.text(".pca-text"), /Draft opportunity created \(not submitted\)/);
+    },
+  },
+  {
     // SYkk20srKT7pIKM1HS8Z: Aidan signs "Aidan, Personalisation Hub"; an
     // optional signature line is a setting, off by default, saved with Save Aidan.
     name: "Settings › Support inbox › Aidan: the signature line is off by default, and Save Aidan sends it",
@@ -4601,6 +5059,34 @@ const scenarios = [
       c.expectProblem(/status of 504/);   // the failed call is the point of this step
       const err = await page.$eval("#aidan-chat-error", (e) => (e.hidden ? "" : e.textContent)).catch(() => "");
       assert.ok(!/504/.test(err || ""), `no error is shown when the reply was saved: ${err}`);
+    },
+  },
+  {
+    // 2ZGt21abp5J4YZ9cGn9M: a document opens read-only in its own reader
+    // (#doc/<id>), and the Edit icon opens the editor (#doc/<id>/edit).
+    name: "Documentation: a document opens in the read-only reader, Edit opens the editor",
+    seed: () => seed({
+      docCategories: { dc1: { name: "Architecture", icon: "menu_book", order: 0, createdAt: t(T0), updatedAt: t(T0) } },
+      docArticles: { da1: { title: "Solution overview", categoryId: "dc1", order: 0, status: "published", docType: "reference", bodyMd: "<h2>Overview</h2><p>Runs on EKS.</p>", createdAt: t(T0), updatedAt: t(T0) } },
+    }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "publish", "documentation-btn", "documentation-page");
+      await c.click('[data-doc-open="da1"]', "open the document");
+      await c.visible("#doc-reader-page", "the reader shows");
+      await c.waitText("#doc-reader-title", "Solution overview");
+      await c.waitText("#doc-reader-body h2", "Overview");
+      await c.hidden("#faq-article-editor-page", "no editor fields while reading");
+      await c.click("#doc-reader-edit", "the Edit icon");
+      await c.visible("#fa-title-input", "the editor opens");
+      c.at("the editor's address");
+      await until(() => c.page.evaluate(() => location.hash === "#doc/da1/edit"), "#doc/da1/edit");
+      await c.click("#fa-cancel", "Cancel");
+      await c.visible("#doc-reader-page", "back in the reader");
+      await c.click("#doc-reader-back", "Back");
+      await c.visible("#documentation-page", "back at the section");
+      const w = await c.writes();
+      if (w.some((x) => /^docArticles\//.test(x.path))) throw new Error("reading wrote to the document");
     },
   },
 ];

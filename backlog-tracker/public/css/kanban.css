@@ -66,6 +66,12 @@
 /* Wide enough for the whole row: never wrap; the selects shrink instead. */
 @media (min-width: 1240px) { .kb-filters { flex-wrap: nowrap; } }
 .kb-mine { min-height: 36px; display: inline-flex; align-items: center; gap: 6px; padding: 0 14px; border: 0; border-radius: 9999px; background: rgba(120, 120, 128, .12); color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer; }
+.kb-show-chip { min-height: 36px; display: inline-flex; align-items: center; gap: 6px; padding: 0 4px 0 12px; border-radius: 9999px; background: var(--primary-tint); color: var(--primary-text); font-size: 13px; white-space: nowrap; }
+.kb-show-chip > .material-symbols-outlined { font-size: 16px; }
+.kb-show-chip b { font-weight: 600; }
+.kb-show-clear { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 0; border-radius: 9999px; background: transparent; color: inherit; cursor: pointer; }
+.kb-show-clear:hover { background: rgba(22, 155, 194, .16); }
+.kb-show-clear .material-symbols-outlined { font-size: 16px; }
 .kb-mine .material-symbols-outlined { font-size: 18px; }
 .kb-mine.on { background: var(--primary); color: #fff; }
 .kb-clear { padding: 0 4px; min-height: 36px; color: var(--primary-text); font-weight: 600; }

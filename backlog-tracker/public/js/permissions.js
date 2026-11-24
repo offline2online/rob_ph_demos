@@ -30,13 +30,15 @@ export const SECTIONS = [
   { key: "promote-leads", label: "Leads", nav: ["#promote-leads-btn"], inherits: "promote", edit: ["#leads-page [data-editor-only]", "#lead-backdrop [data-editor-only]"] },
   { key: "prospects", label: "Prospects (TAM)", nav: ["#promote-prospects-btn"], inherits: "promote-leads", edit: ["#prospects-page [data-editor-only]", "#prospects-grid [data-editor-only]", "#prospect-drawer-backdrop [data-editor-only]"] },
   { key: "conversion-funnel", label: "Conversion Funnel", nav: ["#promote-funnel-btn"], inherits: "prospects", edit: [] },
+  // License Manager follows Prospects (TAM) until a role sets its own.
+  { key: "license-manager", label: "License Manager", nav: ["#promote-licences-btn"], inherits: "prospects", edit: ["#licences-page [data-editor-only]"] },
   // Support Inbox sits above Help Centre in the Support group and follows its grant until a role sets its own.
   { key: "support-inbox", label: "Support Inbox", nav: ["#support-inbox-btn"], inherits: "faq", edit: ["#support-page [data-editor-only]"] },
   { key: "faq", label: "Help Centre", nav: ["#faq-articles-btn"],
     edit: ["#fa-new-article-btn", "#faq-new-category-btn", "#fa-save-draft", "#faq-cat-edit-save-btn"] },
   // Documentation (internal docs library) follows the Help Centre's grant until a role sets its own.
   { key: "documentation", label: "Documentation", nav: ["#documentation-btn"], inherits: "faq",
-    edit: ["#doc-new-category-btn", "#doc-new-article-btn", "#documentation-page [data-editor-only]"] },
+    edit: ["#doc-new-category-btn", "#doc-new-article-btn", "#documentation-page [data-editor-only]", "#doc-reader-page [data-editor-only]"] },
   { key: "settings", label: "Settings", nav: ["#faq-settings-btn"], edit: ["#faq-settings-page .btn-primary"] },
   { key: "user-management", label: "Settings > User Management", nav: ['[data-settings-page="user-management"]'],
     edit: ["#team-add-open", "#roles-create", ".role-actions", "#um-bulk", ".um-manage"] },
@@ -114,6 +116,7 @@ export function sectionForHash(hash) {
   if (h === "#documentation" || h.startsWith("#doc/")) return "documentation";
   if (h === "#promote/prospects") return "prospects";
   if (h === "#promote/conversion-funnel") return "conversion-funnel";
+  if (h === "#promote/license-manager") return "license-manager";
   if (h === "#promote" || h.startsWith("#promote/")) {
     const k = "promote-" + h.slice(9).split("/")[0];
     return SECTION_KEYS.includes(k) ? k : "promote";
@@ -131,7 +134,7 @@ export function sectionForHash(hash) {
 
 // The hash a section opens at, for the redirect.
 export const SECTION_HASH = {
-  "agent-board": "#board", "staff-kanban": "#staff-kanban", concepts: "#concept-incubator", whiteboard: "#whiteboard", promote: "#promote/brand-guidelines", "promote-leads": "#promote/leads", prospects: "#promote/prospects", "conversion-funnel": "#promote/conversion-funnel", "support-inbox": "#support", faq: "#faq-management", documentation: "#documentation",
+  "agent-board": "#board", "staff-kanban": "#staff-kanban", concepts: "#concept-incubator", whiteboard: "#whiteboard", promote: "#promote/brand-guidelines", "promote-leads": "#promote/leads", prospects: "#promote/prospects", "conversion-funnel": "#promote/conversion-funnel", "license-manager": "#promote/license-manager", "support-inbox": "#support", faq: "#faq-management", documentation: "#documentation",
   skills: "#settings/skills", releases: "#settings/releases", "project-docs": "", settings: "#settings",
   "user-management": "#settings/user-management/users",
 };
@@ -145,7 +148,7 @@ export function sectionForSettingsPage(page) {
 // order. `sectionsByGroup()` builds it from SECTIONS plus the "Other" group.
 export const PERMISSION_GROUPS = [
   { label: "Build", keys: ["agent-board", "staff-kanban", "concepts", "whiteboard"] },
-  { label: "Promote", keys: ["promote", "promote-leads", "prospects", "conversion-funnel"] },
+  { label: "Promote", keys: ["promote", "promote-leads", "prospects", "conversion-funnel", "license-manager"] },
   { label: "Support", keys: ["support-inbox", "faq", "documentation"] },
   { label: "Settings", keys: ["settings", "user-management", "releases", "skills"] },
   { label: "Other", keys: ["project-docs"] },

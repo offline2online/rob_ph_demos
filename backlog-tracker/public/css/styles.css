@@ -1707,6 +1707,27 @@ html:not([data-console-role="admin"]) [data-admin-only] { display: none !importa
 .media-key-row { padding: 12px 14px; border: 1px solid #e3e6eb; border-radius: 8px; background: #fff; }
 .media-key-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .media-key-title { font-weight: 600; font-size: 13.5px; }
+/* Settings → AWS Partner Central → Ask the Partner Central agent (#pca) */
+.pca { border-top: 1px solid var(--border, #d9d9d9); margin-top: 12px; padding-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.pca-title { margin: 0; font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 4px; }
+.pca-fields { display: flex; flex-wrap: wrap; gap: 8px 12px; }
+.pca-field { display: flex; flex-direction: column; gap: 4px; flex: 1 1 180px; min-width: 0; }
+.pca-field select, .pca-field input, .pca textarea { width: 100%; box-sizing: border-box; font: inherit; border: 1px solid var(--border, #d9d9d9); border-radius: 6px; padding: 6px 8px; background: var(--surface, #fff); color: var(--text, #333); }
+.pca textarea { resize: vertical; min-height: 64px; }
+.pca-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.pca-status { font-size: 13px; color: var(--text-muted, rgba(0,0,0,.45)); }
+.pca-status.is-bad { color: var(--danger, #c62828); }
+.pca-reply { border: 1px solid var(--border, #d9d9d9); border-radius: 8px; padding: 10px 12px; }
+.pca-meta { font-size: 12px; color: var(--text-muted, rgba(0,0,0,.45)); margin-bottom: 6px; overflow-wrap: anywhere; }
+.pca-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13.5px; }
+.pca-approvals-title, .pca-decided { margin: 0; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.pca-dot { width: 8px; height: 8px; border-radius: 9999px; flex: none; display: inline-block; }
+.pca-dot.is-amber { background: #faad14; } .pca-dot.is-green { background: #52c41a; } .pca-dot.is-red { background: #ff4d4f; }
+.pca-approval { border: 1px solid #faad14; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.pca-approval-head { font-weight: 600; display: flex; align-items: center; gap: 6px; overflow-wrap: anywhere; }
+.pca-params { margin: 0; max-height: 240px; overflow: auto; font-size: 12px; background: var(--surface-2, rgba(127,127,127,.08)); border-radius: 6px; padding: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.pca-approval-actions { display: flex; gap: 8px; }
+.pca-approval-actions button { min-height: 36px; }
 .media-key-state { font-size: 12.5px; color: var(--text-muted, #6b7280); margin-top: 2px; }
 .media-key-state .material-symbols-outlined { font-size: 16px; vertical-align: -3px; }
 .media-key-state.is-set .media-key-dot { background: #52c41a; }
@@ -2074,8 +2095,16 @@ body { overflow-x: clip; }
   .nav-drawer[data-show="publish"] .nav-drawer-item-dashboard,
   .nav-drawer[data-show="settings"] .nav-drawer-item-dashboard { display: none; }
   .nav-drawer-item, .profile-menu-item { min-height: 48px; font-size: 16px; }
-  .profile-menu { top: auto; left: 0; right: 0; bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px)); width: 100%; max-width: none; border-radius: 16px 16px 0 0; border-width: 1px 0 0; }
-  .profile-btn { display: none; }
+  /* Profile sits at the top right as on the web (LJrgkj70zFIXSG6PuwGg): the
+     topbar avatar stays visible and the menu drops down under it, kept inside
+     the screen with 16px gutters and scrolling if it is taller than the room. */
+  .profile-menu { max-height: calc(100dvh - var(--sticky-topbar-h, 56px) - var(--tabbar-h) - 24px - env(safe-area-inset-bottom, 0px)); overflow-y: auto; }
+  .profile-btn { min-width: 44px; }
+  /* With the avatar beside it, the bell is no longer the last control in the
+     bar, so its panel (right-aligned to the bell elsewhere) would run off the
+     left edge; on a phone it spans the topbar instead. */
+  .topbar-actions .kb-bell-wrap { position: static; }
+  .topbar-actions .kb-bell-panel { left: 0; right: 0; width: auto; top: calc(100% + 4px); }
   .nav-drawer-backdrop { z-index: 20; }
   .btn-primary, .btn-ghost, .notify-claude-btn, .icon-btn { min-height: 44px; }
 
@@ -2471,18 +2500,17 @@ body { overflow-x: clip; }
 .brand-type-name { font-family: "Kantumruy Pro", Roboto, sans-serif; font-size: 20px; font-weight: 600; }
 .brand-type-sample { font-family: "Kantumruy Pro", Roboto, sans-serif; font-size: 28px; color: #444; }
 @media (max-width: 640px) { .brand-umbrella { font-size: 24px; } }
-/* Brand Guidelines › Partners (co-branding): the list and a partner page's lockups, in the guidelines' own reading column (apple.css .docs-md).
+/* Brand Guidelines › Partners (co-branding): the pickers and a partner page's lockups, in the guidelines' own reading column (apple.css .docs-md).
    The lockup tiles keep literal white and black: they show the two brand surfaces, whatever the console theme. */
 .promote-back { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; color: var(--primary-text); text-decoration: none; font-weight: 500; }
 .promote-back .material-symbols-outlined { font-size: 20px; }
-.promote-partners { max-width: 70ch; margin: 8px auto 24px; }
-.partners-title { font-size: 20px; font-weight: 700; color: var(--text); margin: 0 0 12px; }
-.partner-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
-.partner-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 56px; padding: 8px 16px; border: 1px solid var(--border); border-radius: 8px; color: var(--text); text-decoration: none; background: var(--bg); }
-.partner-card:hover, .partner-card:focus-visible { border-color: var(--primary); background: var(--primary-tint); }
-.partner-card-text { display: flex; flex-direction: column; gap: 2px; }
-.partner-card-name { font-weight: 600; }
-.partner-card-meta { font-size: 13px; color: var(--text-muted); }
+/* The Partners and Markets pickers at the top of Brand Guidelines (ph-designer: labelled native selects, 6px radius, 14px Roboto). */
+.brand-pickers { display: flex; flex-wrap: wrap; gap: 12px 16px; max-width: 80ch; margin: 0 0 20px; }
+.brand-picker { display: flex; flex-direction: column; gap: 4px; min-width: 220px; }
+.brand-pickers[hidden], .brand-picker[hidden] { display: none; }
+.brand-picker-label { font-size: 12px; letter-spacing: 0.5px; text-transform: uppercase; color: var(--text-muted); }
+.brand-picker .pc-select { min-height: 44px; }
+@media (max-width: 640px) { .brand-picker { flex: 1 1 100%; } }
 .partner-lockups { max-width: 70ch; margin: 0 auto 24px; }
 .lockup-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .lockup { margin: 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
@@ -2671,6 +2699,33 @@ body { overflow-x: clip; }
 .pd-label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; }
 .pd-input { font: inherit; font-weight: 400; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; min-height: 40px; background: #fff; }
 .pd-fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; }
+/* Prospects (TAM) › AWS Partner Account Mapping (prospect-detail.js mappingHTML, prospects-page.js) */
+.pd-info { font-size: 15px; color: var(--text-muted); vertical-align: middle; cursor: help; }
+.pd-mapping-due { display: flex; align-items: center; gap: 6px; margin: 0 0 12px; padding: 8px 12px; font-size: 13px; color: var(--warning); background: rgba(201, 138, 10, .1); border: 1px solid var(--warning); border-radius: 6px; }
+.pd-mapping-due .material-symbols-outlined, .pd-chip-hp .material-symbols-outlined, .pd-joint-status .material-symbols-outlined { font-size: 16px; }
+#pd-mapping .pd-chips { margin-bottom: 12px; }
+.pd-chip-hp { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; background: var(--primary-tint); border-color: var(--primary); color: var(--primary-text); }
+.pd-prop, .prospect-prop { display: inline-block; font-size: 12px; font-weight: 600; line-height: 18px; padding: 1px 8px; border-radius: 9999px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); }
+.pd-prop-high, .prospect-prop-high { background: rgba(82, 196, 26, .14); border-color: #3f8f17; color: #1f5a08; }
+.pd-prop-medium, .prospect-prop-medium { background: rgba(201, 138, 10, .12); border-color: var(--warning); color: #6b4800; }
+.pd-joint { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.pd-joint-status { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; font-weight: 600; }
+.pd-joint-text { margin: 0; padding: 10px 12px; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 14px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; max-height: 320px; overflow-y: auto; }
+.pd-joint-input { font-size: 14px; }
+.pd-form-actions .material-symbols-outlined { font-size: 18px; vertical-align: middle; }
+.prospect-prop-cell { display: inline-flex; align-items: center; gap: 6px; }
+.prospect-hp { display: inline-flex; align-items: center; color: var(--primary-text); }
+.prospect-hp .material-symbols-outlined { font-size: 16px; }
+.prospect-awsmap-kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin: 0 0 12px; }
+.prospect-awsmap-kpi { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+.prospect-awsmap-kpi dt { font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .03em; }
+.prospect-awsmap-kpi dd { margin: 4px 0 0; font-size: 20px; font-weight: 700; }
+.prospect-awsmap-alert { display: flex; align-items: flex-start; gap: 6px; margin: 0 0 12px; padding: 8px 12px; font-size: 13px; border-radius: 6px; color: var(--warning); background: rgba(201, 138, 10, .1); border: 1px solid var(--warning); }
+.prospect-awsmap-alert.is-ok { color: #1f5a08; background: rgba(82, 196, 26, .1); border-color: #3f8f17; }
+.prospect-awsmap-alert .material-symbols-outlined { font-size: 16px; }
+.prospect-awsmap-result { margin: 0 0 12px; font-size: 13px; overflow-wrap: anywhere; }
+.prospect-awsmap-result.is-error { color: #b3261e; }
+.prospect-awsmap-file { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .pd-check { display: flex; align-items: center; gap: 8px; font-size: 14px; min-height: 32px; }
 .pd-form-error { margin: 0; color: var(--danger, #c62828); font-size: 14px; }
 .pd-form-actions { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -2790,6 +2845,17 @@ html[data-console-role="viewer"] .lead-prio-tools { display: none; }
 .lead-detail .lead-sum-actions .lead-delete, .lead-form-actions .lead-delete { margin-right: auto; }
 .lead-sum-contact-name { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin: 0; font-weight: 600; overflow-wrap: anywhere; }
 .lead-sum-role { font-weight: 500; }
+/* Lead summary → AWS funding (leads-page.js fundingHTML; rules in funding-core.js) */
+.lead-fund-prog { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.lead-fund-dot { width: 8px; height: 8px; border-radius: 9999px; flex: none; display: inline-block; margin-right: 6px; vertical-align: 1px; }
+.lead-fund-dot.is-green { background: #52c41a; } .lead-fund-dot.is-amber { background: #faad14; } .lead-fund-dot.is-red { background: #ff4d4f; }
+.lead-fund-prog .lead-fund-dot { margin-right: 0; }
+.lead-fund-pill { font-size: 11.5px; line-height: 20px; }
+.lead-fund-draft { color: var(--primary-text); }
+.lead-fund-reply { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; }
+.lead-fund-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.lead-fund-actions button, .lead-fund-link { min-height: 44px; }
+.lead-fund-link { display: inline-flex; align-items: center; text-decoration: none; white-space: nowrap; }
 /* The lead form: a sheet of grouped rows. */
 .lead-panel { max-width: 600px; max-height: 90vh; overflow-y: auto; }
 #lead-contacts, #lead-existing, #lead-enrichment { display: flex; flex-direction: column; gap: 24px; }
@@ -2963,6 +3029,7 @@ html[data-console-role="viewer"] .lead-prio-tools { display: none; }
 .funnel-bar-0 { background: #169bc2; } .funnel-bar-1 { background: #1f93c0; } .funnel-bar-2 { background: #3a8bc4; }
 .funnel-bar-3 { background: #5a82c9; } .funnel-bar-4 { background: #7a79d0; } .funnel-bar-5 { background: #9747ff; }
 .funnel-bar-6 { background: #8c52e6; } .funnel-bar-7 { background: #7d5bc9; } .funnel-bar-8 { background: #3d9970; }
+.funnel-bar-revenue { background: #09759c; } /* Revenue: an amount, drawn as wide as Deployed, in primary-active */
 .funnel-stage-rates { display: flex; flex-direction: column; gap: 1px; font-size: 14px; font-weight: 600; }
 .funnel-rate small { font-weight: 400; color: var(--text-muted); font-size: 12px; }
 .funnel-rate-top { color: var(--text-muted); font-weight: 500; }
@@ -3172,8 +3239,33 @@ html[data-console-role="viewer"] .lead-prio-tools { display: none; }
 .dash-trend-up { color: var(--success); }
 .dash-trend-down { color: var(--danger); }
 .dash-flag { display: inline-flex; align-items: center; gap: 4px; color: var(--warning); font-weight: 600; }
+/* A count that opens its list (uAp6fukjDyNxKusotmcQ): a span in a tile, a link
+   in the panel and the list. Underlined on hover, so it reads as its own target. */
+.dash-go { color: inherit; text-decoration: none; cursor: pointer; border-radius: 4px; }
+.dash-go:hover, a.dash-go:focus-visible { color: var(--primary-text); text-decoration: underline; text-underline-offset: 2px; }
+.dash-go:hover b, a.dash-go:focus-visible b { color: var(--primary-text); }
+a.dash-go:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.dash-flag .dash-go { display: inline-flex; align-items: center; gap: 4px; }
+.dash-col.dash-go:hover, .dash-pipe-step.dash-go:hover, .dash-mini-step.dash-go:hover { text-decoration: none; box-shadow: inset 0 0 0 1px var(--primary); }
+.dash-item { padding: 0; font: inherit; font-weight: inherit; color: inherit; text-align: left; }
+.dash-item:hover, .dash-item:focus-visible { color: var(--primary-text); text-decoration: underline; text-underline-offset: 2px; }
+/* The list view replaces the tiles and Needs attention (#dashboard?list=…). */
+.dash-listing #dash-groups, .dash-listing #needs-attention { display: none !important; }
+.dash-list { max-width: 960px; }
+.dash-list-back { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 600; color: var(--primary-text); margin-bottom: 12px; }
+.dash-list-back .material-symbols-outlined { font-size: 18px; }
+.dash-list-head { display: flex; align-items: center; gap: 8px; }
+.dash-list-title { margin: 0; font-size: 16px; font-weight: 600; }
+.dash-list-count { margin: 4px 0 12px; font-size: 13px; color: var(--text-muted); }
+.dash-list-count b { color: var(--text); font-variant-numeric: tabular-nums; }
+.dash-list-rows > li { padding: 8px 0; }
 /* Conversion Funnel: a source failed on the last ingest (funnel-page.js). */
 #funnel-status.funnel-status-flag { color: var(--danger); font-weight: 500; }
+/* GA4 access problem: the values and the link the fix needs (funnel-page.js renderAccess). */
+.funnel-access { display: flex; flex-wrap: wrap; gap: 8px; margin: -4px 0 12px; }
+.funnel-access[hidden] { display: none; }
+.funnel-access-btn { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
+.funnel-access-btn .material-symbols-outlined { font-size: 16px; }
 /* Tile content (cMyA3FMlUUrSjGtPkLZC): Staff Kanban's columns, the Leads
    pipeline and the mini funnel, a row of small cells under the headline.
    The biggest drop-off in the funnel is amber. */
@@ -3231,6 +3323,16 @@ html[data-console-role="viewer"] .lead-prio-tools { display: none; }
 .dash-panel-body > .dash-tip-title, .dash-panel-body > .dash-tip-empty, .dash-panel-body > .dash-tip-wide { grid-column: 1 / -1; }
 .dash-panel-body > .dash-tip-list { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 0 24px; }
 .dash-tip-col { min-width: 0; }
+/* A panel section heading with its own link through to the list (Flow & blockers' retested tickets). */
+.dash-panel-body > .dash-tip-head { grid-column: 1 / -1; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin-top: 12px; }
+.dash-tip-head > .dash-tip-title { margin: 0; }
+.dash-tip-open {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; min-height: 32px;
+  border: 0; border-radius: 6px; background: none; font: inherit; font-size: 13px; color: var(--primary); cursor: pointer;
+}
+.dash-tip-open:hover { background: var(--primary-tint); }
+.dash-tip-open .material-symbols-outlined { font-size: 16px; }
+.dash-tip-open:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 .dash-tip-title { margin: 8px 0 4px; font-size: 12px; font-weight: 700; }
 .dash-panel-body > .dash-tip-title:first-child, .dash-tip-col > .dash-tip-title:first-child { margin-top: 0; }
 .dash-tip-empty { margin: 0 0 4px; color: var(--text-muted); }
@@ -3244,6 +3346,22 @@ html[data-console-role="viewer"] .lead-prio-tools { display: none; }
 .dash-tip-warn { display: block; color: var(--warning); }
 .dash-tip-grid { display: grid; grid-template-columns: 1fr auto 1fr auto; gap: 0 10px; margin-top: 2px; color: var(--text-muted); }
 .dash-tip-grid b { color: var(--text); text-align: right; }
+/* Delivery: the range switch (Yesterday / Last 7 days) and each figure's change on the previous period. */
+.dash-range { margin: 0 0 8px; }
+.dash-range > button { min-height: 44px; } /* 44px touch targets, like every control on the board */
+.dash-delivery-grid { grid-template-columns: 1fr auto minmax(56px, auto); }
+.dash-delivery-grid .dash-change { justify-content: flex-end; }
+.dash-sub .dash-change { margin-left: 2px; }
+.dash-sub .dash-change .material-symbols-outlined { margin-right: 0; vertical-align: 0; }
+/* Inbox filter at the top of the AI drafts / Resolved summaries (a segmented
+   control, css/apple.css .seg). It wraps on a narrow screen rather than
+   scrolling, so every inbox stays in view. */
+.dash-panel-body > .dash-inbox-filter { grid-column: 1 / -1; justify-self: start; flex-wrap: wrap; overflow-x: visible; margin: 0 0 8px; }
+.dash-inbox-filter > button { min-height: 44px; font: inherit; font-weight: 500; color: var(--text); cursor: pointer; }
+.dash-inbox-filter > .dash-inbox-on { color: var(--primary); }
+.dash-inbox-filter > button:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.dash-inbox-count { color: var(--text-muted); font-weight: 400; font-variant-numeric: tabular-nums; }
+.dash-inbox-only { color: var(--primary); }
 /* Needs attention sits below the tiles, in normal flow. */
 .dash-groups + .needs-attention { margin-top: 8px; }
 @media (max-width: 1439px) { .dash-groups { --cols: 3; } }
@@ -3285,6 +3403,46 @@ html[data-console-role="viewer"] .lead-prio-tools { display: none; }
 /* A document is read in full: no scroll box around the body. */
 .fa-library-docs .fa-body-viewer { max-height: none; }
 .fa-library-docs #fa-body-editor .ql-editor { max-height: 70vh; }
+
+/* The document reader (#doc/<id>, openDocReaderPage in app.js): read-only,
+   the whole content area, a centred column sized for reading (16px Roboto,
+   1.7 line height, about 75 characters a line). Wide tables, code and
+   images scroll inside the column rather than squeezing the text. */
+.doc-reader-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; max-width: 760px; margin: 0 auto 8px; }
+.doc-reader-back {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 4px 8px 4px 4px; border: none; border-radius: 6px;
+  background: transparent; font: inherit; font-size: 14px; color: var(--text-muted); cursor: pointer; min-width: 0;
+}
+.doc-reader-back span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-reader-back:hover { background: var(--surface-2); color: var(--text); }
+.doc-reader-back .material-symbols-outlined, .doc-reader-edit .material-symbols-outlined { font-size: 20px; }
+.doc-reader-edit { display: inline-flex; align-items: center; justify-content: center; min-width: 36px; min-height: 36px; }
+.doc-reader-edit:hover { color: var(--primary); }
+.doc-reader { max-width: 760px; margin: 0 auto 24px; padding: 32px 40px 40px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; color: var(--text); }
+.doc-reader-path { margin: 0 0 6px; font-size: 13px; color: var(--text-muted); }
+.doc-reader-title { margin: 0 0 10px; font-size: 28px; line-height: 1.25; font-weight: 700; overflow-wrap: anywhere; }
+.doc-reader-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0 0 16px; font-size: 13px; color: var(--text-muted); }
+.doc-reader-meta .badge { margin-left: 0; }
+.doc-reader-summary { margin: 0 0 20px; font-size: 17px; line-height: 1.6; color: var(--text-muted); }
+.doc-reader .doc-reader-body {
+  border: none; border-top: 1px solid var(--border); border-radius: 0; padding: 20px 0 0; background: transparent;
+  max-width: none; max-height: none; min-height: 0; overflow: visible; font-size: 16px; line-height: 1.7;
+}
+.doc-reader-body h1 { font-size: 24px; margin: 28px 0 10px; }
+.doc-reader-body h2 { font-size: 21px; margin: 26px 0 8px; }
+.doc-reader-body h3 { font-size: 18px; margin: 22px 0 6px; }
+.doc-reader-body h4 { font-size: 16px; margin: 18px 0 6px; }
+.doc-reader-body p, .doc-reader-body ul, .doc-reader-body ol { margin: 0 0 14px; }
+.doc-reader-body li { margin: 0 0 4px; }
+.doc-reader-body table { font-size: 14px; }
+.doc-reader-body code, .doc-reader-body pre, .doc-reader-body pre.ql-syntax { font-size: 13.5px; }
+.doc-reader-body .faq-table, .doc-reader-body pre { max-width: 100%; overflow-x: auto; }
+.doc-reader-body img { height: auto; }
+.doc-reader-source { margin: 24px 0 0; }
+@media (max-width: 640px) {
+  .doc-reader { padding: 20px 16px 28px; }
+  .doc-reader-title { font-size: 23px; }
+}
 .fa-body-viewer blockquote { border-left: 3px solid var(--border); margin: 0 0 10px; padding: 2px 12px; color: var(--text-muted); }
 
 /* ── Aidan in the console (yvnAPPAW9ROLrNwJceyn): js/aidan-chat.js ──────────
@@ -3426,3 +3584,23 @@ html:has(.modal-backdrop:not([hidden]), .cmdk-backdrop:not([hidden])) .aidan-pan
   html.aidan-chat-open .aidan-launcher { display: none; }
   .aidan-msg { max-width: 90%; }
 }
+
+/* Promote › License Manager (#licences-page, js/licences-page.js). Reuses the ACE grid,
+   status dot, pill and alert; these are its own pieces. */
+#licences-page { --ace-muted: #5f6368; }
+:root[data-theme="dark"] #licences-page { --ace-muted: rgba(235, 235, 245, .72); }
+.licences-tab-count { font-weight: 400; }
+.licences-contact, .licences-tam { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
+.licences-unlink { flex: none; min-height: 28px; padding: 0 8px; font-size: 12px; }
+.licences-review-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.licences-review-item { display: flex; flex-direction: column; gap: 6px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; min-width: 0; }
+.licences-review-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.licences-review-company { font-size: 16px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+.licences-review-who { font-size: 14px; color: var(--text); overflow-wrap: anywhere; }
+.licences-review-facts { font-size: 13px; color: var(--ace-muted); overflow-wrap: anywhere; }
+.licences-review-error { font-size: 13px; color: #b71c1c; overflow-wrap: anywhere; }
+:root[data-theme="dark"] .licences-review-error { color: #ff7875; }
+.licences-suggest { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.licences-suggest-label { font-size: 13px; color: var(--ace-muted); }
+.licences-pick { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.licences-pick select { flex: 1 1 220px; min-width: 0; max-width: 420px; min-height: 36px; }

@@ -326,5 +326,168 @@ const sum = (rows, f) => rows.reduce((n, r) => n + (r[f] || 0), 0);
     assert.match(block, /secrets: \[BOARD_API_KEY\]/);
   });
 
+  // ── The Partner Central S3 data export (functions/pc-export.js) ──
+  const pcx = require("../functions/pc-export");
+  const OPP_CSV = 'Opportunity ID,Customer Company Name,Stage,Created Date,Demand Center Campaign,Mystery Column\r\nO-1,"Burger Co, Ltd",Launched,2026-10-01,DC Spring,x\r\nO-2,Unknown Ltd,Qualified,2026-11-01,,y\r\n';
+  const REV_CSV = 'Opportunity ID,Revenue Month,Attributed Revenue (USD),Marketplace Revenue,Funding Utilised,Currency\nO-1,2026-11,"$1,200.50",900,300,USD\nO-1,2026-11,100,0,0,USD\nO-2,2026-11,,250,,USD\n';
+  function fakeS3(files, { failWith = null } = {}) {
+    const calls = [];
+    return {
+      calls,
+      list: async (cfg) => { calls.push(["list", cfg.bucket, cfg.prefix]); if (failWith) throw new Error(failWith); return Object.entries(files).map(([key, f]) => ({ key, etag: f.etag || "e1", size: f.body.length, lastModified: f.at })); },
+      read: async ({ key }) => { calls.push(["read", key]); return files[key].body; },
+    };
+  }
+  const EXPORT = { "pc/2026-11-18/opportunities.csv": { body: OPP_CSV, at: "2026-11-18T02:00:00Z" }, "pc/2026-11-18/revenue.csv": { body: REV_CSV, at: "2026-11-18T02:01:00Z" }, "pc/2026-11-11/revenue.csv": { body: "Opportunity ID,Marketplace Revenue\nO-9,999\n", at: "2026-11-11T02:00:00Z" }, "pc/readme.txt": { body: "x", at: "2026-11-19T00:00:00Z" } };
+
+  await test("pc-export: CSV with quotes and CRLF, headers read by alias, unknown headers listed", () => {
+    assert.deepStrictEqual(pcx.parseCsv('a,"b ""q"", c"\r\n1,2\r\n'), [["a", 'b "q", c'], ["1", "2"]]);
+    const p = pcx.parseExportFile("o.csv", OPP_CSV);
+    assert.strictEqual(p.records[0].opportunityId, "O-1");
+    assert.strictEqual(p.records[0].customer, "Burger Co, Ltd");
+    assert.strictEqual(p.records[0].campaign, "DC Spring");
+    assert.deepStrictEqual(p.unknown, ["Mystery Column"]);
+    const j = pcx.parseExportFile("o.json", JSON.stringify({ opportunities: [{ Id: "O-3", Customer: { Account: { CompanyName: "Nested Co" } }, LifeCycle: { Stage: "Launched" } }] }));
+    assert.strictEqual(j.records[0].opportunityId, "O-3");
+    assert.strictEqual(j.records[0].customer, "Nested Co", "a nested JSON opportunity is read too");
+    assert.strictEqual(pcx.money("$1,200.50"), 1200.5);
+    assert.strictEqual(pcx.money("(12)"), -12);
+    assert.strictEqual(pcx.dayOf("2026-11"), "2026-11-01");
+    assert.strictEqual(pcx.dayOf("11/5/2026"), "2026-11-05");
+  });
+
+  await test("pc-export: entries per opportunity and day, revenue summed, the newest run's files only", () => {
+    const run = pcx.latestRun(Object.entries(EXPORT).map(([key, f]) => ({ key, etag: "e", size: f.body.length, lastModified: f.at })), "pc/");
+    assert.deepStrictEqual(run.map((o) => o.key).sort(), ["pc/2026-11-18/opportunities.csv", "pc/2026-11-18/revenue.csv"], "the newest run folder; a .txt is not data");
+    const loose = pcx.latestRun([{ key: "a.csv", size: 1, lastModified: "2026-11-18T02:00:00Z" }, { key: "b.csv", size: 1, lastModified: "2026-11-18T01:00:00Z" }, { key: "c.csv", size: 1, lastModified: "2026-11-10T01:00:00Z" }], "");
+    assert.deepStrictEqual(loose.map((o) => o.key), ["a.csv", "b.csv"], "loose files: one run = written within 6 hours");
+    const recs = [...pcx.parseExportFile("o.csv", OPP_CSV).records, ...pcx.parseExportFile("r.csv", REV_CSV).records];
+    const { entries, opportunities } = pcx.exportEntries(recs);
+    assert.strictEqual(opportunities.length, 2);
+    const o1 = entries.find((e) => e.opportunityId === "O-1");
+    assert.deepStrictEqual([o1.day, o1.attributedRevenue, o1.marketplaceRevenue, o1.fundingUsed, o1.campaign, o1.stage], ["2026-11-01", 1300.5, 900, 300, "DC Spring", "Launched"]);
+  });
+
+  await test("pc-export: joined on the ACE id, then company to prospects and leads; rows replace the last import", async () => {
+    const db = fakeDb({
+      leads: { L1: { company: { name: "Burger Co", industry: "QSR", countries: ["UK"] }, source: "Google Ads", sourceLabel: "Calculator", createdAt: "2026-11-01T00:00:00Z" } },
+      prospects: { P1: { name: "Burger Co Ltd", industry: "QSR", country: "United Kingdom", campaigns: ["Other"] } },
+      funnelDaily: { stale: { date: "2026-09-01", source: "pc-export", attributedRevenue: 5 } },
+      consoleConfig: { funnelIngest: { pcExportBucket: "ph-pc-export", pcExportPrefix: "pc/" } },
+    });
+    const s3 = fakeS3(EXPORT);
+    const partnerCentral = { aceOpportunities: async () => ({ opportunities: [{ id: "O-1", customer: "Burger Co", stage: "Launched", industry: "QSR", createdDate: "2026-10-01T00:00:00Z" }] }) };
+    const out = await job(db, ga4Answers(), { pcExportS3: s3, partnerCentral }).run({ mode: "daily" });
+    assert.strictEqual(out.sources["pc-export"].ok, true);
+    const rows = [...db.col("funnelDaily").values()].filter((r) => r.source === "pc-export");
+    assert.strictEqual(rows.length, 2, "the stale row from the last import is gone");
+    const r1 = rows.find((r) => r.aceId === "O-1");
+    assert.deepStrictEqual([r1.date, r1.company, r1.industry, r1.country, r1.channel, r1.campaign, r1.content, r1.attributedRevenue, r1.currency], ["2026-11-01", "Burger Co", "QSR", "United Kingdom", "Google Ads", "DC Spring", "Calculator", 1300.5, "USD"]);
+    const st = db.col("consoleConfig").get("funnelIngest").sources["pc-export"];
+    assert.deepStrictEqual([st.recordsRead, st.joined, st.rows, st.unknownHeaders], [5, 1, 2, ["Mystery Column"]]);
+    assert.deepStrictEqual(s3.calls[0], ["list", "ph-pc-export", "pc/"]);
+    // The same files again: not re-read, rows kept.
+    const before = s3.calls.length;
+    await job(db, ga4Answers(), { pcExportS3: s3, partnerCentral }).run({ mode: "daily" });
+    assert.strictEqual(s3.calls.length, before + 1, "an unchanged export is listed, not read");
+    assert.strictEqual(db.col("consoleConfig").get("funnelIngest").sources["pc-export"].unchanged, true);
+    assert.strictEqual([...db.col("funnelDaily").values()].filter((r) => r.source === "pc-export").length, 2);
+  });
+
+  await test("pc-export: not set up is neutral, a failing bucket is flagged and keeps its rows", async () => {
+    const db = fakeDb({ leads: {} });
+    const out = await job(db, ga4Answers(), { pcExportS3: fakeS3(EXPORT) }).run({ mode: "daily" });
+    assert.deepStrictEqual([out.sources["pc-export"].ok, out.sources["pc-export"].notSetUp], [true, true]);
+    assert.ok(!out.failed.includes("pc-export"));
+    const db2 = fakeDb({ leads: {}, prospects: {}, funnelDaily: { k: { date: "2026-11-01", source: "pc-export", attributedRevenue: 5 } }, consoleConfig: { funnelIngest: { pcExportBucket: "ph-pc-export" } } });
+    const out2 = await job(db2, ga4Answers(), { pcExportS3: fakeS3(EXPORT, { failWith: "S3 answered AccessDenied: no s3:ListBucket" }) }).run({ mode: "daily" });
+    assert.ok(out2.failed.includes("pc-export"));
+    assert.match(out2.sources["pc-export"].error, /AccessDenied/);
+    assert.ok(db2.col("funnelDaily").has("k"), "a failed import keeps the earlier rows");
+    assert.strictEqual(pcx.exportConfig({ pcExportBucket: "Bad Bucket!" }), null, "an invalid bucket name is not set up");
+    assert.deepStrictEqual(pcx.exportConfig({ pcExportBucket: "b-1", pcExportRegion: "eu-west-2" }), { bucket: "b-1", prefix: "", region: "eu-west-2" });
+  });
+
+  await test("pc-export: S3 is read with SigV4 (query signed), never an access key in config", async () => {
+    const seen = [];
+    const fetch = async (url, init) => {
+      seen.push({ url, headers: init.headers });
+      const body = url.includes("list-type=2")
+        ? '<ListBucketResult><IsTruncated>false</IsTruncated><Contents><Key>pc/a b.csv</Key><LastModified>2026-11-18T02:00:00.000Z</LastModified><ETag>&quot;abc&quot;</ETag><Size>10</Size></Contents></ListBucketResult>'
+        : "Opportunity ID\nO-1\n";
+      return { ok: true, status: 200, text: async () => body };
+    };
+    const s3 = pcx.createS3Reader({ credentials: async () => ({ accessKeyId: "AKIA", secretAccessKey: "S", sessionToken: "T" }), fetch, now: () => NOW });
+    const objs = await s3.list({ bucket: "ph-pc-export", region: "us-east-1", prefix: "pc/" });
+    assert.deepStrictEqual(objs[0], { key: "pc/a b.csv", lastModified: "2026-11-18T02:00:00.000Z", etag: "abc", size: 10 });
+    assert.strictEqual(seen[0].url, "https://ph-pc-export.s3.amazonaws.com/?list-type=2&prefix=pc%2F");
+    assert.match(seen[0].headers.authorization, /^AWS4-HMAC-SHA256 Credential=AKIA\/\d{8}\/us-east-1\/s3\/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-security-token, Signature=[0-9a-f]{64}$/);
+    await s3.read({ bucket: "ph-pc-export", region: "eu-west-2", key: "pc/a b.csv" });
+    assert.strictEqual(seen[1].url, "https://ph-pc-export.s3.eu-west-2.amazonaws.com/pc/a%20b.csv");
+    const failing = pcx.createS3Reader({ credentials: async () => ({ accessKeyId: "A", secretAccessKey: "S" }), fetch: async () => ({ ok: false, status: 403, text: async () => "<Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>" }) });
+    await assert.rejects(failing.list({ bucket: "b-1", region: "us-east-1", prefix: "" }), /S3 answered AccessDenied: Access Denied/);
+    const idx = fs.readFileSync(path.join(__dirname, "../functions/index.js"), "utf8");
+    assert.match(idx, /pcExportS3: createS3Reader\(\{ credentials: \(\) => getPartnerCentralApi\(\)\.awsCredentials\(\) \}\)/, "the keyless role credentials, no stored key");
+    const role = fs.readFileSync(path.join(__dirname, "../deploy/aws/partner-central-role.yaml"), "utf8");
+    assert.match(role, /Action: s3:ListBucket\n\s+Resource: !Sub "arn:aws:s3:::\$\{ExportBucketName\}"/);
+    assert.match(role, /Action: s3:GetObject\n\s+Resource: !Sub "arn:aws:s3:::\$\{ExportBucketName\}\/\*"/);
+    assert.doesNotMatch(role, /s3:PutObject|s3:\*/, "read only");
+  });
+
+  await test("GA4 access: a 403 is sorted into no access or API disabled; anything else is not an access problem", () => {
+    const e = (status, msg) => Object.assign(new Error(`GA4 answered ${status}: ${msg}`), { status });
+    assert.strictEqual(fi.ga4AccessProblem(e(403, "User does not have sufficient permissions for this property. To learn more about Property ID, see https://developers.google.com/analytics/devguides/reporting/data/v1/property-id.")), "no-access");
+    assert.strictEqual(fi.ga4AccessProblem(e(403, "Google Analytics Data API has not been used in project 410903316373 before or it is disabled.")), "api-disabled");
+    assert.strictEqual(fi.ga4AccessProblem(new Error("GA4 answered 403: User does not have sufficient permissions for this property.")), "no-access", "read from the message when the status is not on the error");
+    assert.strictEqual(fi.ga4AccessProblem(e(401, "Request had invalid authentication credentials.")), "");
+    assert.strictEqual(fi.ga4AccessProblem(e(500, "backend error")), "");
+  });
+
+  await test("GA4 access: a refused property records the account it ran as, the property and the project, and retries hourly", async () => {
+    const db = fakeDb({ leads: {} });
+    const refuse = async () => ({ ok: false, status: 403, text: async () => JSON.stringify({ error: { code: 403, message: "User does not have sufficient permissions for this property.", status: "PERMISSION_DENIED" } }) });
+    let t = NOW;
+    let asked = 0;
+    const j = fi.createFunnelIngestJob({ db, fetch: refuse, ga4AccessToken: async () => "T", serviceAccountEmail: async () => { asked++; return "123-compute@developer.gserviceaccount.com"; }, gcpProject: "backlog-tracker-e4ed2", logger: quiet, now: () => t });
+    const out = await j.runIfDue({ budgetMs: 0 });
+    assert.strictEqual(out.mode, "backfill");
+    assert.deepStrictEqual(out.failed, fi.GA4_SOURCES.map(([src]) => src));
+    let st = db.col("consoleConfig").get("funnelIngest");
+    assert.deepStrictEqual({ ...st.ga4Access, at: "" }, { ok: false, problem: "no-access", serviceAccount: "123-compute@developer.gserviceaccount.com", propertyId: fi.DEFAULT_PROPERTY_ID, project: "backlog-tracker-e4ed2", at: "" });
+    assert.strictEqual(asked, 1, "the account is read once per run");
+    assert.strictEqual(st.sources.leads.ok, true, "leads still update");
+    // Refused on access: the next hourly call (50 minutes on) tries again, not 6 hours on.
+    t = new Date(NOW.getTime() + 30 * 60e3);
+    assert.deepStrictEqual(await j.runIfDue(), { skipped: "not due" });
+    t = new Date(NOW.getTime() + fi.ACCESS_RETRY_MS + 1);
+    // Access granted: the retry backfills, records the access as fine, and the 6-hour rhythm returns.
+    const ok = fi.createFunnelIngestJob({ db, fetch: ga4Answers(), ga4AccessToken: async () => "T", serviceAccountEmail: async () => "123-compute@developer.gserviceaccount.com", logger: quiet, now: () => t });
+    const again = await ok.runIfDue({ budgetMs: 0 });
+    assert.strictEqual(again.mode, "backfill");
+    assert.deepStrictEqual(again.failed, []);
+    st = db.col("consoleConfig").get("funnelIngest");
+    assert.strictEqual(st.ga4Access.ok, true);
+    assert.strictEqual(st.ga4Access.problem, "");
+    assert.ok(st.backfilledAt);
+    t = new Date(t.getTime() + fi.ACCESS_RETRY_MS + 1);
+    assert.deepStrictEqual(await ok.runIfDue(), { skipped: "not due" }, "back to every 6 hours once GA4 answers");
+  });
+
+  await test("GA4 access: an unknown account is recorded as empty, never guessed; a failing lookup does not stop the run", async () => {
+    const db = fakeDb({ leads: {} });
+    const off = async () => ({ ok: false, status: 403, text: async () => JSON.stringify({ error: { message: "Google Analytics Data API has not been used in project 1 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/analyticsdata.googleapis.com/overview?project=1" } }) });
+    const out = await fi.createFunnelIngestJob({ db, fetch: off, ga4AccessToken: async () => "T", serviceAccountEmail: async () => { throw new Error("no metadata server"); }, logger: quiet, now: () => NOW }).run({ mode: "daily" });
+    assert.ok(out.failed.includes("ga4-total"));
+    const ga = db.col("consoleConfig").get("funnelIngest").ga4Access;
+    assert.strictEqual(ga.problem, "api-disabled");
+    assert.strictEqual(ga.serviceAccount, "");
+    // A run that never reached GA4 (other sources only) leaves the last record alone.
+    await fi.createFunnelIngestJob({ db, fetch: off, ga4AccessToken: async () => "T", logger: quiet, now: () => NOW }).run({ mode: "daily", only: ["leads"] });
+    assert.strictEqual(db.col("consoleConfig").get("funnelIngest").ga4Access.problem, "api-disabled");
+    const idx = fs.readFileSync(path.join(__dirname, "../functions/index.js"), "utf8");
+    assert.match(idx, /serviceAccountEmail: async \(\) => \{\s+try \{ const c = await auth\.getCredentials\(\);/, "index.js reads the account from the credentials");
+    assert.match(idx, /computeMetadata\/v1\/instance\/service-accounts\/default\/email/, "then from the metadata server");
+  });
+
   console.log(`funnel-ingest: ${count} passed`);
 })().catch((err) => { console.error(err); process.exit(1); });

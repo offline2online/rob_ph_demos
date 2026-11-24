@@ -2,9 +2,9 @@
 // Days are the viewer's local days, so every instant here is built with the
 // local Date constructor, never a UTC string.
 import assert from "node:assert";
-import { localDayRange, fmtEffort, trend, fmtWait, deliveryKpi, flowKpi, firstTimePass, kanbanKpi, dashboardRelease, leadsKpi, leadSourceGroup, funnelKpi, needsPersonKpi, draftsKpi, resolvedKpi, isBuilding, isWebsiteLead, lastDays, dailyCounts, sparklinePoints, trendShort, tileStatus, rowEnd } from "../public/js/dashboard-core.js";
-import { normaliseTicket, queueCounts } from "../public/js/support-core.js";
-import { currentReleaseId } from "../public/js/kanban/kanban-core.js";
+import { localDayRange, fmtEffort, trend, deliveryPeriod, periodWindows, countChange, passChange, deliveryRange, fmtWait, deliveryKpi, flowKpi, firstTimePass, kanbanKpi, dashboardRelease, leadsKpi, leadSourceGroup, funnelKpi, needsPersonKpi, draftsKpi, resolvedKpi, isBuilding, isWebsiteLead, lastDays, dailyCounts, sparklinePoints, trendShort, tileStatus, rowEnd, drillRows, drillHash, parseDrill, kanbanDrillHash, KANBAN_COLUMNS, localIsoDay, DRILL_LISTS } from "../public/js/dashboard-core.js";
+import { normaliseTicket, queueCounts, INBOXES } from "../public/js/support-core.js";
+import { currentReleaseId, filterTasks, SHOW_COLUMNS } from "../public/js/kanban/kanban-core.js";
 
 const at = (d, h = 12, m = 0) => new Date(2026, 10, d, h, m).getTime(); // November 2026, local
 const NOW = at(17, 9, 30);
@@ -101,6 +101,25 @@ assert.ok(!isBuilding({ status: "backlog", lastFire: { status: "started", at: at
   assert.strictEqual(tileStatus("flow", fk).level, "alert", "red at three or more stuck");
   assert.strictEqual(tileStatus("flow", flowKpi(flow.slice(0, 1), projects, NOW)).level, "warn");
   assert.strictEqual(tileStatus("flow", flowKpi([], projects, NOW)).level, "ok");
+  assert.deepStrictEqual([fk.retestedCount, fk.retested], [0, []], "nothing sent back: nothing retested");
+}
+// Retested tickets (0I93kb0fqXL4Qr4qyzwv): beside the stuck count, every
+// ticket not archived that went back through retesting, and how many times.
+{
+  const sb = (day, line, extra = {}) => ({ at: new Date(at(day)).toISOString(), by: "person", who: "tester@example.com", line, counted: true, ...extra });
+  const loops = [
+    { id: "r1", title: "Twice", projectId: "p1", status: "ready-for-testing", testRound: 3, sendBackCount: 2, countedSendBacks: 2, sendBacks: [sb(10, "a"), sb(12, "b")] },
+    { id: "r2", title: "Once", projectId: "p2", status: "published-live", testRound: 2, sendBackCount: 1, countedSendBacks: 1, sendBacks: [sb(11, "c")] },
+    { id: "r3", title: "Flaky only", projectId: "p1", status: "ready-for-testing", testRound: 1, sendBackCount: 1, countedSendBacks: 0, sendBacks: [sb(11, "d", { by: "tests", counted: false })] },
+    { id: "r4", title: "Archived", projectId: "p1", status: "archived", testRound: 2, sendBackCount: 1, countedSendBacks: 1, sendBacks: [sb(9, "e")] },
+    { id: "r5", title: "Never sent back", projectId: "p1", status: "ready-for-testing", testRound: 1, sendBackCount: 0, countedSendBacks: 0, sendBacks: [] },
+  ];
+  const rk = flowKpi(loops, projects, NOW);
+  assert.strictEqual(rk.retestedCount, 2, "counted send-backs only; archived left out");
+  assert.deepStrictEqual(rk.retested.map((r) => [r.id, r.times, r.round]), [["r1", 2, 3], ["r2", 1, 2]], "most retested first, times = counted send-backs");
+  assert.strictEqual(rk.retested[0].project, "Backlog Tracker & FAQs");
+  assert.strictEqual(rk.value, 0, "a retested ticket is not stuck by itself");
+  assert.strictEqual(tileStatus("flow", rk).level, "ok", "retested tickets leave the tile's colour alone");
 }
 
 // ── Staff Kanban ──────────────────────────────────────────────────────────
@@ -300,17 +319,56 @@ assert.strictEqual(np.tickets[1].customer, "Customer 2");
 assert.strictEqual(tileStatus("person", np).level, "alert", "red when the oldest has waited a day");
 assert.strictEqual(tileStatus("person", needsPersonKpi([tickets[0]], NOW)).level, "warn");
 assert.deepStrictEqual(needsPersonKpi([], NOW), { count: 0, oldestMs: null, tickets: [] });
-const dr = draftsKpi(tickets, NOW);
+// Needs a person is support queries only (j7fSAp4aZO4HGd7iCR3G): an Aidan request whose
+// reply came back to support@, and support@ mail that is not about PH, are not counted.
+{
+  const mixed = [
+    t("q", { status: "open", needsHuman: true, inboxes: ["support"], lastInboundAt: at(17, 7) }),
+    t("ai", { status: "open", needsHuman: true, inboxes: ["support", "aidan"], aidan: { status: "needs-person", reason: "No skill matches." }, lastInboundAt: at(16, 7) }),
+    t("un", { status: "open", needsHuman: true, highValue: true, unrelated: true, inboxes: ["support"], lastInboundAt: at(16, 7) }),
+    t("au", { status: "open", needsHuman: true, automated: "noreply", lastInboundAt: at(16, 7) }),
+    t("sp", { status: "open", needsHuman: true, spamLikely: true, lastInboundAt: at(16, 7) }),
+  ];
+  const k = needsPersonKpi(mixed, NOW);
+  assert.deepStrictEqual(k.tickets.map((x) => x.id), ["q"], "only the platform query to support@");
+  assert.strictEqual(k.count, queueCounts(mixed, "support")["needs-person"], "still equals the Support Inbox tab's queue");
+}
+const dr = draftsKpi(tickets, NOW, "support");
 assert.strictEqual(dr.count, queueCounts(tickets, "support")["ai-drafts"], "equals the AI drafts to approve queue count");
 assert.deepStrictEqual(dr.drafts.map((d) => [d.id, d.confidence]), [["15", 0.91], ["3", 0.62]], "each draft with its confidence, most confident first");
 assert.strictEqual(dr.high, 1);
 assert.strictEqual(tileStatus("drafts", dr).level, "warn");
-const rs = resolvedKpi(tickets, NOW);
+const rs = resolvedKpi(tickets, NOW, "support");
 assert.deepStrictEqual([rs.value, rs.prev, rs.aiCount, rs.aiPct], [3, 1, 1, 33], "resolved yesterday: 4, 5 and 6; only 4 by the AI with no person");
 assert.strictEqual(rs.trend.dir, "up");
 assert.deepStrictEqual(rs.gaps.map((g) => g.id), ["13", "12"], "the Help Centre couldn't answer, last 30 days, newest first; spam and Hello left out");
 assert.strictEqual(resolvedKpi([], NOW).aiPct, null, "nothing resolved: no share");
 assert.strictEqual(tileStatus("resolved", rs).level, "ok");
+// Inbox filter (ZCNIxvtORgZN0csAlO44): AI drafts to approve and Resolved & automation
+// cover every inbox by default; an inbox key narrows them to that inbox.
+{
+  const all = draftsKpi(tickets, NOW);
+  assert.strictEqual(all.inbox, "", "every inbox by default");
+  assert.deepStrictEqual(all.drafts.map((d) => d.id), ["18", "15", "3"], "Hello's draft is listed with the Support Inbox's, most confident first");
+  assert.deepStrictEqual(all.drafts[0].inboxes, ["hello"], "each draft names its inbox");
+  assert.deepStrictEqual(all.drafts[1].inboxes, ["support"], "no inbox recorded: the Support Inbox");
+  assert.strictEqual(all.allCount, 3);
+  assert.deepStrictEqual(all.byInbox, { support: 2, hello: 1, aidan: 0 }, "the count on each filter choice");
+  assert.deepStrictEqual(draftsKpi(tickets, NOW, "hello").drafts.map((d) => d.id), ["18"], "Hello only");
+  const aidan = draftsKpi(tickets, NOW, "aidan");
+  assert.deepStrictEqual([aidan.count, aidan.allCount, aidan.inbox], [0, 3, "aidan"], "Aidan has none; All still counts every inbox");
+  assert.strictEqual(draftsKpi(tickets, NOW, "nowhere").inbox, "", "an unknown inbox is every inbox");
+  const ra = resolvedKpi(tickets, NOW);
+  assert.deepStrictEqual([ra.value, ra.prev, ra.aiCount, ra.aiPct], [4, 1, 2, 50], "every inbox: 4, 5, 6 and Aidan's 9; 4 and 9 by the AI alone");
+  assert.deepStrictEqual([ra.allCount, ra.byInbox], [4, { support: 3, hello: 0, aidan: 1 }]);
+  const rAidan = resolvedKpi(tickets, NOW, "aidan");
+  assert.deepStrictEqual([rAidan.value, rAidan.prev, rAidan.aiPct, rAidan.gaps.length], [1, 0, 100, 0], "Aidan's figures only");
+  assert.deepStrictEqual(resolvedKpi(tickets, NOW, "hello").gaps.map((g) => g.id), ["18"], "the FAQ gaps follow the filter: Hello's unanswerable draft");
+  assert.deepStrictEqual(ra.gaps.map((g) => [g.id, g.inboxes]), [["13", ["support"]], ["18", ["hello"]], ["12", ["support"]]], "every inbox's gaps, each naming its inbox");
+  // A ticket written to two addresses is in both inboxes' counts.
+  const two = [t("x", { status: "open", aiDraft: { text: "x", confidence: 0.5 }, inboxes: ["support", "hello"] })];
+  assert.deepStrictEqual([draftsKpi(two, NOW).allCount, draftsKpi(two, NOW).byInbox], [1, { support: 1, hello: 1, aidan: 0 }]);
+}
 
 // ── Dashboard v2 (GUI9xPe3CJY3LyMws88m): 7-day series, sparkline, trend, status ──
 {
@@ -341,5 +399,111 @@ assert.strictEqual(tileStatus("resolved", rs).level, "ok");
   assert.strictEqual(tileStatus("funnel", { hasData: false }).level, "warn");
   const fs = funnelKpi([{ date: "2026-11-10", visits: 5 }, { date: "2026-11-15", visits: 7 }, { date: "2026-11-16", visits: 9, users: 8 }], [], NOW).series;
   assert.deepStrictEqual(fs, [5, 0, 0, 0, 0, 7, 8], "funnel visitors per day for the sparkline");
+}
+
+// ── Delivery: change against the previous period (7KcZdqFjytcmD9S85Fnq) ──
+{
+  const w1 = periodWindows(1, NOW), w7 = periodWindows(7, NOW);
+  assert.deepStrictEqual([w1.cur.from, w1.cur.to, w1.prev.from], [new Date(2026, 10, 16).getTime(), new Date(2026, 10, 17).getTime(), new Date(2026, 10, 15).getTime()], "yesterday against the day before");
+  assert.deepStrictEqual([w7.cur.from, w7.prev.from, w7.prev.to], [new Date(2026, 10, 10).getTime(), new Date(2026, 10, 3).getTime(), new Date(2026, 10, 10).getTime()], "the last 7 days against the 7 before");
+  assert.strictEqual(deliveryRange("nonsense").key, "yesterday", "Yesterday is the default range");
+  assert.deepStrictEqual(countChange(3, 2), { dir: "up", pct: 50, short: "+50%", text: "+50% vs the day before: 3 against 2" });
+  assert.strictEqual(countChange(1, 4, "the 7 days before").short, "−75%");
+  assert.strictEqual(countChange(1, 4).dir, "down");
+  assert.deepStrictEqual([countChange(2, 0).dir, countChange(2, 0).short], ["up", "New"], "from none: New, never ∞%");
+  assert.deepStrictEqual([countChange(0, 0).dir, countChange(0, 0).short], ["flat", "0%"]);
+  assert.deepStrictEqual([passChange(60, 48).dir, passChange(60, 48).short], ["up", "+12 pp"], "pass rate changes in percentage points");
+  assert.strictEqual(passChange(0, 50).short, "−50 pp", "a 0% rate is a rate");
+  assert.deepStrictEqual([passChange(null, 50).dir, passChange(null, 50).short], ["none", "—"], "no deployments: nothing to compare");
+  assert.strictEqual(passChange(50, null).dir, "none");
+
+  const py = deliveryPeriod(items, projects, "yesterday", NOW);
+  assert.deepStrictEqual([py.count, py.prevCount, py.countChange.short], [3, 1, "+200%"], "a, b and i yesterday; c the day before");
+  assert.deepStrictEqual([py.firstPassPct, py.prevFirstPassPct, py.passChange.short], [33, 100, "−67 pp"], "first-time pass over each period's own tickets");
+  assert.strictEqual(py.leadTimeMs, 3 * 24 * 3600000, "lead time over yesterday's tickets: 2, 4 and 3 days");
+  assert.deepStrictEqual(py.projects.map((p) => [p.id, p.count, p.prevCount, p.countChange.short, p.firstPassPct, p.passChange.short]),
+    [["p1", 2, 0, "New", 50, "—"], ["p2", 1, 1, "0%", 0, "−100 pp"]], "per project, most deployed first");
+  assert.strictEqual(deliveryKpi(items, projects, NOW).period.range, "yesterday", "deliveryKpi carries the period, Yesterday by default");
+
+  const pw = deliveryKpi(items, projects, NOW, "week").period;
+  assert.deepStrictEqual([pw.metric, pw.count, pw.prevCount, pw.countChange.short], ["Deployed in the last 7 days", 4, 1, "+300%"], "a, b, c and i against j; today's d in neither");
+  assert.deepStrictEqual([pw.firstPassPct, pw.prevFirstPassPct, pw.passChange.short, pw.passChange.dir], [50, 100, "−50 pp", "down"]);
+  assert.deepStrictEqual(pw.projects.map((p) => [p.id, p.count, p.prevCount, p.countChange.short]), [["p1", 2, 1, "+100%"], ["p2", 2, 0, "New"]]);
+  const quiet = deliveryPeriod([], projects, "week", NOW);
+  assert.deepStrictEqual([quiet.count, quiet.countChange.dir, quiet.passChange.short, quiet.projects.length], [0, "flat", "—", 0], "a quiet fortnight");
+}
+
+// ── Drill-downs: every count opens its own list (uAp6fukjDyNxKusotmcQ) ─────
+// Each list holds exactly the count the tile or its panel shows.
+{
+  const data = { items, projects, leads, support: tickets };
+  const n = (list, params) => drillRows(list, params, data, NOW).rows.length;
+  const d = deliveryKpi(items, projects, NOW);
+  assert.strictEqual(n("delivery-yesterday"), d.value, "Deployed yesterday lists the tile's tickets");
+  assert.strictEqual(n("delivery-week"), d.shipped, "the panel's 7-day total");
+  for (const p of d.projects) {
+    assert.strictEqual(n("delivery-yesterday", { project: p.id }), p.yesterday, `${p.name}: yesterday`);
+    assert.strictEqual(n("delivery-week", { project: p.id }), p.week, `${p.name}: last 7 days`);
+  }
+  assert.ok(drillRows("delivery-week", {}, data, NOW).rows.every((r) => r.kind === "ticket" && r.id), "a delivery row is a ticket that opens");
+  for (const range of ["yesterday", "week"]) {
+    const per = deliveryKpi(items, projects, NOW, range).period;
+    const list = range === "week" ? "delivery-week" : "delivery-yesterday";
+    assert.strictEqual(n(list), per.count, `the Delivery figure for ${range}`);
+    for (const p of per.projects) assert.strictEqual(n(list, { project: p.id }), p.count, `${p.name}: ${range}`);
+  }
+  const f = flowKpi(items, projects, NOW);
+  assert.strictEqual(n("flow-stuck"), f.value, "Tickets stuck");
+  for (const kind of ["blocked", "failed", "testing"]) assert.strictEqual(n("flow-stuck", { kind }), f[kind], `stuck: ${kind}`);
+  const l = leadsKpi(leads, NOW);
+  assert.strictEqual(n("leads-new"), l.value, "New leads, 7 days");
+  assert.strictEqual(n("leads-yesterday"), l.yesterday);
+  for (const st of l.pipeline) assert.strictEqual(n("leads-stage", { stage: st.key }), st.count, `pipeline: ${st.label}`);
+  assert.strictEqual(n("leads-stale"), l.needsAction.stale.length);
+  assert.strictEqual(n("leads-not-contacted"), l.needsAction.notContacted.length);
+  for (const [by, groups] of [["source", l.bySource], ["industry", l.byIndustry], ["market", l.byMarket]]) {
+    for (const g of groups) assert.strictEqual(n("leads-new", { by, group: g.name }), g.count, `new leads by ${by}: ${g.name}`);
+  }
+  const fk = funnelKpi([], leads, NOW);
+  assert.strictEqual(n("funnel-leads"), fk.steps[3].count, "the funnel's Lead step");
+  assert.strictEqual(fk.oppsFrom, "leads");
+  assert.strictEqual(n("funnel-opps"), fk.steps[4].count, "the funnel's Opportunity step, when it counts leads");
+  assert.strictEqual(n("drafts-high"), draftsKpi(tickets, NOW).high, "high-confidence drafts");
+  const r = resolvedKpi(tickets, NOW);
+  assert.strictEqual(n("resolved-yesterday"), r.value);
+  assert.strictEqual(n("resolved-ai"), r.aiCount);
+  assert.strictEqual(n("faq-gaps"), r.gaps.length);
+  assert.strictEqual(n("drafts"), draftsKpi(tickets, NOW).count, "AI drafts to approve, every inbox");
+  for (const { key } of INBOXES) {
+    assert.strictEqual(n("drafts", { inbox: key }), draftsKpi(tickets, NOW, key).count, `drafts in ${key}`);
+    assert.strictEqual(n("drafts-high", { inbox: key }), draftsKpi(tickets, NOW, key).high, `high-confidence drafts in ${key}`);
+    const ri = resolvedKpi(tickets, NOW, key);
+    assert.strictEqual(n("resolved-yesterday", { inbox: key }), ri.value, `resolved in ${key}`);
+    assert.strictEqual(n("resolved-ai", { inbox: key }), ri.aiCount, `resolved by the AI in ${key}`);
+    assert.strictEqual(n("faq-gaps", { inbox: key }), ri.gaps.length, `FAQ gaps in ${key}`);
+  }
+  assert.ok(drillRows("resolved-yesterday", {}, data, NOW).rows.every((x) => x.kind === "support"), "a Support row opens its ticket");
+  // Addresses.
+  assert.strictEqual(drillHash("flow-stuck", { kind: "blocked", empty: "" }), "#dashboard?list=flow-stuck&kind=blocked");
+  assert.deepStrictEqual(parseDrill(drillHash("leads-new", { by: "source", group: "Partner & co" })), { list: "leads-new", params: { by: "source", group: "Partner & co" } }, "a group name survives the address");
+  assert.strictEqual(parseDrill("#dashboard"), null, "the tiles themselves");
+  assert.strictEqual(parseDrill("#dashboard?list=nope"), null, "an unknown list is the tiles");
+  assert.strictEqual(drillRows("nope", {}, data, NOW), null);
+  assert.ok(Object.keys(DRILL_LISTS).every((k) => drillRows(k, {}, {}, NOW)), "every list draws from empty data");
+  assert.strictEqual(kanbanDrillHash({ show: "waiting", release: "r1" }), "#staff-kanban?show=waiting&release=r1");
+  assert.strictEqual(kanbanDrillHash({ show: "open", column: "todo", assignee: "none" }), "#staff-kanban?show=open&column=todo&assignee=none");
+  // Staff Kanban: the board's Dashboard filter (kanban-core matchesShow) shows the tile's own count.
+  assert.deepStrictEqual(SHOW_COLUMNS, KANBAN_COLUMNS, "the board and the tile mean the same columns");
+  const release = kb.allWork || !kb.release ? "" : kb.release.id;
+  const board = (o) => filterTasks(tasks, { release, me: "me@ph.example", today: localIsoDay(NOW), archived: new Set(["p3"]), ...o }).length;
+  assert.strictEqual(board({ show: "open" }), kb.value, "Open tasks");
+  for (const c of kb.columns) assert.strictEqual(board({ show: "open", column: c.key }), c.count, `column ${c.label}`);
+  assert.strictEqual(board({ show: "overdue" }), kb.flags.overdue, "overdue");
+  assert.strictEqual(board({ show: "unassigned" }), kb.flags.unassigned, "unassigned");
+  assert.strictEqual(board({ show: "unestimated" }), kb.flags.unestimated, "unestimated");
+  assert.strictEqual(board({ show: "waiting" }), kb.flags.waitingOnMe, "waiting on you");
+  assert.ok(kb.flags.waitingOnMe > 0 && kb.flags.overdue > 0, "the fixture exercises the flags");
+  for (const p of kb.people) assert.strictEqual(board({ show: "open", assignees: new Set([p.id || "none"]) }), p.tasks, `${p.name}'s open tasks`);
+  assert.strictEqual(board({}), filterTasks(tasks, { release }).length, "with no show, the board is unchanged");
 }
 console.log("dashboard.test.mjs: ok");

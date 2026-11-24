@@ -10,7 +10,8 @@
 // Tiles (Dashboard v2 content, cMyA3FMlUUrSjGtPkLZC) and where their numbers come from:
 //   Delivery          backlogItems the console already holds (mergedAt,
 //                     createdAt, countedSendBacks / testRound)
-//   Flow & blockers   the same tickets (blocked, lastFailureReason, statusEnteredAt)
+//   Flow & blockers   the same tickets (blocked, lastFailureReason, statusEnteredAt;
+//                     testing rounds for the retested tickets)
 //   Staff Kanban      open kanbanCards (open == true) and the current release's
 //                     cards; kanbanSettings/main picks the release
 //   Leads             leads (createdAt, stage, source, history, test, archivedAt)
@@ -20,7 +21,8 @@
 
 import { remaining, currentReleaseId } from "./kanban/kanban-core.js";
 import { leadName } from "./leads-core.js";
-import { inInbox, DEFAULT_INBOX, QUEUES } from "./support-core.js";
+import { inInbox, DEFAULT_INBOX, QUEUES, INBOXES } from "./support-core.js";
+import { retestedRows } from "./test-rounds-view.js";
 
 export const HOURS_PER_DAY = 8;
 
@@ -206,7 +208,9 @@ export const fmtSpan = (ms) => (ms == null ? "—" : fmtWait(ms));
 // 7-day line; over the tickets deployed in the last 7 days, the average lead
 // time from Backlog (createdAt) to Live and the share that passed testing
 // first time. Per project: deployed yesterday, last 7 days, lead time, first pass.
-export function deliveryKpi(items, projects, now = Date.now()) {
+// `period` is the same over the selected `range` against the previous
+// equivalent period (deliveryPeriod below), which the tile and panel show.
+export function deliveryKpi(items, projects, now = Date.now(), range = "yesterday") {
   const y = localDayRange(1, now), p = localDayRange(2, now);
   const week = lastDays(SERIES_DAYS, now);
   const win = { from: week[0].from, to: week[week.length - 1].to };
@@ -236,7 +240,80 @@ export function deliveryKpi(items, projects, now = Date.now()) {
     .map((r) => ({ id: r.id, name: r.name, yesterday: r.yesterday, week: r.week, leadTimeMs: avg(r.leads), firstPassPct: pctOf(r.passed, r.week) }))
     .sort((a, b) => b.yesterday - a.yesterday || b.week - a.week || a.name.localeCompare(b.name));
   const series = dailyCounts((items || []).map(deployedMs), SERIES_DAYS, now);
-  return { value: deployed, prev, trend: trend(deployed, prev), series, shipped, leadTimeMs: avg(leads), firstPassPct: pctOf(passed, shipped), projects: projectsOut };
+  return { value: deployed, prev, trend: trend(deployed, prev), series, shipped, leadTimeMs: avg(leads), firstPassPct: pctOf(passed, shipped), projects: projectsOut, period: deliveryPeriod(items, projects, range, now) };
+}
+
+// ── Delivery: change against the previous period (7KcZdqFjytcmD9S85Fnq) ──
+// The Delivery panel's range: Yesterday (against the day before) or the last
+// 7 days (against the 7 days before). Yesterday is the default.
+export const DELIVERY_RANGES = [
+  { key: "yesterday", label: "Yesterday", days: 1, metric: "Deployed yesterday", than: "the day before" },
+  { key: "week", label: "Last 7 days", days: SERIES_DAYS, metric: "Deployed in the last 7 days", than: "the 7 days before" },
+];
+export const deliveryRange = (key) => DELIVERY_RANGES.find((r) => r.key === key) || DELIVERY_RANGES[0];
+// The `days` local days ending yesterday, and the `days` local days before them.
+export function periodWindows(days, now = Date.now()) {
+  const cur = { from: localDayRange(days, now).from, to: localDayRange(1, now).to };
+  const prev = { from: localDayRange(days * 2, now).from, to: cur.from };
+  return { cur, prev };
+}
+const signed = (n, unit = "") => `${n > 0 ? "+" : n < 0 ? "−" : ""}${fmtCount(Math.abs(n))}${unit}`;
+// A count against the previous period, as a relative change:
+// { dir: "up" | "down" | "flat", pct, short, text }. 4 against 2 is "+100%";
+// from none to some is "New" (never ∞%); none to none is "0%".
+export function countChange(cur, prev, than = "the day before") {
+  const c = Number(cur) || 0, p = Number(prev) || 0;
+  if (c === p) return { dir: "flat", pct: 0, short: "0%", text: `Same as ${than}: ${fmtCount(c)}` };
+  if (!p) return { dir: "up", pct: null, short: "New", text: `New: ${fmtCount(c)}, none in ${than}` };
+  const pct = Math.round(((c - p) / p) * 100);
+  return { dir: c > p ? "up" : "down", pct, short: signed(pct, "%"), text: `${signed(pct, "%")} vs ${than}: ${fmtCount(c)} against ${fmtCount(p)}` };
+}
+// A first-time pass rate against the previous period, in percentage points:
+// 60% against 48% is "+12 pp". A period with no deployments has no rate, so
+// there is nothing to compare: dir "none" and "—".
+export function passChange(cur, prev, than = "the day before") {
+  if (cur == null || prev == null) return { dir: "none", delta: null, short: "—", text: `No first-time pass rate to compare: nothing deployed ${cur == null ? "in this period" : `in ${than}`}` };
+  const delta = cur - prev;
+  if (!delta) return { dir: "flat", delta: 0, short: "0 pp", text: `Same as ${than}: ${cur}%` };
+  return { dir: delta > 0 ? "up" : "down", delta, short: signed(delta, " pp"), text: `${signed(delta, " percentage points")} vs ${than}: ${cur}% against ${prev}%` };
+}
+// Delivery over the selected range against the previous equivalent period:
+// tickets deployed, first-time pass (over the tickets deployed in that
+// period) and lead time, in total and per project. A project is listed when
+// it deployed in either period, most deployed first.
+export function deliveryPeriod(items, projects, rangeKey = "yesterday", now = Date.now()) {
+  const range = deliveryRange(rangeKey);
+  const { cur, prev } = periodWindows(range.days, now);
+  const names = new Map((projects || []).map((x) => [x.id, x.name || "Untitled project"]));
+  const blank = () => ({ count: 0, passed: 0, leads: [] });
+  const total = { cur: blank(), prev: blank() };
+  const rows = new Map();
+  for (const it of items || []) {
+    const at = deployedMs(it);
+    const side = inRange(at, cur) ? "cur" : inRange(at, prev) ? "prev" : null;
+    if (!side) continue;
+    const id = it.projectId || "general";
+    if (!rows.has(id)) rows.set(id, { id, name: names.get(it.projectId) || "General", cur: blank(), prev: blank() });
+    const pass = firstTimePass(it);
+    const born = toMillis(it.createdAt);
+    for (const b of [total[side], rows.get(id)[side]]) {
+      b.count++;
+      if (pass) b.passed++;
+      if (side === "cur" && born && born <= at) b.leads.push(at - born);
+    }
+  }
+  const sum = (x) => {
+    const firstPassPct = pctOf(x.cur.passed, x.cur.count), prevFirstPassPct = pctOf(x.prev.passed, x.prev.count);
+    return {
+      count: x.cur.count, prevCount: x.prev.count, countChange: countChange(x.cur.count, x.prev.count, range.than),
+      firstPassPct, prevFirstPassPct, passChange: passChange(firstPassPct, prevFirstPassPct, range.than),
+      leadTimeMs: avg(x.cur.leads),
+    };
+  };
+  const projectsOut = [...rows.values()]
+    .map((r) => ({ id: r.id, name: r.name, ...sum(r) }))
+    .sort((a, b) => b.count - a.count || b.prevCount - a.prevCount || a.name.localeCompare(b.name));
+  return { range: range.key, label: range.label, metric: range.metric, than: range.than, ...sum(total), projects: projectsOut };
 }
 
 export const READY_WAIT_MS = 24 * 3600000;
@@ -258,6 +335,10 @@ const BLOCK_REASONS = {
 //                Backlog card whose lastFailureReason is newer than its move
 //                to Backlog, with no build running and no patch waiting to land
 //   testing      in Ready for Testing for more than 24 hours, waiting on a person
+// Alongside, the tickets that went back through retesting (0I93kb0fqXL4Qr4qyzwv):
+// every ticket not archived with a counted send-back, and how many times
+// (retestedRows in test-rounds-view.js, the same rows the list it opens shows).
+// They are information, not stuck, so they leave the tile's colour alone.
 export function flowKpi(items, projects, now = Date.now()) {
   const names = new Map((projects || []).map((x) => [x.id, x.name || "Untitled project"]));
   const stuck = [];
@@ -283,7 +364,8 @@ export function flowKpi(items, projects, now = Date.now()) {
   }
   stuck.sort((a, b) => (b.waitedMs || 0) - (a.waitedMs || 0) || a.title.localeCompare(b.title));
   const count = (k) => stuck.filter((s) => s.kind === k).length;
-  return { value: stuck.length, stuck, blocked: count("blocked"), failed: count("failed"), testing: count("testing") };
+  const retested = retestedRows(items).map((r) => ({ id: r.id, title: r.title || "Untitled ticket", project: names.get(r.projectId) || "General", times: r.counted, round: r.round, status: r.status }));
+  return { value: stuck.length, stuck, blocked: count("blocked"), failed: count("failed"), testing: count("testing"), retested, retestedCount: retested.length };
 }
 
 // ── Staff Kanban ─────────────────────────────────────────────────────────
@@ -546,45 +628,201 @@ export function funnelKpi(rows, leads, now = Date.now()) {
 }
 
 // ── Support (three tiles) ────────────────────────────────────────────────
-// tickets: normalised supportTickets (support-core's normaliseTicket). All
-// three tiles are of the Support Inbox (mail written to support@; Hello's and
-// Aidan's tickets are never counted), and use the inbox's own queues, so the
-// two counts equal the queue counts on the Support Inbox tab.
+// tickets: normalised supportTickets (support-core's normaliseTicket). Needs a
+// person is of the Support Inbox only (mail written to support@). AI drafts to
+// approve and Resolved & automation cover every inbox by default, and take an
+// inbox key to narrow them to one (ZCNIxvtORgZN0csAlO44): "" is every inbox.
+// They use the Support Inbox's own queue tests, so the Support Inbox figures
+// equal its queue counts.
 export const FAQ_GAP_DAYS = 30;
 const queueTest = (key) => QUEUES.find((q) => q.key === key).test;
 const waitOf = (t, now) => Math.max(0, now - (t.lastInboundAt || t.lastMessageAt || t.createdAt || now));
 const customerOf = (t) => t.customerName || t.customerEmail || "Unknown sender";
 // Needs a person: the queue's count, the age of the oldest and every ticket
-// with its customer and wait, longest first.
+// with its customer and wait, longest first. The queue holds support queries
+// only (support-core's isSupportQuery): not an Aidan request, nor mail that is
+// automated, not about PH or spam-like.
 export function needsPersonKpi(tickets, now = Date.now()) {
   const list = (tickets || []).filter((t) => inInbox(t, DEFAULT_INBOX) && queueTest("needs-person")(t))
     .map((t) => ({ id: t.id, customer: customerOf(t), subject: t.subject || "", waitedMs: waitOf(t, now) }))
     .sort((a, b) => b.waitedMs - a.waitedMs);
   return { count: list.length, oldestMs: list.length ? list[0].waitedMs : null, tickets: list };
 }
-// AI drafts to approve: the queue's count and each draft with its confidence,
-// most confident first (the quickest to approve).
-export function draftsKpi(tickets, now = Date.now()) {
-  const list = (tickets || []).filter((t) => inInbox(t, DEFAULT_INBOX) && queueTest("ai-drafts")(t))
-    .map((t) => ({ id: t.id, customer: customerOf(t), subject: t.subject || "", confidence: (t.aiDraft && t.aiDraft.confidence) || 0, waitedMs: waitOf(t, now) }))
+// The inboxes a ticket is filed under (none recorded: the Support Inbox).
+export const ticketInboxes = (t) => (t.inboxes && t.inboxes.length ? t.inboxes : [DEFAULT_INBOX]);
+// An inbox key the filter knows, else "" (every inbox).
+export const dashInboxKey = (key) => (INBOXES.some((i) => i.key === key) ? key : "");
+// Per inbox, the headline figure of the tickets in it. A ticket written to two
+// addresses is in both, so the figures need not add up to the all-inbox one.
+const perInbox = (list, figure) => Object.fromEntries(INBOXES.map((i) => [i.key, figure(list.filter((t) => inInbox(t, i.key)))]));
+// AI drafts to approve: the queue's count and each draft with its confidence
+// and inboxes, most confident first (the quickest to approve). `inbox` narrows
+// it to one inbox ("" = every inbox); allCount and byInbox are the counts the
+// filter shows on each of its choices.
+export function draftsKpi(tickets, now = Date.now(), inbox = "") {
+  const key = dashInboxKey(inbox);
+  const all = (tickets || []).filter(queueTest("ai-drafts"));
+  const list = all.filter((t) => !key || inInbox(t, key))
+    .map((t) => ({ id: t.id, customer: customerOf(t), subject: t.subject || "", inboxes: ticketInboxes(t), confidence: (t.aiDraft && t.aiDraft.confidence) || 0, waitedMs: waitOf(t, now) }))
     .sort((a, b) => b.confidence - a.confidence || b.waitedMs - a.waitedMs);
-  return { count: list.length, high: list.filter((d) => d.confidence >= 0.8).length, drafts: list };
+  return { inbox: key, count: list.length, high: list.filter((d) => d.confidence >= 0.8).length, drafts: list, allCount: all.length, byInbox: perInbox(all, (l) => l.length) };
 }
 // Resolved & automation: tickets resolved yesterday (still resolved), against
 // the day before; the share of those the AI resolved with no person involved;
 // and the FAQ gaps of the last 30 days: questions the Help Centre couldn't
 // answer (a draft marked not answerable, or triage saying so), newest first.
-export function resolvedKpi(tickets, now = Date.now()) {
-  const inbox = (tickets || []).filter((t) => inInbox(t, DEFAULT_INBOX) && t.status !== "spam");
+// `inbox` narrows every figure and the gaps to one inbox ("" = every inbox);
+// allCount and byInbox are the resolved-yesterday figure of each choice.
+export function resolvedKpi(tickets, now = Date.now(), inbox = "") {
+  const key = dashInboxKey(inbox);
+  const every = (tickets || []).filter((t) => t.status !== "spam");
+  const pool = every.filter((t) => !key || inInbox(t, key));
   const y = localDayRange(1, now), p = localDayRange(2, now);
-  const on = (r) => inbox.filter((t) => t.status === "resolved" && inRange(t.resolvedAt, r));
-  const done = on(y);
+  const on = (list, r) => list.filter((t) => t.status === "resolved" && inRange(t.resolvedAt, r));
+  const done = on(pool, y);
   const ai = done.filter((t) => t.resolvedBy === "ai" && !t.humanInvolved).length;
   const since = now - FAQ_GAP_DAYS * 24 * 3600000;
-  const gaps = inbox.filter((t) => (t.createdAt || t.lastMessageAt) >= since
+  const gaps = pool.filter((t) => (t.createdAt || t.lastMessageAt) >= since
       && ((t.aiDraft && !t.aiDraft.answerable) || /help centre doesn.t answer/i.test(t.triageReason || "")))
-    .map((t) => ({ id: t.id, subject: t.subject || "", customer: customerOf(t), at: t.createdAt || t.lastMessageAt }))
+    .map((t) => ({ id: t.id, subject: t.subject || "", customer: customerOf(t), inboxes: ticketInboxes(t), at: t.createdAt || t.lastMessageAt }))
     .sort((a, b) => b.at - a.at);
-  const prev = on(p).length;
-  return { value: done.length, prev, trend: trend(done.length, prev), aiCount: ai, aiPct: pctOf(ai, done.length), gaps };
+  const prev = on(pool, p).length;
+  return {
+    inbox: key, value: done.length, prev, trend: trend(done.length, prev), aiCount: ai, aiPct: pctOf(ai, done.length), gaps,
+    allCount: on(every, y).length, byInbox: perInbox(every, (l) => on(l, y).length),
+  };
 }
+
+// ── Drill-downs: every count opens its own list (uAp6fukjDyNxKusotmcQ) ─────
+// A count on a tile or in its summary panel opens the list behind it, never
+// just the section. Where the section can be opened filtered to exactly that
+// list, the count goes there: Staff Kanban (#staff-kanban?show=…, kanban-core
+// matchesShow, the same rules as kanbanKpi) and the Support Inbox's Needs a
+// person queue (the AI drafts tile counts every inbox, so it uses a list).
+// Every other count opens the Dashboard's own
+// list (#dashboard?list=<key>&…), whose rows drillRows() picks with the same
+// rules the tile counts with, so the list always holds the count's number.
+// Counts that are not a list of items (website visitors, percentages, hours)
+// are not drill-downs.
+export const DRILL_LISTS = {
+  "delivery-yesterday": "Deployed yesterday",
+  "delivery-week": "Deployed in the last 7 days",
+  "flow-stuck": "Tickets stuck",
+  "leads-new": "New leads, last 7 days",
+  "leads-yesterday": "New leads yesterday",
+  "leads-stage": "Companies at",
+  "leads-stale": "Stale leads: no activity for 7 days",
+  "leads-not-contacted": "Leads not contacted",
+  "funnel-leads": "Website leads, last 7 days",
+  "funnel-opps": "Website leads at Demo or beyond, last 7 days",
+  "drafts": "AI drafts to approve",
+  "drafts-high": "High-confidence AI drafts to approve",
+  "resolved-yesterday": "Resolved yesterday",
+  "resolved-ai": "Resolved yesterday by the AI alone",
+  "faq-gaps": "FAQ gaps, last 30 days",
+};
+const FLOW_KIND_LABELS = { blocked: "blocked", failed: "failed testing", testing: "waiting to test" };
+const LEAD_GROUPS = { source: leadSourceGroup, industry: leadIndustry, market: leadMarket };
+// The Dashboard's list address for a count.
+export function drillHash(list, params = {}) {
+  const q = new URLSearchParams({ list });
+  for (const [k, v] of Object.entries(params)) if (v != null && v !== "") q.set(k, String(v));
+  return `#dashboard?${q.toString()}`;
+}
+// "#dashboard?list=…" → { list, params }, or null for the tiles themselves (or an unknown list).
+export function parseDrill(hash) {
+  const s = String(hash || "");
+  const i = s.indexOf("?");
+  if (!s.startsWith("#dashboard") || i < 0) return null;
+  const params = Object.fromEntries(new URLSearchParams(s.slice(i + 1)));
+  const list = params.list;
+  delete params.list;
+  return list && DRILL_LISTS[list] ? { list, params } : null;
+}
+// A Staff Kanban count's address: the board filtered to that count's tasks.
+// show: open | overdue | unassigned | unestimated | waiting; column: todo |
+// progress | testing; release: the tile's release when it counts one;
+// assignee: one person's tasks (an email, or "none").
+export function kanbanDrillHash({ show = "open", column = "", release = "", assignee = "" } = {}) {
+  const q = new URLSearchParams({ show });
+  if (column) q.set("column", column);
+  if (release) q.set("release", release);
+  if (assignee !== "") q.set("assignee", assignee);
+  return `#staff-kanban?${q.toString()}`;
+}
+// The rows of a Dashboard list. data: { items, projects, leads, support } (the
+// same sources the tiles read; support is normalised supportTickets). Each row
+// is { kind: "ticket" | "lead" | "support", id, title, meta }. Returns
+// { title, rows }, or null for an unknown list.
+export function drillRows(list, params = {}, data = {}, now = Date.now()) {
+  if (!DRILL_LISTS[list]) return null;
+  const p = params || {};
+  const items = data.items || [], projects = data.projects || [];
+  const names = new Map(projects.map((x) => [x.id, x.name || "Untitled project"]));
+  const projectOf = (it) => names.get(it.projectId) || "General";
+  const ticket = (it, meta) => ({ kind: "ticket", id: it.id, title: it.title || "Untitled ticket", meta });
+  const lead = (l) => ({ kind: "lead", id: l.id, title: leadName(l), meta: [stageLabelOf(l), leadSourceGroup(l)].filter(Boolean).join(" · ") });
+  const support = (t, meta) => ({ kind: "support", id: t.id, title: t.subject || "(no subject)", meta: [customerOf(t), meta].filter(Boolean).join(" · ") });
+  let title = DRILL_LISTS[list];
+  let rows = [];
+  if (list === "delivery-yesterday" || list === "delivery-week") {
+    const y = localDayRange(1, now);
+    const week = lastDays(SERIES_DAYS, now);
+    const win = list === "delivery-yesterday" ? y : { from: week[0].from, to: week[week.length - 1].to };
+    const pid = p.project || "";
+    rows = items.filter((it) => inRange(deployedMs(it), win) && (!pid || (it.projectId || "general") === pid))
+      .sort((a, b) => deployedMs(b) - deployedMs(a))
+      .map((it) => ticket(it, `${projectOf(it)} · deployed ${fmtDayLabel(deployedMs(it))}`));
+    if (pid) title += ` · ${names.get(pid) || "General"}`;
+  } else if (list === "flow-stuck") {
+    const kind = FLOW_KIND_LABELS[p.kind] ? p.kind : "";
+    rows = flowKpi(items, projects, now).stuck.filter((s) => !kind || s.kind === kind)
+      .map((s) => ({ kind: "ticket", id: s.id, title: s.title, meta: `${s.project} · ${s.reason}${s.waitedMs == null ? "" : ` · ${fmtWait(s.waitedMs)}`}` }));
+    if (kind) title += `: ${FLOW_KIND_LABELS[kind]}`;
+  } else if (list.startsWith("leads-") || list.startsWith("funnel-")) {
+    const real = (data.leads || []).filter(realLead);
+    const week = lastDays(SERIES_DAYS, now);
+    const win = { from: week[0].from, to: week[week.length - 1].to };
+    const newest = (a, b) => toMillis(b.createdAt) - toMillis(a.createdAt);
+    let picked = [];
+    if (list === "leads-new") {
+      picked = real.filter((l) => inRange(toMillis(l.createdAt), win));
+      const group = LEAD_GROUPS[p.by];
+      if (group && p.group) { picked = picked.filter((l) => group(l) === p.group); title += ` · ${p.group}`; }
+    } else if (list === "leads-yesterday") picked = real.filter((l) => inRange(toMillis(l.createdAt), localDayRange(1, now)));
+    else if (list === "leads-stage") {
+      const stage = PIPELINE.find((s) => s.key === p.stage) || PIPELINE[0];
+      picked = real.filter((l) => l.leadType !== "operator" && (l.stage || "lead") === stage.key);
+      title += ` ${stage.label}`;
+    } else if (list === "leads-stale") picked = real.filter((l) => !CLOSED.has(l.stage) && now - leadLastActivity(l) >= STALE_MS);
+    else if (list === "leads-not-contacted") picked = real.filter((l) => !CLOSED.has(l.stage) && firstStage(l) && !contacted(l));
+    else {
+      picked = real.filter((l) => isWebsiteLead(l) && inRange(toMillis(l.createdAt), win));
+      if (list === "funnel-opps") picked = picked.filter((l) => OPP_STAGES.has(l.stage));
+    }
+    rows = picked.sort(newest).map(lead);
+  } else {
+    // The AI drafts and Resolved tiles can be narrowed to one inbox (their
+    // panel's inbox filter): the list takes the same `inbox` ("" = every inbox).
+    const key = dashInboxKey(p.inbox);
+    const all = data.support || [];
+    const byId = new Map(all.map((t) => [t.id, t]));
+    if (key) title += ` · ${(INBOXES.find((i) => i.key === key) || {}).label || key}`;
+    if (list === "drafts" || list === "drafts-high") {
+      rows = draftsKpi(all, now, key).drafts.filter((d) => list === "drafts" || d.confidence >= 0.8)
+        .map((d) => support(byId.get(d.id), `${Math.round(d.confidence * 100)}% confident`));
+    } else if (list === "faq-gaps") {
+      rows = resolvedKpi(all, now, key).gaps.map((g) => support(byId.get(g.id), fmtDayLabel(g.at)));
+    } else {
+      const y = localDayRange(1, now);
+      rows = all.filter((t) => t.status !== "spam" && (!key || inInbox(t, key)) && t.status === "resolved" && inRange(t.resolvedAt, y) && (list !== "resolved-ai" || (t.resolvedBy === "ai" && !t.humanInvolved)))
+        .sort((a, b) => b.resolvedAt - a.resolvedAt)
+        .map((t) => support(t, t.resolvedBy === "ai" && !t.humanInvolved ? "Resolved by the AI" : "Resolved"));
+    }
+  }
+  return { title, rows };
+}
+const stageLabelOf = (l) => {
+  const s = PIPELINE.find((x) => x.key === (l.stage || "lead"));
+  return l.leadType === "operator" ? "Network operator" : s ? s.label : String(l.stage || "");
+};

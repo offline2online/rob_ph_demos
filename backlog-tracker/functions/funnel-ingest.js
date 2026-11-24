@@ -34,6 +34,14 @@
 //                 never counted
 //   ace           day × industry: `aceCreated`, ACE opportunities created
 //                 (only while the Partner Central connection answers)
+//   pc-export     day × ACE opportunity: `attributedRevenue` (AWS Revenue
+//                 Measurement), `marketplaceRevenue`, `fundingUsed`, with the
+//                 opportunity's `aceId`, `stage` and `currency`, read from the
+//                 newest Partner Central S3 data export (pc-export.js). The
+//                 export is a snapshot, so each import replaces every pc-export
+//                 row; an export whose files are unchanged is not re-read. Until
+//                 consoleConfig/funnelIngest.pcExportBucket is set the source is
+//                 "not set up yet" (notSetUp: true), which is not a failure
 //
 // Days: GA4 reports dates in the property's time zone; the console's own
 // records (leads, ACE) are bucketed in the same zone (`timeZone`, default
@@ -50,6 +58,13 @@
 // Credentials, scope analytics.readonly); that account needs Viewer on the GA4
 // property. consoleConfig/funnelIngest may override `ga4PropertyId` and
 // `timeZone` (server-written; firestore.rules lets clients read it only).
+// Every run records `ga4Access` there: the service account it actually ran as
+// (read at run time, never inferred), the property id and project, and, when
+// GA4 refused, why ("no-access": the account is not a user of the property;
+// "api-disabled": the Google Analytics Data API is off for the project), so the
+// Conversion Funnel page can say who needs which access. While GA4 refuses on
+// access, a due run comes every hour (ACCESS_RETRY_MS) instead of every 6, so
+// the data arrives within the hour of the access being granted.
 //
 // Runs: POST /funnelIngest with X-Board-Key ({mode: "daily" | "backfill",
 // days?}), and once a run is due from the hourly aceToGa4 call (index.js), so
@@ -61,6 +76,7 @@
 // (`backfilledAt`) only once every GA4 source has succeeded in it.
 
 const crypto = require("crypto");
+const pcExport = require("./pc-export");
 
 // The board key check (the same as lead-ingest.js keyMatches, kept here so this
 // module needs no Firebase SDK and test/funnel-ingest.test.js can load it bare).
@@ -78,10 +94,12 @@ const BACKFILL_DAYS = 90;
 const DAILY_DAYS = 3;
 const DUE_AFTER_MS = 6 * 3600e3;
 const DUE_BUDGET_MS = 150e3;
+// While GA4 refuses on access: retry on every hourly call (a little under an hour, for the call's jitter).
+const ACCESS_RETRY_MS = 50 * 60e3;
 // The GA4 Data API sources (Google Ads included: it is read through GA4), with their report.
 const GA4_SOURCES = [["ga4-total", "total"], ["ga4-site", "site"], ["ga4-industry", "industry"], ["ga4-industry-total", "industryTotal"], ["ga4-industry-users", "industryUsers"], ["ga4-events", "events"], ["google-ads", "ads"]];
-const SOURCES = [...GA4_SOURCES.map(([src]) => src), "leads", "ace"];
-const SOURCE_LABELS = { "ga4-total": "GA4", "ga4-site": "GA4", "ga4-industry": "GA4", "ga4-industry-total": "GA4", "ga4-industry-users": "GA4", "ga4-events": "GA4", "google-ads": "Google Ads", leads: "Leads", ace: "ACE" };
+const SOURCES = [...GA4_SOURCES.map(([src]) => src), "leads", "ace", "pc-export"];
+const SOURCE_LABELS = { "ga4-total": "GA4", "ga4-site": "GA4", "ga4-industry": "GA4", "ga4-industry-total": "GA4", "ga4-industry-users": "GA4", "ga4-events": "GA4", "google-ads": "Google Ads", leads: "Leads", ace: "ACE", "pc-export": "Partner Central export" };
 
 // GA4 event name → funnelDaily field. Several names may feed one field.
 const EVENT_FIELDS = {
@@ -241,6 +259,16 @@ function ga4Rows({ total = [], site = [], industry = [], industryTotal = [], ind
   return Object.fromEntries(Object.entries(out).map(([k, m]) => [k, [...m.entries()].map(([id, row]) => ({ id, row }))]));
 }
 
+/** Why GA4 refused, from its error: "no-access", "api-disabled", or "" for anything else. Pure. */
+function ga4AccessProblem(err) {
+  const msg = String((err && err.message) || err || "");
+  const status = Number(err && err.status) || Number((/GA4 answered (\d{3})/.exec(msg) || [])[1]) || 0;
+  if (status !== 403) return "";
+  if (/has not been used|is disabled|SERVICE_DISABLED|accessNotConfigured|API has not been enabled/i.test(msg)) return "api-disabled";
+  if (/sufficient permissions|permission|PERMISSION_DENIED/i.test(msg)) return "no-access";
+  return "";
+}
+
 const toMs = (v) => {
   if (!v) return 0;
   if (typeof v.toMillis === "function") return v.toMillis();
@@ -342,7 +370,7 @@ function createGa4Client({ propertyId, accessToken, fetch: fetchImpl = globalThi
 
 // ── The job ───────────────────────────────────────────────────────────────
 function createFunnelIngestJob({
-  db, ga4AccessToken, partnerCentral = null, boardKey = () => "",
+  db, ga4AccessToken, serviceAccountEmail = async () => "", gcpProject = "", partnerCentral = null, pcExportS3 = null, boardKey = () => "",
   fetch: fetchImpl = globalThis.fetch, logger = console, now = () => new Date(), serverTimestamp = () => now(),
 }) {
   const configRef = () => db.collection(CONFIG_DOC[0]).doc(CONFIG_DOC[1]);
@@ -363,6 +391,22 @@ function createFunnelIngestJob({
     const keep = new Set(rows.map((r) => r.id));
     const ops = [];
     for (const d of existing.docs) if (d.data().source === source && !keep.has(d.id)) ops.push((b) => b.delete(d.ref));
+    const at = serverTimestamp();
+    for (const { id, row } of rows) ops.push((b) => b.set(db.collection(COLLECTION).doc(id), { ...row, ingestedAt: at }));
+    for (let i = 0; i < ops.length; i += 450) {
+      const batch = db.batch();
+      ops.slice(i, i + 450).forEach((op) => op(batch));
+      await batch.commit();
+    }
+    return { written: rows.length, removed: ops.length - rows.length };
+  }
+
+  // Replace every row of a snapshot source (no date window): the Partner Central export.
+  async function replaceAllRows(source, rows) {
+    const existing = await db.collection(COLLECTION).where("source", "==", source).get();
+    const keep = new Set(rows.map((r) => r.id));
+    const ops = [];
+    for (const d of existing.docs) if (!keep.has(d.id)) ops.push((b) => b.delete(d.ref));
     const at = serverTimestamp();
     for (const { id, row } of rows) ops.push((b) => b.set(db.collection(COLLECTION).doc(id), { ...row, ingestedAt: at }));
     for (let i = 0; i < ops.length; i += 450) {
@@ -398,6 +442,8 @@ function createFunnelIngestJob({
 
     // GA4 (four reports) and Google Ads (through GA4's link) — each report on its own.
     let token = null;
+    const accessProblems = [];
+    let ga4Succeeded = false;
     const ga4 = createGa4Client({ propertyId: cfg.propertyId, fetch: fetchImpl, accessToken: async () => { if (!token) token = await ga4AccessToken(); return token; } });
     for (const [source, key] of GA4_SOURCES) {
       if (!wanted(source) || !timeLeft(source)) continue;
@@ -412,15 +458,32 @@ function createFunnelIngestJob({
         const rows = ga4Rows({ [key]: report })[source];
         const res = await replaceRows(source, window, rows);
         record(source, true, { rows: res.written });
+        ga4Succeeded = true;
       } catch (err) {
         record(source, false, { error: (err && err.message) || err });
+        const problem = ga4AccessProblem(err);
+        if (problem) accessProblems.push(problem);
         logger.error("funnelIngest: source failed", { source, error: String((err && err.message) || err).slice(0, 300) });
       }
     }
 
+    // Who GA4 was read as, and whether it let us in: what the page shows when it refuses.
+    let ga4Access = null;
+    if (accessProblems.length || ga4Succeeded) {
+      let account = "";
+      try { account = s(await serviceAccountEmail()); } catch { account = ""; }
+      const problem = accessProblems.includes("api-disabled") ? "api-disabled" : (accessProblems[0] || "");
+      ga4Access = { ok: !problem, problem, serviceAccount: account, propertyId: cfg.propertyId, project: s(gcpProject), at: startedAt.toISOString() };
+    }
+
+    // Read once per run, shared by the leads, ACE and export sources.
+    let leadsCache = null, aceCache = null;
+    const allLeads = async () => leadsCache || (leadsCache = (await db.collection("leads").get()).docs.map((d) => ({ id: d.id, ...d.data() })));
+    const aceList = async () => aceCache || (aceCache = await partnerCentral.aceOpportunities({ by: "funnelIngest" }));
+
     // Console leads (test and archived leads never counted).
     if (wanted("leads") && timeLeft("leads")) try {
-      const leads = (await db.collection("leads").get()).docs.map((d) => ({ id: d.id, ...d.data() }));
+      const leads = await allLeads();
       const res = await replaceRows("leads", window, leadRows(leads, { timeZone: cfg.timeZone, ...window }));
       record("leads", true, { rows: res.written });
     } catch (err) { record("leads", false, { error: (err && err.message) || err }); }
@@ -428,10 +491,34 @@ function createFunnelIngestJob({
     // ACE opportunities, where the Partner Central connection answers.
     if (partnerCentral && typeof partnerCentral.aceOpportunities === "function" && wanted("ace") && timeLeft("ace")) {
       try {
-        const ace = await partnerCentral.aceOpportunities({ by: "funnelIngest" });
+        const ace = await aceList();
         const res = await replaceRows("ace", window, aceRows(ace.opportunities, { timeZone: cfg.timeZone, ...window }));
         record("ace", true, { rows: res.written, catalog: s(ace.catalog) });
       } catch (err) { record("ace", false, { error: (err && err.message) || err }); }
+    }
+
+    // The Partner Central S3 data export (revenue, funding), once it is set up.
+    if (wanted("pc-export") && timeLeft("pc-export")) {
+      const xcfg = pcExport.exportConfig(cfg.raw);
+      const prev = prevSources["pc-export"] || {};
+      if (!xcfg || !pcExportS3) {
+        sources["pc-export"] = { ok: true, notSetUp: true, at: startedAt.toISOString(), lastSuccessAt: prev.lastSuccessAt || null, error: "" };
+      } else try {
+        const got = await pcExport.readLatestExport(pcExportS3, xcfg, { lastSignature: s(prev.signature) });
+        if (got.skipped) {
+          record("pc-export", true, { unchanged: true, signature: got.signature, files: got.files, rows: Number(prev.rows) || 0, recordsRead: Number(prev.recordsRead) || 0, joined: Number(prev.joined) || 0, unknownHeaders: prev.unknownHeaders || [], exportedAt: prev.exportedAt || "" });
+        } else {
+          let opportunities = [];
+          if (partnerCentral && typeof partnerCentral.aceOpportunities === "function") { try { opportunities = (await aceList()).opportunities || []; } catch { opportunities = []; } }
+          const prospects = (await db.collection("prospects").get()).docs.map((d) => ({ id: d.id, ...d.data() }));
+          const { rows, joined } = pcExport.exportRows(got.entries, { opportunities, leads: await allLeads(), prospects });
+          const res = await replaceAllRows("pc-export", rows);
+          record("pc-export", true, { rows: res.written, recordsRead: got.records.length, opportunities: got.opportunities.length, joined, unknownHeaders: got.unknownHeaders, files: got.files.slice(0, 25), exportedAt: s(got.exportedAt), signature: got.signature });
+        }
+      } catch (err) {
+        record("pc-export", false, { error: (err && err.message) || err });
+        logger.error("funnelIngest: source failed", { source: "pc-export", error: String((err && err.message) || err).slice(0, 300) });
+      }
     }
 
     const failed = Object.entries(sources).filter(([, v]) => !v.ok).map(([k]) => k);
@@ -456,6 +543,7 @@ function createFunnelIngestJob({
       deferred,
       deferredMode: deferred.length ? mode : "",
       backfillDone,
+      ...(ga4Access ? { ga4Access } : {}),
       ...(backfilled ? { backfilledAt: startedAt.toISOString() } : {}),
     };
     await configRef().set(status, { merge: true });
@@ -465,20 +553,23 @@ function createFunnelIngestJob({
 
   // Due: sources deferred by the last run (out of time) → those, straight away;
   // never backfilled → a 90-day backfill; else a daily refresh when the last
-  // attempt is 6 hours old or more. budgetMs bounds the run (0: no bound).
+  // attempt is 6 hours old or more (50 minutes while GA4 refuses on access, so
+  // the data follows within the hour of the access being granted). budgetMs
+  // bounds the run (0: no bound).
   async function runIfDue({ budgetMs = DUE_BUDGET_MS } = {}) {
     const cfg = await readConfig();
     const d = cfg.raw || {};
     const deadlineMs = budgetMs > 0 ? now().getTime() + budgetMs : 0;
+    const dueAfter = d.ga4Access && d.ga4Access.ok === false ? ACCESS_RETRY_MS : DUE_AFTER_MS;
     const pending = Array.isArray(d.deferred) ? d.deferred.filter((x) => SOURCES.includes(x)) : [];
     if (pending.length) return run({ mode: d.deferredMode === "backfill" ? "backfill" : "daily", only: pending, deadlineMs });
     if (!d.backfilledAt) {
       const last = Date.parse(d.lastRunAt || "");
-      if (Number.isFinite(last) && now().getTime() - last < DUE_AFTER_MS) return { skipped: "not due" };
+      if (Number.isFinite(last) && now().getTime() - last < dueAfter) return { skipped: "not due" };
       return run({ mode: "backfill", deadlineMs });
     }
     const last = Date.parse(d.lastRunAt || "");
-    if (Number.isFinite(last) && now().getTime() - last < DUE_AFTER_MS) return { skipped: "not due" };
+    if (Number.isFinite(last) && now().getTime() - last < dueAfter) return { skipped: "not due" };
     return run({ mode: "daily", deadlineMs });
   }
 
@@ -502,7 +593,7 @@ function createFunnelIngestJob({
 }
 
 module.exports = {
-  createFunnelIngestJob, createGa4Client, ga4Rows, leadRows, aceRows, reportRows, makeRow,
+  createFunnelIngestJob, createGa4Client, ga4AccessProblem, ga4Rows, leadRows, aceRows, reportRows, makeRow,
   industryOfPath, industryOfParam, channelOfGroup, channelOfLeadSource, gaDate, dayIn, addDays, dayWindow, clean,
-  GA4_REPORTS, GA4_SOURCES, EVENT_FIELDS, EVENT_METRICS, SOURCES, SOURCE_LABELS, DEFAULT_PROPERTY_ID, DEFAULT_TIME_ZONE, BACKFILL_DAYS, DAILY_DAYS, DUE_AFTER_MS, DUE_BUDGET_MS,
+  GA4_REPORTS, GA4_SOURCES, EVENT_FIELDS, EVENT_METRICS, SOURCES, SOURCE_LABELS, DEFAULT_PROPERTY_ID, DEFAULT_TIME_ZONE, BACKFILL_DAYS, DAILY_DAYS, DUE_AFTER_MS, DUE_BUDGET_MS, ACCESS_RETRY_MS,
 };

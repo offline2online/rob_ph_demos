@@ -5,7 +5,7 @@
 // loops report rows. Plain ESM, no Firebase, no DOM.
 // Run with:  node test/test-rounds-view.test.mjs
 import assert from "node:assert/strict";
-import { loopOf, isLooping, roundChipHTML, sentBackLastTimeHTML, testingLoopRows, formatDuration, lastCountedSendBack, LOOP_ROUND } from "../public/js/test-rounds-view.js";
+import { loopOf, isLooping, roundChipHTML, sentBackLastTimeHTML, testingLoopRows, retestedRows, formatDuration, lastCountedSendBack, LOOP_ROUND } from "../public/js/test-rounds-view.js";
 import { rejectionSummaryHTML, lastRejectionLine } from "../public/js/rejection-summary.js";
 
 const sb = (iso, line, extra = {}) => ({ at: iso, by: "person", who: "tester@example.com", category: "Didn't work as described", line, counted: true, ...extra });
@@ -87,5 +87,19 @@ assert.equal(rows[0].buildToApprovalMs, 4 * 24 * 3600 * 1000);
 assert.equal(formatDuration(rows[0].buildToApprovalMs), "4 days");
 assert.equal(formatDuration(5 * 3600 * 1000), "5 h");
 assert.equal(formatDuration(null), "");
+
+// Retested tickets (0I93kb0fqXL4Qr4qyzwv): every ticket not archived with a
+// counted send-back, all time, most retested first; the Dashboard counts these.
+const oldLoop = { ...two, id: "old-one", title: "Old one", sendBacks: two.sendBacks.map((s) => ({ ...s, at: "2026-09-01T10:00:00Z" })) };
+const shipped = { ...looping, id: "shipped", status: "published-live" };
+const gone = { ...looping, id: "gone", status: "archived" };
+const onlyUncounted = { ...round1, id: "flaky-only", sendBackCount: 1, countedSendBacks: 0, sendBacks: [sb("2026-11-11T10:00:00Z", "flaky", { by: "tests", counted: false })] };
+const retested = retestedRows([round1, oldLoop, looping, gone, onlyUncounted, shipped, two]);
+assert.deepEqual(retested.map((r) => r.id), ["loop", "shipped", "r1", "old-one"], "counted >= 1, archived and uncounted-only left out, most retested then latest first");
+assert.equal(retested[0].counted, 2, "times retested is the counted send-backs, not the round");
+assert.equal(retested[0].round, 3);
+assert.equal(retested[0].recent, 2, "every counted send-back, not only the last 30 days");
+assert.equal(retested.find((r) => r.id === "old-one").recent, 1, "an old send-back still counts");
+assert.deepEqual(retestedRows([]), []);
 
 console.log("test-rounds-view: all passed");

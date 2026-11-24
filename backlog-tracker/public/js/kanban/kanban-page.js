@@ -13,7 +13,7 @@ import { ATTACHMENT_ACCEPT, MAX_ATTACHMENT_BYTES, attachmentContentType, isAllow
 import {
   STATUSES, STATUS_LABEL, RESOLUTIONS, TYPES, PRIORITIES, LINK_TYPES, CORE_FIELDS, OPTIONAL_FIELDS, FIELD_LABEL,
   res, statusLabel, statusShort, typeOf, prioOf, remaining, fmtH, parseDur, fmtDate, daysBetween, workingDaysUntil,
-  statusChange, currentReleaseId, rankBetween, byBoardOrder, dropNeighbours, fold, searchTickets, hasInlineImages, PICK_LIMIT, filterTasks, agentDraft, keyNumber, isoDay,
+  statusChange, currentReleaseId, rankBetween, byBoardOrder, dropNeighbours, fold, searchTickets, hasInlineImages, PICK_LIMIT, filterTasks, SHOW_FILTERS, SHOW_COLUMNS, agentDraft, keyNumber, isoDay,
   canonicalEmail, isAliasEmail, newCriterionId, AC_MAX_ITEMS, AC_MAX_TEXT, editActivity, ticketHash, ticketFromSub,
   MAX_LEVELS, LEVEL_NAMES, levelName, ancestorsOf, levelOf, heightOf, parentProblem, rollup, parentsToAdvance,
   AGENT_MAX_TICKETS, AGENT_STATUS_LABEL, agentBuilt, agentRollup, canSendToAgent, cleanAgentSplit,
@@ -96,7 +96,7 @@ export function mountStaffKanban(ctx) {
     return { ...s, currentRelease: currentReleaseId(s, releases()) };
   }
 
-  const board = { q: "", mine: false, flagged: false, assignees: new Set(), type: "", priority: "", sprint: "", project: "", release: "", label: "" };
+  const board = { q: "", mine: false, flagged: false, assignees: new Set(), type: "", priority: "", sprint: "", project: "", release: "", label: "", show: "", column: "" };
   const collapsedCols = new Set();
   let filtersOpen = false;
   const collapsedLanes = new Set();
@@ -447,6 +447,9 @@ export function mountStaffKanban(ctx) {
     addressBefore = null;
     // The board's project filter lives in the address (#staff-kanban?project=<id>).
     if (current.route === "kanban" && current.params.has("project")) board.project = current.params.get("project") || "";
+    // A Dashboard count opens the board on its own tasks (#staff-kanban?show=…):
+    // every other filter is cleared, so the board shows exactly the count's tasks.
+    if (current.route === "kanban" && current.params.has("show")) applyShowParams(current.params);
     root.dataset.page = "staff-kanban";
     render();
     if (link) openTicketAddress(link);
@@ -464,7 +467,36 @@ export function mountStaffKanban(ctx) {
   // closing the ticket puts back the address of the page underneath.
   let addressTicket = null, addressBefore = null;
   const ticketUrl = (key) => window.location.origin + window.location.pathname + window.location.search + ticketHash(key);
-  const boardHash = () => "#staff-kanban" + (board.project ? "?project=" + encodeURIComponent(board.project) : "");
+  const boardHash = () => {
+    const q = new URLSearchParams();
+    if (board.project) q.set("project", board.project);
+    if (board.show) {
+      q.set("show", board.show);
+      if (board.column) q.set("column", board.column);
+      if (board.release) q.set("release", board.release);
+      if (board.assignees.size === 1) q.set("assignee", [...board.assignees][0]);
+    }
+    const qs = q.toString();
+    return "#staff-kanban" + (qs ? "?" + qs : "");
+  };
+  function applyShowParams(params) {
+    const show = params.get("show") || "";
+    Object.assign(board, { q: "", mine: false, flagged: false, type: "", priority: "", sprint: "", label: "",
+      project: params.get("project") || "", release: params.get("release") || "",
+      show: SHOW_FILTERS.some((x) => x.key === show) ? show : "",
+      column: SHOW_COLUMNS.some((c) => c.key === params.get("column")) ? params.get("column") : "" });
+    board.assignees.clear();
+    if (board.show && params.get("assignee")) board.assignees.add(params.get("assignee"));
+  }
+  // The Dashboard filter's chip: what it shows, and its own way out.
+  function showChipHTML() {
+    if (!board.show) return "";
+    const label = (SHOW_FILTERS.find((x) => x.key === board.show) || {}).label || "";
+    const col = board.column ? (SHOW_COLUMNS.find((c) => c.key === board.column) || {}).label : "";
+    return `<span class="kb-show-chip" id="kb-show-chip"><span class="material-symbols-outlined" aria-hidden="true">dashboard</span>`
+      + `<span>Dashboard: <b>${esc(label)}${col ? ` · ${esc(col)}` : ""}</b></span>`
+      + `<button type="button" class="kb-show-clear" id="kb-show-clear" aria-label="Clear the Dashboard filter"><span class="material-symbols-outlined" aria-hidden="true">close</span></button></span>`;
+  }
   const setAddress = (h) => { if (window.location.hash !== h) { try { history.replaceState(null, "", h); } catch (e) { /* the address just isn't kept */ } } };
   function showTicketAddress(t) {
     if (pageEl.hidden) return;
@@ -669,7 +701,8 @@ export function mountStaffKanban(ctx) {
     // server's search hits (asked for as the box is typed in).
     const texts = store.state.texts;
     const list = board.q && texts.size ? state.tasks.map((t) => (!t.descriptionText && texts.has(t.key) ? { ...t, descriptionText: texts.get(t.key) } : t)) : state.tasks;
-    return filterTasks(list, { ...board, me });
+    const archived = new Set((ctx.projects() || []).filter((p) => p && p.archived).map((p) => p.id));
+    return filterTasks(list, { ...board, me, today: isoDay(new Date()), archived });
   }
   let boardSearchTimer = 0;
   function searchDescriptions(q) {
@@ -700,7 +733,7 @@ export function mountStaffKanban(ctx) {
     headSig = ""; // (the view is drawn afresh below)
     // Primary filters: staff, My tasks, search, Release. Secondary (in Filters): flagged, type, priority, sprint, label.
     const moreCount = [board.flagged, board.type, board.priority, board.sprint, board.project, board.label].filter(Boolean).length;
-    const filtersActive = moreCount || board.mine || board.assignees.size || board.release || board.q;
+    const filtersActive = moreCount || board.mine || board.assignees.size || board.release || board.q || board.show;
     view.innerHTML = `
       <div class="page-header">
         <h2>Staff Kanban</h2>
@@ -723,6 +756,7 @@ export function mountStaffKanban(ctx) {
           <label class="kb-search kb-filter-search"><span class="material-symbols-outlined" aria-hidden="true">search</span><input type="search" id="kb-q" placeholder="Search tasks" value="${esc(board.q)}" aria-label="Search tasks"></label>
           <select id="kb-release" class="kb-release-select" aria-label="Release">${relOpts}</select>
           <button type="button" class="kb-mine kb-filter-toggle${filtersOpen || moreCount ? " on" : ""}" id="kb-filter-toggle" aria-expanded="${filtersOpen}" aria-controls="kb-filter-panel"><span class="material-symbols-outlined" aria-hidden="true">tune</span>Filters${moreCount ? `<span class="kb-filter-count">${moreCount}</span>` : ""}</button>
+          ${showChipHTML()}
           ${filtersActive ? '<button type="button" class="link-btn kb-clear" id="kb-clear">Clear filters</button>' : ""}
         </div>
         ${canWrite() ? '<button type="button" class="btn-primary kb-pinned-new" id="kb-pinned-new">+ New task</button>' : ""}
@@ -818,7 +852,9 @@ export function mountStaffKanban(ctx) {
     const clearMore = $("#kb-clear-more");
     if (clearMore) clearMore.addEventListener("click", () => { Object.assign(board, { flagged: false, type: "", priority: "", sprint: "", project: "", label: "" }); redraw(); });
     const clear = $("#kb-clear");
-    if (clear) clear.addEventListener("click", () => { Object.assign(board, { q: "", mine: false, flagged: false, release: "", type: "", priority: "", sprint: "", project: "", label: "" }); board.assignees.clear(); redraw(); });
+    if (clear) clear.addEventListener("click", () => { Object.assign(board, { q: "", mine: false, flagged: false, release: "", type: "", priority: "", sprint: "", project: "", label: "", show: "", column: "" }); board.assignees.clear(); redraw(); });
+    const showClear = $("#kb-show-clear");
+    if (showClear) showClear.addEventListener("click", () => { Object.assign(board, { show: "", column: "" }); redraw(); });
     // Phone: swipe the board left / right between columns.
     wrap.addEventListener("scroll", () => { if (mqPhone.matches && !$("#kb-board").classList.contains("kb-board-lanes")) syncPagerFromScroll(); }, { passive: true });
     let sw = null;
@@ -894,7 +930,7 @@ export function mountStaffKanban(ctx) {
     if (!board.assignees.size) return null;
     return [...people().map((u) => u.id), "none"].filter((id) => board.assignees.has(id));
   }
-  const boardIsFiltered = () => !!(board.q || board.mine || board.flagged || board.assignees.size || board.release || board.type || board.priority || board.sprint || board.label);
+  const boardIsFiltered = () => !!(board.q || board.mine || board.flagged || board.assignees.size || board.release || board.type || board.priority || board.sprint || board.label || board.show);
   const colMeta = (list, s) => {
     if (s.key === "done") {
       const total = store.state.doneTotal;

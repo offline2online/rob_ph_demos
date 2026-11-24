@@ -674,8 +674,46 @@ function filterTasks(tasks, f) {
     if (f.label && !(t.labels || []).includes(f.label)) return false;
     if (f.status && (f.status.startsWith("done:") ? "done:" + res(t) !== f.status : t.status !== f.status)) return false;
     if (f.q && !matchesQuery(t, f.q)) return false;
+    if (f.show && !matchesShow(t, f)) return false;
     return true;
   });
+}
+
+// The Dashboard's drill-down filter (uAp6fukjDyNxKusotmcQ): a Staff Kanban
+// count on the Dashboard opens the board with `show` set, and these are the
+// same rules dashboard-core.js kanbanKpi counts with, so the board shows the
+// count's own tasks. Every one of them is open work: not done, not an epic.
+//   open         every open task (with `column`, one of the tile's columns)
+//   overdue      due before today (f.today, the viewer's local YYYY-MM-DD)
+//   unassigned   no assignee
+//   unestimated  no estimate
+//   waiting      in Ready for Testing and assigned to the viewer (f.me)
+// Tasks of an archived console project (f.archived, a Set of ids) are left
+// out, as the tile leaves them out.
+const SHOW_FILTERS = [
+  { key: "open", label: "Open tasks" },
+  { key: "overdue", label: "Overdue" },
+  { key: "unassigned", label: "Unassigned" },
+  { key: "unestimated", label: "Unestimated" },
+  { key: "waiting", label: "Waiting on you in Testing" },
+];
+const SHOW_COLUMNS = [
+  { key: "todo", label: "To do", statuses: ["backlog", "ready-for-dev"] },
+  { key: "progress", label: "In progress", statuses: ["in-progress"] },
+  { key: "testing", label: "Testing", statuses: ["ready-for-testing", "approved"] },
+];
+function matchesShow(t, f) {
+  if (!t || t.status === "done" || t.type === "epic") return false;
+  if (f.archived && f.archived.has(t.project)) return false;
+  const col = f.column && SHOW_COLUMNS.find((c) => c.key === f.column);
+  if (col && !col.statuses.includes(t.status)) return false;
+  switch (f.show) {
+    case "overdue": return !!t.due && String(t.due).slice(0, 10) < String(f.today || isoDay(new Date()));
+    case "unassigned": return !t.assignee;
+    case "unestimated": return !(+t.estimate > 0);
+    case "waiting": return t.status === "ready-for-testing" && !!f.me && String(t.assignee || "").toLowerCase() === String(f.me).toLowerCase();
+    default: return true;
+  }
 }
 
 // ── Release report (KB-REP-1) ─────────────────────────────────────────────
@@ -1154,4 +1192,4 @@ function dataUriParts(uri) {
   return m ? { contentType: m[1], base64: m[2].replace(/\s+/g, "") } : null;
 }
 
-module.exports = { STATUSES, STATUS_KEYS, STATUS_LABEL, RESOLUTIONS, TYPES, PRIORITIES, LINK_TYPES, INVERSE_LINK, linkChanges, inverseOf, CORE_FIELDS, OPTIONAL_FIELDS, FIELD_LABEL, FIELD_KEYS, defaultFields, currentReleaseId, normaliseSettings, res, statusLabel, statusShort, typeOf, prioOf, remaining, keyNumber, keyOf, ticketSub, ticketHash, ticketFromSub, fmtH, parseDur, isoDay, fmtDate, daysBetween, workingDaysUntil, rankBetween, prioRank, needsWork, boardBand, byBoardOrder, dropNeighbours, PERSON_ALIASES, setPersonAliases, canonicalEmail, isAliasEmail, NEEDS_WORK_BACK, normNeedsWork, statusChange, parseActivity, fmtAge, ticketHistory, soundAlikes, matchSpokenNames, MAX_LEVELS, LEVEL_NAMES, levelName, ancestorsOf, levelOf, heightOf, parentProblem, canHaveChildren, isFinished, rollup, parentsToAdvance, fold, MAX_TOKENS, searchTokens, queryToken, searchTickets, PICK_LIMIT, matchesQuery, filterTasks, CAPACITY_HOURS_PER_DAY, releaseReport, AGENT_LABELS, agentDraft, htmlToText, mentionsIn, AC_MAX_ITEMS, AC_MAX_TEXT, newCriterionId, encodeCriteria, decodeCriteria, acCounts, cleanCriteria, diffCriteria, cleanTaskFields, editActivity, CARD_FIELDS, cardOf, AGENT_MAX_TICKETS, AGENT_DESC_MAX, AGENT_BUILT, AGENT_STATUS_LABEL, agentBuilt, agentRollup, canSendToAgent, cleanAgentSplit, agentTicketDesc, cardPatchOf, hasInlineImages, externaliseInlineImages, dataUriParts };
+module.exports = { STATUSES, STATUS_KEYS, STATUS_LABEL, RESOLUTIONS, TYPES, PRIORITIES, LINK_TYPES, INVERSE_LINK, linkChanges, inverseOf, CORE_FIELDS, OPTIONAL_FIELDS, FIELD_LABEL, FIELD_KEYS, defaultFields, currentReleaseId, normaliseSettings, res, statusLabel, statusShort, typeOf, prioOf, remaining, keyNumber, keyOf, ticketSub, ticketHash, ticketFromSub, fmtH, parseDur, isoDay, fmtDate, daysBetween, workingDaysUntil, rankBetween, prioRank, needsWork, boardBand, byBoardOrder, dropNeighbours, PERSON_ALIASES, setPersonAliases, canonicalEmail, isAliasEmail, NEEDS_WORK_BACK, normNeedsWork, statusChange, parseActivity, fmtAge, ticketHistory, soundAlikes, matchSpokenNames, MAX_LEVELS, LEVEL_NAMES, levelName, ancestorsOf, levelOf, heightOf, parentProblem, canHaveChildren, isFinished, rollup, parentsToAdvance, fold, MAX_TOKENS, searchTokens, queryToken, searchTickets, PICK_LIMIT, matchesQuery, filterTasks, SHOW_FILTERS, SHOW_COLUMNS, matchesShow, CAPACITY_HOURS_PER_DAY, releaseReport, AGENT_LABELS, agentDraft, htmlToText, mentionsIn, AC_MAX_ITEMS, AC_MAX_TEXT, newCriterionId, encodeCriteria, decodeCriteria, acCounts, cleanCriteria, diffCriteria, cleanTaskFields, editActivity, CARD_FIELDS, cardOf, AGENT_MAX_TICKETS, AGENT_DESC_MAX, AGENT_BUILT, AGENT_STATUS_LABEL, agentBuilt, agentRollup, canSendToAgent, cleanAgentSplit, agentTicketDesc, cardPatchOf, hasInlineImages, externaliseInlineImages, dataUriParts };

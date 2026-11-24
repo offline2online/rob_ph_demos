@@ -19,6 +19,15 @@
 // (#promote/prospects?tab=contacts, prospect-contacts.js): every person at the
 // TAM companies. The Chrome extension adds a LinkedIn profile through
 // window.__phAddProspectContact, which this page defines once it is mounted.
+//
+// AWS Partner Account Mapping (24 Nov 2026, prospects-core.js): the "AWS
+// Account Mapping" panel exports the upload file for Partner Central (the
+// selected rows, else the companies due a re-sync, else all) and imports AWS's
+// results CSV onto the matching records (awsMapping, with today as the
+// last-synced date). The grid shows AWS propensity, Greenfield eligibility and
+// the awareness rank (the order stage-1 awareness spend follows); "Rank by
+// propensity" sorts by it. consoleConfig/accountMapping is the daily check
+// written by functions/account-mapping.js.
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, onSnapshot, serverTimestamp, writeBatch,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
@@ -26,6 +35,8 @@ import { loadAgGrid } from "./docs-grid.js";
 import {
   STATUSES, SIZE_BANDS, PRIORITIES, normaliseProspect, toCsv, toLinkedInCsv, statusLabel, sizeBandLabel, priorityLabel, leadIdForProspect, leadFieldsFromProspect,
   prospectFromInput, prospectKey, prospectIdFor, slugId, INDUSTRY_LABELS, UNASSIGNED_INDUSTRY, COUNTRIES, canonicalCountry, normaliseIndustry, AWS_REGIONS,
+  PROPENSITY_BANDS, NOT_SYNCED, propensityLabel, ELIGIBILITY_OPTIONS, eligibilityKey, mappingPropensity, awarenessRanks, isHighPotential, isMappingStale,
+  toAccountMappingCsv, parseAccountMappingCsv, planAccountMappingImport, MAPPING_STALE_DAYS,
 } from "./prospects-core.js";
 import { SEED_PROSPECTS, SEED_SOURCE } from "./prospects-seed.js";
 import { mountProspectDetail } from "./prospect-detail.js";
@@ -274,6 +285,25 @@ class FilterHeader {
   }
 }
 
+// The grid's AWS Account Mapping columns, read off each record's awsMapping,
+// and the awareness rank across every record (prospects-core.js awarenessRanks).
+export function withMapping(list) {
+  const ranks = awarenessRanks(list);
+  return list.map((p) => {
+    const m = p.awsMapping;
+    return {
+      ...p,
+      awsPropensity: mappingPropensity(p),
+      awsGreenfield: eligibilityKey(m && m.greenfieldEligible),
+      awsSalesMotion: eligibilityKey(m && m.salesMotionEligible),
+      awsMatch: eligibilityKey(m && m.matched),
+      awsSyncedMs: (m && m.lastSyncedAtMs) || 0,
+      awsHighPotential: isHighPotential(p),
+      awarenessRank: ranks.get(p.id) || null,
+    };
+  });
+}
+
 export function mountProspectsPage({ db, auth, canEdit, askName }) {
   // The console's API headers (the same as app.js's consoleApiHeaders), for the detail view's Enrich button.
   const apiHeaders = async () => {
@@ -310,7 +340,9 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
     pop.innerHTML = html; pop.hidden = false;
     const r = anchor.getBoundingClientRect(), w = pop.offsetWidth, h = pop.offsetHeight;
     pop.style.left = `${Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8))}px`;
-    pop.style.top = `${r.bottom + h + 8 > window.innerHeight && r.top > h ? r.top - h - 4 : r.bottom + 4}px`;
+    // Below the button, else above it; either way kept inside the viewport (the Columns list is long on a phone).
+    const top = r.bottom + h + 8 > window.innerHeight && r.top > h ? r.top - h - 4 : r.bottom + 4;
+    pop.style.top = `${Math.max(8, Math.min(top, window.innerHeight - h - 8))}px`;
     pop._onItem = onItem;
     const first = pop.querySelector("button, input");
     if (first) first.focus({ preventScroll: true });
@@ -338,6 +370,7 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
     $("prospects-seed-btn").hidden = total > 0 || !canEdit();
     host.hidden = total === 0;
     $("prospects-tools").hidden = total === 0;
+    if (!$("prospect-awsmap-backdrop").hidden) renderAwsmap();
   }
   function updateBulk() {
     const sel = selectedRows();
@@ -602,6 +635,109 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
     later();
   }
 
+  // ── AWS Account Mapping: upload file out, AWS's results in (prospects-core.js) ──
+  const mapBox = $("prospect-awsmap-backdrop");
+  let mapOpener = null;
+  let mapCheck = null; // consoleConfig/accountMapping, the daily check (functions/account-mapping.js)
+  const fmtDay = (msv) => (msv ? new Date(msv).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "");
+  const dueRows = () => rows.filter((p) => p.status !== "disqualified" && p.status !== "converted" && isMappingStale(p, Date.now()));
+  function uploadRows() {
+    const sel = selectedRows();
+    if (sel.length) return { list: sel, what: "selected" };
+    const due = dueRows();
+    return due.length ? { list: due, what: "due" } : { list: rows, what: "all" };
+  }
+  function renderAwsmap() {
+    const n = (v) => v.toLocaleString("en-GB");
+    const synced = rows.filter((p) => p.awsMapping && p.awsMapping.lastSyncedAtMs);
+    const last = synced.reduce((m, p) => Math.max(m, p.awsMapping.lastSyncedAtMs), 0);
+    const due = dueRows().length;
+    $("prospect-awsmap-sub").textContent = last ? `${n(synced.length)} of ${n(rows.length)} companies synced · last import ${fmtDay(last)}` : `None of the ${n(rows.length)} companies synced yet`;
+    const kpi = (label, v) => `<div class="prospect-awsmap-kpi"><dt>${esc(label)}</dt><dd>${n(v)}</dd></div>`;
+    const checked = mapCheck && mapCheck.checkedAt && typeof mapCheck.checkedAt.toMillis === "function" ? fmtDay(mapCheck.checkedAt.toMillis()) : "";
+    $("prospect-awsmap-body").innerHTML = (due
+      ? `<p class="prospect-awsmap-alert" role="status"><span class="material-symbols-outlined" aria-hidden="true">schedule</span><span>${n(due)} ${due === 1 ? "company is" : "companies are"} due a re-sync (never synced, or last synced over ${MAPPING_STALE_DAYS} days ago).${checked ? ` Checked daily, last ${esc(checked)}.` : ""}</span></p>`
+      : `<p class="prospect-awsmap-alert is-ok" role="status"><span class="material-symbols-outlined" aria-hidden="true">check_circle</span><span>Every company was synced in the last ${MAPPING_STALE_DAYS} days.</span></p>`)
+      + `<dl class="prospect-awsmap-kpis">${kpi("Matched to AWS", rows.filter((p) => p.awsMapping && p.awsMapping.matched === true).length)}${kpi("High propensity", rows.filter((p) => p.awsPropensity === "high").length)}${kpi("Greenfield eligible", rows.filter((p) => p.awsGreenfield === "yes").length)}${kpi("High-potential shared", rows.filter((p) => p.awsHighPotential).length)}</dl>`;
+    const u = uploadRows();
+    $("prospect-awsmap-export").textContent = u.what === "selected" ? `Export upload file (${n(u.list.length)} selected)` : u.what === "due" ? `Export upload file (${n(u.list.length)} due)` : "Export upload file";
+    $("prospect-awsmap-export").disabled = !u.list.length;
+  }
+  function awsmapResult(text, bad) {
+    const el = $("prospect-awsmap-result");
+    el.textContent = text || ""; el.hidden = !text; el.classList.toggle("is-error", !!bad);
+  }
+  async function openAwsmap(opener) {
+    closePop();
+    mapOpener = opener || null;
+    awsmapResult("");
+    renderAwsmap();
+    mapBox.hidden = false;
+    $("prospect-awsmap-close").focus();
+    try { const snap = await getDoc(doc(db, "consoleConfig", "accountMapping")); mapCheck = snap.exists() ? snap.data() : null; } catch { mapCheck = null; }
+    if (!mapBox.hidden) renderAwsmap();
+  }
+  function closeAwsmap(restoreFocus = true) {
+    const opener = mapOpener;
+    mapOpener = null; mapBox.hidden = true;
+    if (restoreFocus && opener && opener.isConnected) opener.focus();
+  }
+  async function importAwsmap(file) {
+    if (!file || !canEdit()) return;
+    awsmapResult("Reading the file…");
+    let text = "";
+    try { text = await file.text(); } catch (e) { awsmapResult(`Couldn't read the file: ${e && e.message ? e.message : e}`, true); return; }
+    const parsed = parseAccountMappingCsv(text);
+    if (parsed.errors.length) { awsmapResult(parsed.errors.join(" "), true); return; }
+    const plan = planAccountMappingImport(rows, parsed, Date.now());
+    try {
+      for (let i = 0; i < plan.updates.length; i += 400) {
+        const batch = writeBatch(db);
+        // The sync date is the server's clock, like updatedAt.
+        for (const u of plan.updates.slice(i, i + 400)) batch.update(doc(db, "prospects", u.id), { ...u.fields, awsMapping: { ...u.fields.awsMapping, lastSyncedAt: serverTimestamp() }, updatedAt: serverTimestamp(), updatedByEmail: me() });
+        await batch.commit();
+      }
+    } catch (e) { awsmapResult(`Couldn't save the results: ${e && e.message ? e.message : e}`, true); return; }
+    const parts = [`Updated ${plan.updates.length.toLocaleString("en-GB")} ${plan.updates.length === 1 ? "company" : "companies"} from AWS Account Mapping.`];
+    if (plan.unmatched.length) parts.push(`${plan.unmatched.length} ${plan.unmatched.length === 1 ? "row matched" : "rows matched"} no company: ${plan.unmatched.slice(0, 5).map((u) => `line ${u.line}${u.name ? ` (${u.name})` : ""}`).join(", ")}${plan.unmatched.length > 5 ? ", …" : ""}.`);
+    if (parsed.unknownHeaders.length) parts.push(`Columns not read: ${parsed.unknownHeaders.slice(0, 8).join(", ")}.`);
+    awsmapResult(parts.join(" "), !plan.updates.length);
+    say(parts[0]);
+  }
+  $("prospects-awsmap-btn").addEventListener("click", (e) => openAwsmap(e.currentTarget));
+  $("prospect-awsmap-close").addEventListener("click", () => closeAwsmap());
+  mapBox.addEventListener("click", (e) => { if (e.target === mapBox) closeAwsmap(); });
+  mapBox.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { e.stopPropagation(); closeAwsmap(); return; }
+    if (e.key !== "Tab") return; // keep focus inside the panel
+    const f = [...$("prospect-awsmap").querySelectorAll("button:not([disabled]), [tabindex='0']")].filter((x) => x.offsetParent !== null);
+    if (!f.length) return;
+    if (e.shiftKey && document.activeElement === f[0]) { e.preventDefault(); f[f.length - 1].focus(); }
+    else if (!e.shiftKey && document.activeElement === f[f.length - 1]) { e.preventDefault(); f[0].focus(); }
+  });
+  $("prospect-awsmap-export").addEventListener("click", () => {
+    const u = uploadRows();
+    if (u.list.length) download(u.list, "aws-account-mapping-upload", toAccountMappingCsv, "company");
+  });
+  $("prospect-awsmap-import").addEventListener("click", () => { if (canEdit()) $("prospect-awsmap-file").click(); });
+  $("prospect-awsmap-file").addEventListener("change", async (e) => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = "";
+    await importAwsmap(f);
+  });
+  // The AWS columns are off by default (the default columns fit without scrolling);
+  // these two show them with the ranking or the filter applied.
+  async function showAws(cols, apply) {
+    const g = await ensureGrid();
+    if (!g) return;
+    g.api.setColumnsVisible(cols, true);
+    apply(g.api);
+    closeAwsmap(false);
+    $("prospects-awsmap-btn").focus();
+  }
+  $("prospect-awsmap-show").addEventListener("click", () => showAws(["awsPropensity", "awarenessRank"], (api) => api.applyColumnState({ state: [{ colId: "awarenessRank", sort: "asc" }], defaultState: { sort: null } })));
+  $("prospect-awsmap-greenfield").addEventListener("click", () => showAws(["awsPropensity", "awsGreenfield"], (api) => api.setFilterModel(Object.assign({}, api.getFilterModel() || {}, { awsGreenfield: { values: ["yes"] } }))));
+
   // ── The detail drawer ────────────────────────────────────────────────────
   const drawer = $("prospect-drawer-backdrop");
   let drawerId = null, drawerOpener = null, editing = false;
@@ -796,6 +932,27 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
     const countryOptions = () => { const seen = new Set(COUNTRIES.map((c) => c.toLowerCase())); const extra = [...new Set(rows.map((p) => canonicalCountry(p.country)).filter((c) => c && !seen.has(c.toLowerCase())))].sort((a, b) => a.localeCompare(b)); return [...COUNTRIES, ...extra].map((c) => [c, c]); };
     const industryOptions = () => [...INDUSTRY_LABELS.map((l) => [l, l]), [UNASSIGNED, UNASSIGNED_INDUSTRY]];
     const tip = (p) => (p.valueFormatted != null ? p.valueFormatted : p.value);
+    const eligibility = (p) => ((ELIGIBILITY_OPTIONS.find((o) => o.key === p.value) || { label: "" }).label);
+    const eligibilityOptions = () => ELIGIBILITY_OPTIONS.map((o) => [o.key, o.label]);
+    const rankOrder = (a, b) => (a == null ? (b == null ? 0 : 1) : b == null ? -1 : a - b); // unranked last, either way
+    // AWS propensity as a pill; a high-potential shared account adds a star.
+    const propensity = (params) => {
+      const span = document.createElement("span");
+      span.className = "prospect-prop-cell";
+      const v = params.value;
+      if (v && v !== NOT_SYNCED) {
+        const pill = document.createElement("span");
+        pill.className = `prospect-prop prospect-prop-${v}`; pill.textContent = propensityLabel(v);
+        span.appendChild(pill);
+      } else { const t = document.createElement("span"); t.className = "field-hint"; t.textContent = "Not synced"; span.appendChild(t); }
+      if (params.data && params.data.awsHighPotential) {
+        const hp = document.createElement("span");
+        hp.className = "prospect-hp"; hp.setAttribute("role", "img"); hp.setAttribute("aria-label", "High-potential shared account");
+        hp.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true">star</span>';
+        span.appendChild(hp);
+      }
+      return span;
+    };
     const colStd = { cellRenderer: trunc, tooltipValueGetter: tip };
     return withFilterHeaders([
       { colId: "select", headerName: "", width: 52, checkboxSelection: true, headerCheckboxSelection: true, headerCheckboxSelectionCurrentPageOnly: true, sortable: false, filter: false, floatingFilter: false, resizable: false, suppressMovable: true, pinned: "left", hide: !canEdit() },
@@ -806,6 +963,12 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
       { field: "storeCount", headerName: "Stores", width: 96, type: "numericColumn", filter: "agNumberColumnFilter", valueFormatter: (p) => (p.value == null ? "" : p.value.toLocaleString("en-GB")) },
       { colId: "linkedin", field: "linkedinUrl", headerName: "LinkedIn", width: 90, sortable: false, filter: false, floatingFilter: false, cellRenderer: linkedin },
       { field: "status", headerName: "Status", minWidth: 110, flex: 1, valueFormatter: (p) => statusLabel(p.value), ...select(() => STATUSES.map((s) => [s.key, s.label])), cellRenderer: trunc },
+      { field: "awsPropensity", headerName: "AWS propensity", minWidth: 140, flex: 1, hide: true, valueFormatter: (p) => propensityLabel(p.value), ...select(() => [...PROPENSITY_BANDS.map((b) => [b.key, b.label]), [NOT_SYNCED, "Not synced"]]), cellRenderer: propensity, tooltipValueGetter: (p) => (p.data && p.data.awsHighPotential ? "High-potential shared account: request joint planning from the company's profile" : null) },
+      { field: "awsGreenfield", headerName: "Greenfield", minWidth: 110, flex: 1, hide: true, valueFormatter: eligibility, ...select(eligibilityOptions), cellRenderer: trunc },
+      { field: "awarenessRank", headerName: "Awareness rank", width: 140, hide: true, type: "numericColumn", filter: "agNumberColumnFilter", comparator: rankOrder, valueFormatter: (p) => (p.value == null ? "" : String(p.value)), headerTooltip: "Stage-1 awareness targeting order: AWS propensity first, then priority, then store count. 1 gets spend first." },
+      { field: "awsMatch", headerName: "AWS match", minWidth: 110, flex: 1, hide: true, valueFormatter: eligibility, ...select(eligibilityOptions), cellRenderer: trunc },
+      { field: "awsSalesMotion", headerName: "Partner-led sales motion", minWidth: 150, flex: 1, hide: true, valueFormatter: eligibility, ...select(eligibilityOptions), cellRenderer: trunc },
+      { field: "awsSyncedMs", headerName: "AWS last synced", minWidth: 130, flex: 1, hide: true, filter: false, valueFormatter: (p) => (p.value ? new Date(p.value).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "Never") },
       { field: "subIndustry", headerName: "Sub-industry", minWidth: 130, flex: 1, hide: true, ...colStd },
       { field: "hqCountry", headerName: "HQ country", minWidth: 100, flex: 1, hide: true, ...colStd },
       { field: "awsRegion", headerName: "AWS region", minWidth: 100, flex: 1, hide: true, ...select(() => [...new Set([...AWS_REGIONS, ...rows.map((p) => p.awsRegion).filter(Boolean)])].map((v) => [v, v])) },
@@ -862,7 +1025,7 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
     contactsUi.start();
     showTab(tabFromHash());
     unsub = onSnapshot(collection(db, "prospects"), (snap) => {
-      rows = snap.docs.map((d) => normaliseProspect(d.id, d.data({ serverTimestamps: "estimate" })));
+      rows = withMapping(snap.docs.map((d) => normaliseProspect(d.id, d.data({ serverTimestamps: "estimate" }))));
       updateCount();
       prospectsLoaded();
       contactsUi.refresh();
@@ -871,13 +1034,13 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
       if (grid) {
         grid.api.setGridOption("rowData", rows);
         // The Company cell also shows the enrichment icon, which can arrive without the name changing.
-        grid.api.refreshCells({ columns: ["name"], force: true });
+        grid.api.refreshCells({ columns: ["name", "awsPropensity"], force: true });
         const key = distinct((p) => p.awsRegion).join("|");
         if (key !== regionKey) { regionKey = key; grid.api.refreshHeader(); }
       } else if (rows.length) ensureGrid();
     }, () => { say("Prospects could not be loaded. Reload the page to try again.", true); });
   }
-  function stop() { closePop(); closeDrawer(false); detailUi.close(); page.classList.remove("is-detail"); contactsUi.stop(); if (unsub) unsub(); unsub = null; started = false; }
+  function stop() { closePop(); closeDrawer(false); closeAwsmap(false); detailUi.close(); page.classList.remove("is-detail"); contactsUi.stop(); if (unsub) unsub(); unsub = null; started = false; }
   function render() {
     updateCount();
     contactsUi.refresh();

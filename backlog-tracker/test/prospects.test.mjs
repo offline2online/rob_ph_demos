@@ -309,4 +309,152 @@ t("contacts keep an email; AWS contacts merge on email and keep the newest 30", 
   for (let i = 0; i < 40; i++) list = C.mergeContact(list, C.awsContactFrom({ name: `P${i}`, email: `p${i}@aws.com` }, "2026-11-10"));
   assert.equal(list.length, 30); assert.equal(list[29].name, "P39");
 });
+// ── AWS Partner Account Mapping (ticket U04K46GSsIEN5xQ4NyAp) ───────────────
+const NOW = Date.UTC(2026, 10, 24, 9);
+t("Account Mapping: propensity bands from words and scores, yes/no from AWS's wording", () => {
+  assert.deepEqual(["High", "very high", "Medium", "moderate", "Low", "", "n/a"].map(C.propensityBand), ["high", "high", "medium", "medium", "low", "", ""]);
+  assert.deepEqual([85, "70", "69", "40", "39", 0.9, "55%", 5].map(C.propensityBand), ["high", "high", "medium", "medium", "low", "high", "medium", "low"]);
+  assert.deepEqual(["Yes", "eligible", "Matched", "No", "Not eligible", "Unmatched", "", "maybe"].map(C.readYesNo), [true, true, true, false, false, false, null, null]);
+});
+t("Account Mapping: the upload file carries the record id so results come back to the right record", () => {
+  const rows = [mk("aldi-australia", { name: "ALDI", country: "Australia", website: "https://www.aldi.com.au/", awsAccountId: "123456789012" }), mk("x", { name: "=Evil", country: "UK" })];
+  const lines = C.toAccountMappingCsv(rows).trim().split("\r\n");
+  assert.equal(lines[0], "Record ID,Company name,Website,Domain,Country,AWS account ID");
+  assert.equal(lines[1], "aldi-australia,ALDI,https://www.aldi.com.au/,aldi.com.au,Australia,123456789012");
+  assert.equal(lines[2], "x,'=Evil,,,UK,");
+});
+t("Account Mapping: AWS's results are read by header aliases and unknown columns are reported", () => {
+  const csv = "﻿Record ID,Customer Name,Matched AWS Account ID,Match Status,Propensity Score,Propensity Signals,Partner Greenfield Program Eligibility,Partner-led Sales Motion Eligibility,Region\r\n"
+    + "aldi-australia,ALDI,1234-5678-9012,Matched,82,\"Cloud migration; Retail media\",Eligible,Not eligible,APJ\r\n"
+    + ",Beta Stores,,No match,,,,,EMEA\r\n";
+  const r = C.parseAccountMappingCsv(csv);
+  assert.deepEqual(r.errors, []);
+  assert.deepEqual(r.unknownHeaders, ["Region"]);
+  assert.equal(r.rows.length, 2);
+  assert.deepEqual(r.rows[0], { line: 2, recordId: "aldi-australia", name: "ALDI", website: "", country: "", awsAccountId: "123456789012", matched: true, propensityRaw: "82", propensity: "high", signals: ["Cloud migration", "Retail media"], greenfieldEligible: true, salesMotionEligible: false });
+  assert.equal(r.rows[1].matched, false);
+  assert.match(C.parseAccountMappingCsv("Foo,Bar\n1,2\n").errors[0], /no Record ID, Company name, Website or AWS account ID column/);
+  assert.match(C.parseAccountMappingCsv("").errors[0], /empty/);
+  // No match column: naming an AWS account means it was matched.
+  assert.equal(C.parseAccountMappingCsv("Company name,AWS account ID\nALDI,123456789012\n").rows[0].matched, true);
+});
+t("Account Mapping: an import matches by id, AWS account, domain or name in the country, and stamps the sync date", () => {
+  const rows = [
+    mk("aldi-australia", { name: "ALDI", country: "Australia", website: "https://www.aldi.com.au" }),
+    mk("aldi-germany", { name: "ALDI", country: "Germany", website: "https://www.aldi.de" }),
+    mk("beta-uk", { name: "Beta Stores", country: "United Kingdom", awsAccountId: "210987654321" }),
+    mk("gamma-fr", { name: "Gamma", country: "France", website: "https://gamma.example" }),
+  ];
+  const csv = "Record ID,Company name,Website,Country,AWS account ID,Propensity,Greenfield eligible\n"
+    + "aldi-australia,ALDI,,,111111111111,High,Yes\n"
+    + ",Beta,,,210987654321,Low,No\n"
+    + ",,gamma.example,France,,Medium,\n"
+    + ",ALDI,,,,Medium,\n"            // two ALDI records and no country: not guessed
+    + ",ALDI,,Germany,,Low,\n"
+    + ",Nobody,,,,High,\n";
+  const plan = C.planAccountMappingImport(rows, C.parseAccountMappingCsv(csv), NOW);
+  assert.deepEqual(plan.updates.map((u) => u.id), ["aldi-australia", "beta-uk", "gamma-fr", "aldi-germany"]);
+  assert.deepEqual(plan.unmatched.map((u) => u.line), [5, 7]);
+  const aldi = plan.updates[0].fields;
+  assert.equal(aldi.awsAccountId, "111111111111", "AWS's account ID fills a blank one");
+  assert.equal(plan.updates[1].fields.awsAccountId, undefined, "an existing account ID is never overwritten");
+  assert.equal(aldi.awsMapping.lastSyncedAt.getTime(), NOW);
+  assert.equal(aldi.awsMapping.source, "csv-import");
+  const p = mk("aldi-australia", { name: "ALDI", country: "Australia", ...aldi });
+  assert.deepEqual({ ...p.awsMapping }, { matched: true, awsAccountId: "111111111111", propensity: "high", propensityRaw: "High", signals: [], greenfieldEligible: true, salesMotionEligible: null, lastSyncedAtMs: NOW, source: "csv-import" });
+});
+t("Account Mapping: re-sync is due after 30 days or when never synced", () => {
+  const at = (days) => mk("a", { name: "A", country: "UK", awsMapping: { matched: true, propensity: "high", lastSyncedAt: new Date(NOW - days * 864e5) } });
+  assert.equal(C.isMappingStale(mk("a", { name: "A" }), NOW), true);
+  assert.equal(C.isMappingStale(at(29), NOW), false);
+  assert.equal(C.isMappingStale(at(31), NOW), true);
+  assert.equal(C.MAPPING_STALE_DAYS, 30);
+});
+t("Account Mapping: filters by propensity (or not synced) and Greenfield eligibility", () => {
+  const rows = [
+    mk("a", { name: "A", country: "UK", awsMapping: { matched: true, propensity: "high", greenfieldEligible: true } }),
+    mk("b", { name: "B", country: "UK", awsMapping: { matched: true, propensityRaw: "45", greenfieldEligible: false } }),
+    mk("c", { name: "C", country: "UK" }),
+  ];
+  const ids = (f) => C.filterProspects(rows, f).map((p) => p.id).join();
+  assert.equal(ids({ propensity: "high" }), "a");
+  assert.equal(ids({ propensity: "medium" }), "b", "a stored score is banded");
+  assert.equal(ids({ propensity: C.NOT_SYNCED }), "c");
+  assert.equal(ids({ greenfield: "yes" }), "a");
+  assert.equal(ids({ greenfield: "no" }), "b");
+  assert.equal(ids({ greenfield: "unknown" }), "c");
+  assert.ok(C.FILTER_KEYS.includes("propensity") && C.FILTER_KEYS.includes("greenfield"));
+});
+t("Account Mapping: awareness rank is propensity first, then priority, then stores; unsynced, unmatched and closed records are unranked", () => {
+  const m = (propensity, extra = {}) => ({ matched: true, propensity, ...extra });
+  const rows = [
+    mk("low", { name: "Low", awsMapping: m("low"), priority: "high", storeCount: 9000 }),
+    mk("high-small", { name: "High small", awsMapping: m("high"), priority: "medium", storeCount: 10 }),
+    mk("high-prio", { name: "High prio", awsMapping: m("high"), priority: "high", storeCount: 5 }),
+    mk("high-big", { name: "High big", awsMapping: m("high"), priority: "medium", storeCount: 500 }),
+    mk("medium", { name: "Medium", awsMapping: m("medium") }),
+    mk("none", { name: "None" }),
+    mk("unmatched", { name: "Unmatched", awsMapping: m("high", { matched: false }) }),
+    mk("gone", { name: "Gone", awsMapping: m("high"), status: "disqualified" }),
+  ];
+  const r = C.awarenessRanks(rows);
+  assert.deepEqual([...r.entries()], [["high-prio", 1], ["high-big", 2], ["high-small", 3], ["medium", 4], ["low", 5]]);
+  const csv = C.toCsv(rows).trim().split("\r\n");
+  const head = csv[0].split(",");
+  assert.equal(head[head.length - 1], "Awareness rank");
+  for (const col of ["AWS match", "AWS propensity", "AWS signals", "Greenfield eligible", "Partner-led sales motion eligible", "AWS last synced"]) assert.ok(head.includes(col), col);
+  assert.ok(csv[2].endsWith(",3"), "High small is third");
+  assert.ok(csv[6].endsWith(","), "an unsynced record has no rank");
+});
+t("Account Mapping: a high-potential shared account is matched, High and eligible for a programme; the draft only describes it", () => {
+  const base = { name: "ALDI", country: "Australia", industry: "Grocery & Supermarkets", storeCount: 600 };
+  const hp = mk("a", { ...base, awsMapping: { matched: true, awsAccountId: "123456789012", propensity: "high", propensityRaw: "92", signals: ["Cloud migration"], greenfieldEligible: false, salesMotionEligible: true } });
+  assert.equal(C.isHighPotential(hp), true);
+  for (const m of [{ matched: false, propensity: "high", greenfieldEligible: true }, { matched: true, propensity: "medium", greenfieldEligible: true }, { matched: true, propensity: "high" }]) {
+    assert.equal(C.isHighPotential(mk("b", { ...base, awsMapping: m })), false, JSON.stringify(m));
+  }
+  assert.equal(C.isHighPotential(mk("c", base)), false);
+  const d = C.jointPlanningDraft(hp);
+  assert.match(d, /^Subject: Joint account planning request: ALDI \(Australia\)/);
+  assert.match(d, /matched it to an AWS account \(123456789012\) with high propensity to buy \(92\), and it is eligible for the Partner-led Sales Motion\./);
+  assert.match(d, /AWS signals: Cloud migration\./);
+  assert.match(d, /600 stores/);
+  assert.ok(d.length <= C.MAPPING_LIMITS.draft);
+  assert.deepEqual(C.normaliseJointPlanning({ status: "sent?", text: " Hi " }), { status: "draft", text: "Hi", draftedByEmail: "", draftedAtMs: 0, submittedAtMs: 0 });
+  assert.equal(C.normaliseJointPlanning({ text: "" }), null);
+});
+{
+  // The scheduled check (functions/account-mapping.js), against an in-memory db.
+  const require = createRequire(import.meta.url);
+  const { createAccountMappingCheck, EVERY_MS } = require("../functions/account-mapping.js");
+  const docs = {
+    a: { name: "A", country: "UK", awsMapping: { matched: true, propensity: "high", greenfieldEligible: true, lastSyncedAt: new Date(NOW - 2 * 864e5) } },
+    b: { name: "B", country: "UK", awsMapping: { matched: true, propensity: "low", lastSyncedAt: new Date(NOW - 40 * 864e5) } },
+    c: { name: "C", country: "UK" },
+    d: { name: "D", country: "UK", status: "disqualified" },
+  };
+  const written = [];
+  let config = null;
+  const db = {
+    collection(name) {
+      if (name === "prospects") return { get: async () => ({ docs: Object.entries(docs).map(([id, data]) => ({ id, data: () => data })) }), doc: () => { throw new Error("must not write a prospect"); } };
+      assert.equal(name, "consoleConfig");
+      return { doc: (id) => { assert.equal(id, "accountMapping"); return { get: async () => ({ exists: !!config, data: () => config }), set: async (v, o) => { written.push([v, o]); config = { ...(config || {}), ...v }; } }; } };
+    },
+  };
+  let now = NOW;
+  const job = createAccountMappingCheck({ db, now: () => now, logger: { info() {} } });
+  const s = await job.runIfDue();
+  assert.equal(s.total, 3); assert.equal(s.neverSynced, 1); assert.equal(s.stale, 1); assert.equal(s.due, 2);
+  assert.equal(s.matched, 2); assert.equal(s.highPotential, 1); assert.equal(s.staleDays, 30);
+  assert.deepEqual(s.dueIds, ["b", "c"]);
+  assert.equal(s.lastImportAt.getTime(), NOW - 2 * 864e5);
+  assert.deepEqual(written[0][1], { merge: true });
+  now = NOW + EVERY_MS - 1;
+  assert.deepEqual(await job.runIfDue(), { skipped: "not due" }, "once a day");
+  now = NOW + EVERY_MS;
+  assert.equal((await job.runIfDue()).due, 2);
+  assert.equal(written.length, 2);
+  console.log("  ok  the daily Account Mapping check (functions/account-mapping.js)"); n++;
+}
 console.log(`${n} passed (with inbound matching)`);

@@ -3,7 +3,7 @@
 // Run: node test/partner-central.test.js
 "use strict";
 const assert = require("assert");
-const { createPartnerCentralApi, signRequest, normaliseOpportunity, sanitiseAceInput, OPERATIONS } = require("../functions/partner-central");
+const { createPartnerCentralApi, signRequest, normaliseOpportunity, sanitiseAceInput, OPERATIONS, parseAgentResult, parseMcpBody, AGENT_MCP, AGENT_TOOLS, buildFundingPrompt, parseFundingReply, isSubmitLike } = require("../functions/partner-central");
 
 function fakeDb() {
   const state = {};
@@ -15,7 +15,9 @@ function fakeDb() {
         async set(data, opts) { state[name][id] = opts && opts.merge ? { ...(state[name][id] || {}), ...data } : { ...data }; },
       }),
       async add(data) { const id = `a${Object.keys(state[name]).length}`; state[name][id] = data; return { id }; },
-      orderBy() { return { limit: () => ({ async get() { return { docs: Object.values(state[name]).reverse().map((d) => ({ data: () => d })) }; } }) }; },
+      orderBy() { return { limit: () => ({ async get() { return { docs: Object.entries(state[name]).reverse().map(([id, d]) => ({ id, data: () => d })) }; } }) }; },
+      async get() { return { docs: Object.entries(state[name]).map(([id, d]) => ({ id, data: () => d })) }; },
+      where(field, op, value) { return { limit: (n) => ({ async get() { return { docs: Object.entries(state[name]).filter(([, d]) => d && d[field] === value).slice(0, n).map(([id, d]) => ({ id, data: () => d })) }; } }) }; },
     };
   };
   return { collection: col, state };
@@ -30,7 +32,7 @@ function makeApi({ awsReply, stsStatus = 200, stsBody = STS_OK } = {}) {
     calls.push({ url, init });
     if (url.startsWith("https://sts.amazonaws.com")) return { ok: stsStatus < 400, status: stsStatus, text: async () => stsBody };
     const reply = awsReply ? awsReply(url, init) : { status: 200, body: { OpportunitySummaries: [] } };
-    return { ok: reply.status < 400, status: reply.status, text: async () => JSON.stringify(reply.body) };
+    return { ok: reply.status < 400, status: reply.status, headers: { get: (h) => (/content-type/i.test(h) ? reply.contentType || "application/json" : null) }, text: async () => (typeof reply.raw === "string" ? reply.raw : JSON.stringify(reply.body)) };
   };
   const api = createPartnerCentralApi({
     db, fetch, logger: { warn() {}, error() {}, info() {} },
@@ -263,6 +265,220 @@ check("SigV4 matches a recomputation and is deterministic", () => {
   const a = signRequest(args); const b = signRequest(args);
   assert.strictEqual(a.authorization, b.authorization);
   assert.match(a.authorization, /Credential=A\/20261106\/us-east-1\/svc\/aws4_request, SignedHeaders=host;x-amz-date;x-amz-security-token;x-amz-target, Signature=[0-9a-f]{64}$/);
+});
+
+
+// ── Partner Central agent (AWS-hosted MCP server) ──
+// A fake agent: the first message proposes a write and waits for approval; an
+// approval response completes it. Replies use the "stringified" shape.
+const agentPayload = (o) => ({ result: { content: [{ type: "text", text: JSON.stringify(o) }] } });
+function agentReply({ onCall } = {}) {
+  return (url, init) => {
+    if (!url.startsWith("https://partnercentral-agents-mcp.us-east-1.api.aws/mcp")) return { status: 200, body: { OpportunitySummaries: [] } };
+    const rpc = JSON.parse(init.body);
+    if (onCall) onCall(rpc);
+    const args = rpc.params.arguments;
+    const first = args.content && args.content[0];
+    if (rpc.params.name === "getSession") return { status: 200, body: { jsonrpc: "2.0", id: rpc.id, ...agentPayload({ sessionId: args.sessionId, status: "complete", content: [{ type: "text", text: "Session read." }] }) } };
+    if (first && first.type === "tool_approval_response") return { status: 200, body: { jsonrpc: "2.0", id: rpc.id, ...agentPayload({ sessionId: args.sessionId, status: "complete", content: [{ type: "text", text: first.decision === "approve" ? "Draft opportunity created (not submitted)." : "Cancelled." }] }) } };
+    if (/draft/i.test(first.text)) return { status: 200, body: { jsonrpc: "2.0", id: rpc.id, ...agentPayload({ sessionId: "sess-1", status: "requires_approval", content: [{ type: "text", text: "I will create this draft." }, { type: "tool_approval_request", toolUseId: "tu-1", toolName: "CreateOpportunity", parameters: { Title: "Test opportunity" } }] }) } };
+    // SSE answer for a read
+    const msg = { jsonrpc: "2.0", id: rpc.id, ...agentPayload({ sessionId: args.sessionId || "sess-2", status: "complete", content: [{ type: "text", text: "You have 2 open opportunities." }] }) };
+    return { status: 200, contentType: "text/event-stream", raw: `event: message\ndata: ${JSON.stringify(msg)}\n\n` };
+  };
+}
+
+check("agent routes are admin only", async () => {
+  const { api } = makeApi({ awsReply: agentReply() });
+  assert.strictEqual((await call(api, "POST", "/v1/agent/messages", { token: "", body: { text: "hi" } })).statusCode, 401);
+  assert.strictEqual((await call(api, "POST", "/v1/agent/messages", { token: "ed@x.example", body: { text: "hi" } })).statusCode, 403);
+  assert.strictEqual((await call(api, "GET", "/v1/agent", { token: "ed@x.example" })).statusCode, 403);
+  assert.strictEqual((await call(api, "POST", "/v1/agent/sessions/sess-1/approvals/tu-1", { token: "ed@x.example", body: { decision: "approve" } })).statusCode, 403);
+});
+
+check("a read: signed tools/call sendMessage to the agents endpoint in the Sandbox catalogue, SSE answer parsed", async () => {
+  const seen = [];
+  const { api, calls, db } = makeApi({ awsReply: agentReply({ onCall: (r) => seen.push(r) }) });
+  const r = await call(api, "POST", "/v1/agent/messages", { body: { text: "List my opportunities" } });
+  assert.strictEqual(r.statusCode, 200, JSON.stringify(r.body));
+  assert.strictEqual(r.body.reply.text, "You have 2 open opportunities.");
+  assert.strictEqual(r.body.session.sessionId, "sess-2"); assert.strictEqual(r.body.session.catalog, "Sandbox");
+  const sent = calls.find((c) => c.url === `https://${AGENT_MCP.host}${AGENT_MCP.path}`);
+  assert.match(sent.init.headers.authorization, /\/us-east-1\/partnercentral-agents-mcp\/aws4_request/);
+  assert.match(sent.init.headers.accept, /text\/event-stream/);
+  assert.strictEqual(seen[0].method, "tools/call"); assert.strictEqual(seen[0].params.name, "sendMessage");
+  assert.strictEqual(seen[0].params.arguments.catalog, "Sandbox"); assert.deepStrictEqual(seen[0].params.arguments.content, [{ type: "text", text: "List my opportunities" }]);
+  assert.ok(Object.values(db.state.partnerCentralAudit).some((e) => e.operation === "agent:sendMessage" && e.ok));
+  assert.ok(db.state.partnerCentralAgentSessions["sess-2"], "the AI session is recorded");
+  assert.deepStrictEqual(AGENT_TOOLS, ["sendMessage", "getSession"]);
+});
+
+check("a write waits for an admin's approval, which is the only thing that answers it", async () => {
+  const seen = [];
+  const { api, db } = makeApi({ awsReply: agentReply({ onCall: (r) => seen.push(r) }) });
+  const r = await call(api, "POST", "/v1/agent/messages", { body: { text: "Draft a test opportunity, do not submit" } });
+  assert.strictEqual(r.statusCode, 200);
+  assert.strictEqual(r.body.session.status, "requires_approval");
+  assert.deepStrictEqual(r.body.session.approvals.map((a) => [a.toolUseId, a.toolName, a.state]), [["tu-1", "CreateOpportunity", "pending"]]);
+  assert.strictEqual(seen.length, 1, "nothing is sent back to the agent until someone decides");
+  assert.strictEqual((await call(api, "POST", "/v1/agent/sessions/sess-1/approvals/tu-9", { body: { decision: "approve" } })).statusCode, 404, "an unknown toolUseId is refused");
+  assert.strictEqual((await call(api, "POST", "/v1/agent/sessions/sess-1/approvals/tu-1", { body: { decision: "override" } })).statusCode, 400, "only approve or reject");
+  const ok = await call(api, "POST", "/v1/agent/sessions/sess-1/approvals/tu-1", { body: { decision: "approve" } });
+  assert.strictEqual(ok.statusCode, 200, JSON.stringify(ok.body));
+  assert.deepStrictEqual(seen[1].params.arguments.content, [{ type: "tool_approval_response", toolUseId: "tu-1", decision: "approve" }]);
+  assert.strictEqual(seen[1].params.arguments.sessionId, "sess-1");
+  const a = ok.body.session.approvals[0];
+  assert.strictEqual(a.state, "approved"); assert.strictEqual(a.decidedBy, "owner@example.com");
+  assert.strictEqual(ok.body.reply.text, "Draft opportunity created (not submitted).");
+  assert.strictEqual((await call(api, "POST", "/v1/agent/sessions/sess-1/approvals/tu-1", { body: { decision: "reject" } })).statusCode, 409, "decided once only");
+  assert.ok(Object.values(db.state.partnerCentralAudit).some((e) => e.operation === "agent:approve" && e.toolUseId === "tu-1"));
+});
+
+check("the AI session id is logged once on the linked lead (or the lead matched to the opportunity)", async () => {
+  const { api, db } = makeApi({ awsReply: agentReply() });
+  db.state.leads = { L1: { company: { name: "Acme Retail" }, history: [] }, L2: { company: { name: "Beta" }, aceOpportunityId: "O7", history: [] } };
+  const r = await call(api, "POST", "/v1/agent/messages", { body: { text: "Build a customer profile", leadId: "L1", opportunityId: "O1" } });
+  assert.strictEqual(r.statusCode, 200, JSON.stringify(r.body));
+  assert.strictEqual(r.body.session.leadName, "Acme Retail"); assert.strictEqual(r.body.session.opportunityId, "O1");
+  const h = db.state.leads.L1.history;
+  assert.strictEqual(h.length, 1); assert.strictEqual(h[0].kind, "note"); assert.match(h[0].text, /Partner Central AI session sess-2 \(Sandbox catalogue\) for ACE opportunity O1/);
+  assert.deepStrictEqual(db.state.leads.L1.aiSessionIds, ["sess-2"]);
+  await call(api, "POST", "/v1/agent/messages", { body: { text: "And its funding?", sessionId: "sess-2" } });
+  assert.strictEqual(db.state.leads.L1.history.length, 1, "not logged twice");
+  const viaOpp = await call(api, "POST", "/v1/agent/messages", { body: { text: "Summarise", opportunityId: "O7" } });
+  assert.strictEqual(viaOpp.body.session.leadId, "L2");
+  assert.strictEqual(db.state.leads.L2.history.length, 1);
+  assert.strictEqual((await call(api, "POST", "/v1/agent/messages", { body: { text: "x", leadId: "nope" } })).statusCode, 404);
+  const ov = await call(api, "GET", "/v1/agent");
+  assert.deepStrictEqual(ov.body.leads.map((l) => l.name), ["Acme Retail", "Beta"]);
+  assert.ok(ov.body.sessions.some((x) => x.sessionId === "sess-2"));
+});
+
+check("an expired or other-catalogue session is refused, not silently replaced", async () => {
+  const { api, db } = makeApi({ awsReply: agentReply() });
+  db.state.partnerCentralAgentSessions = {
+    old: { catalog: "Sandbox", expiresAt: new Date("2020-01-01T00:00:00Z"), approvals: [] },
+    live: { catalog: "AWS", expiresAt: new Date("2099-01-01T00:00:00Z"), approvals: [] },
+  };
+  assert.strictEqual((await call(api, "POST", "/v1/agent/messages", { body: { text: "hi", sessionId: "old" } })).statusCode, 410);
+  assert.strictEqual((await call(api, "POST", "/v1/agent/messages", { body: { text: "hi", sessionId: "live" } })).statusCode, 409);
+  assert.strictEqual((await call(api, "POST", "/v1/agent/messages", { body: { text: "hi", sessionId: "never" } })).statusCode, 404);
+  assert.strictEqual((await call(api, "POST", "/v1/agent/messages", { body: { text: "  " } })).statusCode, 400);
+});
+
+check("agent JSON-RPC errors surface and are audited", async () => {
+  const { api, db } = makeApi({ awsReply: (url) => url.includes("agents-mcp") ? { status: 200, body: { jsonrpc: "2.0", id: 1, error: { code: -32001, message: "Authentication failed" } } } : { status: 200, body: {} } });
+  const r = await call(api, "POST", "/v1/agent/messages", { body: { text: "hi" } });
+  assert.strictEqual(r.statusCode, 502); assert.match(r.body.error, /-32001: Authentication failed/);
+  assert.ok(Object.values(db.state.partnerCentralAudit).some((e) => e.operation === "agent:sendMessage" && !e.ok));
+});
+
+check("parseAgentResult reads both reply shapes and approval events", () => {
+  const inline = parseAgentResult({ sessionId: "s", status: "requires_approval", content: [{ type: "text", text: "Proposed" }, { type: "tool_approval_request", toolUseId: "t1", toolName: "UpdateOpportunity", parameters: { a: 1 } }] });
+  assert.strictEqual(inline.sessionId, "s"); assert.strictEqual(inline.text, "Proposed"); assert.strictEqual(inline.approvals[0].toolUseId, "t1");
+  const events = parseAgentResult({ content: [{ type: "text", text: JSON.stringify({ sessionId: "s2", stateType: "TOOL_REQUEST", events: [{ data: { tool_use_id: "t2", name: "CreateBenefitApplication", input: { b: 2 } } }] }) }] });
+  assert.deepStrictEqual(events.approvals, [{ toolUseId: "t2", toolName: "CreateBenefitApplication", parameters: { b: 2 } }]);
+  const done = parseAgentResult({ content: [{ type: "text", text: JSON.stringify({ sessionId: "s3", status: "complete", content: [{ type: "serverToolUse", tool_use_id: "x", input: { q: 1 } }, { type: "text", text: "ok" }] }) }] });
+  assert.deepStrictEqual(done.approvals, [], "a read tool in a complete reply is not an approval");
+  assert.strictEqual(parseMcpBody("event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}\n\n", "text/event-stream").id, 1);
+  assert.strictEqual(parseMcpBody("not json", "application/json"), null);
+});
+
+// ── AWS funding drafts for a lead (ticket O37hnP69Cnn8N32HpHot) ──
+// A fake agent for the funding check: it answers eligibility with the JSON
+// block, proposes CreateBenefitApplication drafts (held for approval), and a
+// later message proposes a submit, which the console must refuse.
+const FUNDING_JSON = { schemaVersion: 1, programs: [
+  { program: "POC funding", eligible: true, reason: "Technical validation with an AWS workload", estimatedAmount: 25000, currency: "USD", budgetAvailable: 80000, draftId: null },
+  { program: "Innovation Sandbox credits", eligible: true, reason: "Build and test environment", estimatedAmount: "5,000", currency: "USD", budgetAvailable: null, draftId: null },
+  { program: "MAP", eligible: false, reason: "No migration in scope", estimatedAmount: null, currency: "USD", budgetAvailable: null, draftId: null },
+] };
+function fundingAgent({ onCall } = {}) {
+  return (url, init) => {
+    if (!url.startsWith("https://partnercentral-agents-mcp.us-east-1.api.aws/mcp")) return { status: 200, body: {} };
+    const rpc = JSON.parse(init.body); if (onCall) onCall(rpc);
+    const args = rpc.params.arguments; const firstBlock = args.content && args.content[0];
+    const reply = (o) => ({ status: 200, body: { jsonrpc: "2.0", id: rpc.id, ...agentPayload(o) } });
+    if (rpc.params.name === "getSession") return reply({ sessionId: args.sessionId, status: "complete", content: [{ type: "text", text: "Drafts created.\n```json\n" + JSON.stringify({ ...FUNDING_JSON, programs: FUNDING_JSON.programs.map((p, i) => (i === 0 ? { ...p, draftId: "ba-poc-1" } : p)) }) + "\n```" }] });
+    if (firstBlock && firstBlock.type === "tool_approval_response") return reply({ sessionId: args.sessionId, status: "complete", content: [{ type: "text", text: "Draft created (not submitted)." }] });
+    if (/Submit it/.test(firstBlock.text)) return reply({ sessionId: args.sessionId, status: "requires_approval", content: [{ type: "tool_approval_request", toolUseId: "tu-sub", toolName: "SubmitBenefitApplication", parameters: { Identifier: "ba-poc-1" } }] });
+    return reply({ sessionId: "fund-1", status: "requires_approval", content: [
+      { type: "text", text: "POC funding and Innovation Sandbox credits look eligible.\n```json\n" + JSON.stringify(FUNDING_JSON) + "\n```" },
+      { type: "tool_approval_request", toolUseId: "tu-poc", toolName: "CreateBenefitApplication", parameters: { BenefitId: "POC", Status: "DRAFT" } },
+      { type: "tool_approval_request", toolUseId: "tu-sbx", toolName: "CreateBenefitApplication", parameters: { BenefitId: "INNOVATION_SANDBOX", Status: "DRAFT" } },
+    ] });
+  };
+}
+
+check("funding: routes are admin only, and only for an existing company lead", async () => {
+  const { api, db } = makeApi({ awsReply: fundingAgent() });
+  db.state.leads = { L1: { company: { name: "Acme Retail" }, stage: "hot-lead", history: [] }, OP: { leadType: "operator", company: { name: "" }, history: [] } };
+  assert.strictEqual((await call(api, "POST", "/v1/funding/L1/check", { token: "ed@x.example", body: {} })).statusCode, 403);
+  assert.strictEqual((await call(api, "POST", "/v1/funding/L1/check", { token: "", body: {} })).statusCode, 401);
+  assert.strictEqual((await call(api, "POST", "/v1/funding/nope/check", { body: {} })).statusCode, 404);
+  assert.strictEqual((await call(api, "POST", "/v1/funding/OP/check", { body: {} })).statusCode, 400);
+  assert.strictEqual((await call(api, "POST", "/v1/funding/L1/refresh", { body: {} })).statusCode, 404, "nothing to refresh before a check");
+});
+
+check("funding: Sandbox eligibility on a test opportunity produces drafts held for approval, and nothing is submitted", async () => {
+  const seen = [];
+  const { api, db } = makeApi({ awsReply: fundingAgent({ onCall: (r) => seen.push(r) }) });
+  db.state.leads = { L1: { company: { name: "Acme Retail", industry: "Grocery", countries: ["UK"], storeCount: 120, awsAccountId: "123456789012" }, contacts: [{ name: "Sam", email: "sam@acme.example" }], stage: "hot-lead", aceOpportunityId: "O-TEST-1", enrichment: { summary: "UK grocer." }, history: [] } };
+  const r = await call(api, "POST", "/v1/funding/L1/check", { body: {} });
+  assert.strictEqual(r.statusCode, 200, JSON.stringify(r.body));
+  // one sendMessage, in the Sandbox catalogue, carrying the account context and the drafts-only ask
+  assert.strictEqual(seen.length, 1); assert.strictEqual(seen[0].params.name, "sendMessage"); assert.strictEqual(seen[0].params.arguments.catalog, "Sandbox");
+  const msg = seen[0].params.arguments.content[0].text;
+  for (const s of ["Customer: Acme Retail", "Industry: Grocery", "ACE opportunity ID: O-TEST-1", "Customer AWS account ID: 123456789012", "POC funding, MAP and Innovation Sandbox credits", "DRAFT only", "Never submit"]) assert.ok(msg.includes(s), `prompt has ${s}`);
+  assert.ok(!msg.includes("sam@acme.example"), "no contact addresses are sent");
+  const f = r.body.funding;
+  assert.strictEqual(f.catalog, "Sandbox"); assert.strictEqual(f.sessionId, "fund-1"); assert.strictEqual(f.opportunityId, "O-TEST-1");
+  assert.strictEqual(f.structured, true); assert.strictEqual(f.pendingApprovals, 2);
+  assert.deepStrictEqual(f.programs.map((p) => [p.key, p.eligible, p.estimatedAmount, p.budgetAvailable]), [["poc", true, 25000, 80000], ["sandbox", true, 5000, null], ["map", false, null, null]]);
+  // stored for the lead card, the session linked to the lead, a line in its history
+  assert.strictEqual(db.state.leadFunding.L1.sessionId, "fund-1");
+  assert.strictEqual(db.state.partnerCentralAgentSessions["fund-1"].leadId, "L1");
+  const lines = db.state.leads.L1.history.map((h) => h.text);
+  assert.ok(lines.some((t) => /^AWS funding checked \(Sandbox catalogue\): POC funding eligible, est\. USD 25,000; Innovation Sandbox credits eligible, est\. USD 5,000; MAP not eligible\. 2 drafts wait for an admin's approval\. Drafts only; nothing was submitted\.$/.test(t)), lines.join("\n"));
+  // the drafts wait: approving one creates a DRAFT; nothing else was sent
+  assert.deepStrictEqual(db.state.partnerCentralAgentSessions["fund-1"].approvals.map((a) => [a.toolUseId, a.toolName, a.state]), [["tu-poc", "CreateBenefitApplication", "pending"], ["tu-sbx", "CreateBenefitApplication", "pending"]]);
+  const ok = await call(api, "POST", "/v1/agent/sessions/fund-1/approvals/tu-poc", { body: { decision: "approve" } });
+  assert.strictEqual(ok.statusCode, 200, JSON.stringify(ok.body));
+  // a submit the agent proposes is refused, even by an admin, and audited
+  await call(api, "POST", "/v1/agent/messages", { body: { text: "Submit it", sessionId: "fund-1" } });
+  const sub = await call(api, "POST", "/v1/agent/sessions/fund-1/approvals/tu-sub", { body: { decision: "approve" } });
+  assert.strictEqual(sub.statusCode, 403); assert.match(sub.body.error, /never submits/);
+  assert.ok(!seen.some((x) => JSON.stringify(x).includes('"toolUseId":"tu-sub","decision":"approve"')), "the submit approval never reaches AWS");
+  assert.ok(Object.values(db.state.partnerCentralAudit).some((e) => e.operation === "agent:approve" && e.ok === false && /drafts only/.test(e.error)));
+  assert.strictEqual((await call(api, "POST", "/v1/agent/sessions/fund-1/approvals/tu-sub", { body: { decision: "reject" } })).statusCode, 200, "it can still be rejected");
+  // refresh re-reads the session: the POC draft id comes back
+  const rf = await call(api, "POST", "/v1/funding/L1/refresh", { body: {} });
+  assert.strictEqual(rf.statusCode, 200, JSON.stringify(rf.body));
+  assert.strictEqual(rf.body.funding.programs[0].draftId, "ba-poc-1"); assert.strictEqual(rf.body.funding.pendingApprovals, 1);
+  assert.ok(!Object.values(db.state.partnerCentralAudit).some((e) => /SubmitBenefitApplication/.test(e.operation || "")), "no submit call was made");
+});
+
+check("funding: POC approved marks the claim sign-off document due, and can be undone", async () => {
+  const { api, db } = makeApi({ awsReply: fundingAgent() });
+  db.state.leads = { L1: { company: { name: "Acme Retail" }, stage: "post-demo", history: [] } };
+  const r = await call(api, "POST", "/v1/funding/L1/poc-approved", { body: { amount: 25000, reference: "FR-2026-1" } });
+  assert.strictEqual(r.statusCode, 200, JSON.stringify(r.body));
+  assert.strictEqual(r.body.funding.pocApproved.reference, "FR-2026-1"); assert.strictEqual(r.body.funding.pocApproved.by, "owner@example.com");
+  assert.match(db.state.leads.L1.history.at(-1).text, /POC funding approved \(FR-2026-1\), USD 25,000: the claim sign-off document \(proof of execution\) is due\./);
+  assert.strictEqual((await call(api, "POST", "/v1/funding/L1/poc-approved", { body: { reference: "<b>" } })).statusCode, 400);
+  const u = await call(api, "POST", "/v1/funding/L1/poc-approved", { body: { clear: true } });
+  assert.strictEqual(u.body.funding.pocApproved, null); assert.strictEqual(db.state.leadFunding.L1.pocApproved, null);
+});
+
+check("funding: the reply's JSON block is read defensively; submit-like writes are recognised", () => {
+  assert.deepStrictEqual(parseFundingReply("No block here."), { structured: false, programs: [] });
+  assert.deepStrictEqual(parseFundingReply("```json\n{not json}\n```"), { structured: false, programs: [] });
+  const two = parseFundingReply("```json\n{\"programs\":[{\"program\":\"MAP\"}]}\n```\nthen\n```json\n{\"programs\":[{\"program\":\"Proof of concept\",\"eligible\":\"yes\",\"estimatedAmount\":-5,\"currency\":\"usd\"}]}\n```");
+  assert.deepStrictEqual(two.programs, [{ key: "poc", name: "Proof of concept", eligible: null, reason: "", estimatedAmount: null, currency: "USD", budgetAvailable: null, draftId: null }], "the last block wins; bad values become null");
+  assert.ok(isSubmitLike("SubmitBenefitApplication", {})); assert.ok(isSubmitLike("UpdateBenefitApplication", { Action: "Submit" }));
+  assert.ok(isSubmitLike("UpdateBenefitApplication", { action: "SUBMIT" }));
+  assert.ok(!isSubmitLike("CreateBenefitApplication", { Status: "DRAFT" }));
+  assert.ok(buildFundingPrompt({ lead: {}, catalog: "Sandbox" }).includes("(no details on the lead yet)"));
 });
 
 (async () => {

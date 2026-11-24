@@ -1,7 +1,8 @@
 // Promote › Conversion Funnel (#promote/conversion-funnel): ad impression to
 // deployed opportunity as one funnel graphic. Rules are in funnel-core.js.
 // Reads `funnelDaily` (GA4 + Google Ads, written by the server-side ingest,
-// functions/funnel-ingest.js), the ingest's status (consoleConfig/funnelIngest:
+// functions/funnel-ingest.js; its "pc-export" rows, from the Partner Central S3
+// data export, feed the Revenue stage), the ingest's status (consoleConfig/funnelIngest:
 // when the data was last updated, which source failed), `leads`, `prospects`
 // and the ACE opportunities (/partnerCentral/v1/ace).
 // No explanatory copy on the page: help is in the info tooltips.
@@ -10,7 +11,7 @@ import { normaliseLead } from "./leads-core.js";
 import { normaliseProspect } from "./prospects-core.js";
 import {
   EMPTY_FILTER, normaliseWebRow, joinOpportunities, buildFunnel, filterOptions, presetRange, previousRange,
-  fmtCount, fmtPct, fmtChange, fmtDay, ingestStatusView, ingestFailureText, fmtUpdated,
+  fmtCount, fmtPct, fmtChange, fmtDay, fmtMoney, ingestStatusView, ingestFailureText, fmtUpdated, ga4AccessLinks,
 } from "./funnel-core.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -75,6 +76,46 @@ export function mountFunnelPage({ db, apiHeaders }) {
     for (const [k] of SELECTS) on(`funnel-${k}`, "change", () => { filter[k] = $(`funnel-${k}`).value; render(); });
     $("funnel-filters").querySelectorAll("[data-preset]").forEach((b) => b.addEventListener("click", () => { Object.assign(filter, presetRange(b.dataset.preset)); render(); }));
     on("funnel-reset", "click", () => { filter = { ...EMPTY_FILTER, ...presetRange("30d") }; render(); });
+    // GA4 access problem: copy the values the fix needs (the row is drawn in renderAccess).
+    $("funnel-access").addEventListener("click", (ev) => {
+      const b = ev.target.closest("[data-copy]");
+      if (b) copyValue(b, b.dataset.copy);
+    });
+  }
+
+  async function copyValue(btn, value) {
+    let ok = false;
+    try { await navigator.clipboard.writeText(value); ok = true; } catch {
+      const ta = document.createElement("textarea");
+      ta.value = value; ta.setAttribute("readonly", ""); ta.style.position = "absolute"; ta.style.left = "-9999px";
+      document.body.appendChild(ta); ta.select();
+      try { ok = document.execCommand("copy"); } catch { ok = false; }
+      ta.remove();
+    }
+    const label = btn.querySelector(".funnel-access-label");
+    const was = btn.dataset.label;
+    label.textContent = ok ? "Copied" : "Copy failed";
+    clearTimeout(btn._t);
+    btn._t = setTimeout(() => { label.textContent = was; }, 2000);
+  }
+
+  // The fix for a GA4 access problem, one click each: copy the service account and
+  // the property id, open the property's access management (or the Data API page).
+  function renderAccess(ga) {
+    const box = $("funnel-access");
+    box.hidden = !ga;
+    if (!ga) { box.innerHTML = ""; return; }
+    const links = ga4AccessLinks(ga);
+    const copy = (value, label, tip) => `<button type="button" class="btn-ghost funnel-access-btn" data-copy="${esc(value)}" data-label="${esc(label)}" title="${esc(tip)}">`
+      + `<span class="material-symbols-outlined" aria-hidden="true">content_copy</span><span class="funnel-access-label">${esc(label)}</span></button>`;
+    const open = (href, label) => `<a class="btn-ghost funnel-access-btn" href="${esc(href)}" target="_blank" rel="noopener noreferrer">`
+      + `<span class="material-symbols-outlined" aria-hidden="true">open_in_new</span><span>${esc(label)}</span></a>`;
+    box.innerHTML = ga.problem === "api-disabled"
+      ? open(links.enableApi, "Enable the Data API")
+      : (ga.serviceAccount ? copy(ga.serviceAccount, "Copy service account", ga.serviceAccount) : "")
+        + (ga.propertyId ? copy(ga.propertyId, "Copy property ID", `GA4 property ${ga.propertyId}`) : "")
+        + copy("Viewer", "Copy role", "Viewer")
+        + open(links.propertyAccess, "Open GA4 access management");
   }
 
   function syncControls(data) {
@@ -88,27 +129,38 @@ export function mountFunnelPage({ db, apiHeaders }) {
     }
   }
 
-  function stageHtml(s, i, compare) {
+  function stageHtml(s, i, compare, pc) {
+    const cur = s.money ? s.currency : "";
+    const shown = (v) => (s.money ? fmtMoney(v, cur) : fmtCount(v));
     const change = s.change
-      ? `<span class="funnel-delta ${s.change.count > 0 ? "up" : s.change.count < 0 ? "down" : ""}" title="Previous period: ${fmtCount(s.prev.count)}">${esc(fmtChange(s.change))}${s.change.points == null ? "" : ` · ${s.change.points > 0 ? "+" : s.change.points < 0 ? "−" : ""}${Math.abs(s.change.points).toFixed(1)} pts`}</span>` : "";
-    return `<li class="funnel-stage" data-stage="${s.key}">`
+      ? `<span class="funnel-delta ${s.change.count > 0 ? "up" : s.change.count < 0 ? "down" : ""}" title="Previous period: ${esc(shown(s.prev.count))}">${esc(fmtChange(s.change, cur))}${s.change.points == null ? "" : ` · ${s.change.points > 0 ? "+" : s.change.points < 0 ? "−" : ""}${Math.abs(s.change.points).toFixed(1)} pts`}</span>` : "";
+    // Revenue is an amount: no % of the stage above or of the top; funding used and the export's state instead.
+    const rates = s.money
+      ? (pc && pc.notSetUp
+        ? `<span class="funnel-rate funnel-rate-top">Not set up yet</span>`
+        : `<span class="funnel-rate" title="Partner Central funding used in the period">${esc(fmtMoney(s.fundingUsed, cur))} <small>funding used</small></span>`
+          + (pc && pc.exportedAt ? `<span class="funnel-rate funnel-rate-top" title="When Partner Central wrote the export">Export ${esc(fmtUpdated(pc.exportedAt))}</span>` : ""))
+      : `<span class="funnel-rate" title="Of the previous stage">${s.fromPrev == null ? "" : `${fmtPct(s.fromPrev)} <small>of previous</small>`}</span>`
+        + `<span class="funnel-rate funnel-rate-top" title="Of the top of the funnel">${fmtPct(s.ofTop)} <small>of top</small></span>`;
+    return `<li class="funnel-stage${s.money ? " funnel-stage-money" : ""}" data-stage="${s.key}">`
       + `<div class="funnel-stage-name"><span class="material-symbols-outlined" aria-hidden="true">${s.icon}</span><span>${esc(s.label)}</span>`
       + `<span class="material-symbols-outlined funnel-info" tabindex="0" role="img" aria-label="${esc(s.info)}" title="${esc(s.info)}">info</span></div>`
-      + `<div class="funnel-bar-wrap"><div class="funnel-bar funnel-bar-${i % 9}" style="width:${s.width}%"><b>${fmtCount(s.count)}</b></div></div>`
-      + `<div class="funnel-stage-rates"><span class="funnel-rate" title="Of the previous stage">${s.fromPrev == null ? "" : `${fmtPct(s.fromPrev)} <small>of previous</small>`}</span>`
-      + `<span class="funnel-rate funnel-rate-top" title="Of the top of the funnel">${fmtPct(s.ofTop)} <small>of top</small></span>${compare ? change : ""}</div></li>`;
+      + `<div class="funnel-bar-wrap"><div class="funnel-bar ${s.money ? "funnel-bar-revenue" : `funnel-bar-${i % 9}`}" style="width:${s.width}%"><b>${esc(shown(s.count))}</b></div></div>`
+      + `<div class="funnel-stage-rates">${rates}${compare ? change : ""}</div></li>`;
   }
 
   function render() {
     if (!built) return;
-    const data = { web, ace: joinOpportunities(opps, leads, prospects) };
+    const data = { web, ace: joinOpportunities(opps, leads, prospects, web.filter((r) => r.source === "pc-export")) };
     syncControls(data);
     const f = buildFunnel(filter, data);
     const range = filter.from && filter.to ? `${fmtDay(filter.from)} – ${fmtDay(filter.to)}` : "All time";
     const prev = f.prevRange ? ` vs ${fmtDay(f.prevRange.from)} – ${fmtDay(f.prevRange.to)}` : filter.compare && !previousRange(filter.from, filter.to) ? " (set both dates to compare)" : "";
     const iv = ingestStatusView(ingest);
     const updated = iv.known ? ` · Updated ${fmtUpdated(iv.updatedAt)}` : "";
-    $("funnel-count").innerHTML = `<b>${fmtCount(f.stages[0].count)}</b> impressions · <b>${fmtCount(f.stages[f.stages.length - 1].count)}</b> deployed · ${esc(range)}${esc(prev)}${esc(updated)}`;
+    const deployed = f.stages.find((s) => s.key === "deployed"), revenue = f.stages.find((s) => s.key === "revenue");
+    const money = f.hasExportData ? ` · <b>${esc(fmtMoney(revenue.count, revenue.currency))}</b> revenue` : "";
+    $("funnel-count").innerHTML = `<b>${fmtCount(f.stages[0].count)}</b> impressions · <b>${fmtCount(deployed.count)}</b> deployed${money} · ${esc(range)}${esc(prev)}${esc(updated)}`;
     const notes = [];
     if (iv.flagged) notes.push(ingestFailureText(iv));
     if (aceError) notes.push(aceError);
@@ -116,11 +168,12 @@ export function mountFunnelPage({ db, apiHeaders }) {
     $("funnel-status").textContent = notes.join(" ");
     $("funnel-status").hidden = notes.length === 0;
     $("funnel-status").classList.toggle("funnel-status-flag", iv.flagged);
+    renderAccess(iv.flagged ? iv.ga4Access : null);
     $("funnel-empty").hidden = !f.empty;
     $("funnel-empty-text").textContent = !web.length && !opps.length ? "No funnel data yet." : "Nothing matches these filters.";
     const list = $("funnel-stages");
     list.hidden = f.empty;
-    list.innerHTML = f.empty ? "" : f.stages.map((s, i) => stageHtml(s, i, !!f.prevRange)).join("");
+    list.innerHTML = f.empty ? "" : f.stages.map((s, i) => stageHtml(s, i, !!f.prevRange, iv.pcExport)).join("");
   }
 
   function stop() { unsubs.forEach((u) => u()); unsubs = []; started = false; }

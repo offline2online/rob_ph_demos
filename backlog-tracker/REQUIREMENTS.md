@@ -485,7 +485,7 @@ only: members read all four, no client writes any of them.
 
 - `searchIndex/{source:id}`: one entry per source record. `source`
   (`ticket`, `kanban`, `project`, `concept`, `critique`, `faq`, `lead`,
-  `prospect`, `support`, `document`, `skill`), `recordId`, `title`,
+  `prospect`, `support`, `document`, `documentation`, `skill`), `recordId`, `title`,
   `projectId`, `projectIds` (an interface's projects), `conceptId`, `status`,
   `type`, `owner`, `open`, `archived`, `updatedAt` and `createdAt`
   (milliseconds), `url` (the deep link), `access` (the read tool that guards
@@ -1566,7 +1566,13 @@ rebuilt with no cap at all. The loop is now stored and shown.
 - **Report.** The project's ⋮ menu → **Testing loops**: tickets with 2 or
   more counted send-backs in the last 30 days, with round, reasons, time
   from first build to approval and the last send-back date. Read-only, the
-  Archived tickets table.
+  Archived tickets table. The same page has a **Retested** view
+  (0I93kb0fqXL4Qr4qyzwv), the list the Dashboard's Flow & blockers opens:
+  every ticket not archived with at least one counted send-back, at any
+  time, across every project, with how many times it was retested. It is
+  routed — `#testing-loops?view=retested`, or `#testing-loops/<projectId>?…`
+  for one project — so a link and a reload keep it; the ⋮ menu entry still
+  opens the 30-day view, unrouted.
 - **Backfill.** Cards from before this read their loop from notes with
   `rejectionsOf`'s rules (the same counts; `test/test-rounds.test.js`), and
   their first recorded send-back stores the lot.
@@ -4168,9 +4174,11 @@ Required properties, each covered by `test/mcp-server.test.js`:
 `list_project_documents`, `get_project_document` (documents listed without text,
 searched, and read a page or section at a time — see MCP.md),
 `list_doc_revisions`, `get_doc_revision`, `search_faq`, `get_faq_article`,
-`list_pending_faq_revisions`, `get_faq_revision`, `list_skills`, `get_skill`,
-`list_skill_misses`, `get_routine_setup_instructions`, `list_concepts`,
-`get_concept`.
+`list_pending_faq_revisions`, `get_faq_revision`, `list_documentation`,
+`get_documentation` (the documentation library, Support › Documentation —
+see "Documentation (19 Nov 2026)" below and MCP.md), `list_skills`,
+`get_skill`, `list_skill_misses`, `get_routine_setup_instructions`,
+`list_concepts`, `get_concept`.
 Write (editor/admin only) — tickets: `create_backlog_item` (always into
 `backlog`), `update_backlog_item` (title, desc, type, category, model only),
 `archive_backlog_items` / `delete_backlog_items` (Backlog tickets only, by id,
@@ -5239,7 +5247,14 @@ A full-screen, shareable whiteboard for sketching ideas in meetings. Started fro
 - The primary nav has four groups: **Build** (Agent Board, Staff Kanban,
   Concepts, Whiteboard), **Support** (Help Centre; labelled Publish before 4 Nov 2026) and **Settings**. Releases and Skills are reachable only
   from Settings. Settings is not in the profile menu. On a phone the tab bar is
-  Build, Publish, Settings, Search, Profile.
+  Build, Promote, Support, Settings.
+- **Profile at the top right on a phone too; no Search on a phone** (24 Nov
+  2026, LJrgkj70zFIXSG6PuwGg). The bottom tab bar has no Profile or Search tab.
+  Profile is the topbar avatar at the top right at every width (a 44px tap
+  target on a phone) and opens the same profile menu as a dropdown under it, as
+  on the web, kept inside the screen and scrolling if taller than the room.
+  Search (the Command-K palette) is not offered on a phone; the sidebar's
+  Search row was already hidden there.
 - Settings has a sub-menu at `#settings/<page>`: Projects (names, descriptions,
   types, repository folders), Releases (versions, names, dates, status),
   Skills & phase bindings (the skills bound to the Build and Deploy phases, and
@@ -5498,12 +5513,25 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
 ## Brand Guidelines › Partners: one co-branding page per partner (19 Nov 2026)
 
 - Brand Guidelines has a **Partners** subsection: one page per retail network
-  or other partner, listed at the foot of the Brand Guidelines page and opened
-  at `#promote/brand-guidelines/partners/<slug>` (back link to Brand
-  Guidelines; same `promote` permission). The first is **miPharmacy**.
+  or other partner, picked from the **Partners** dropdown at the top of the
+  Brand Guidelines page and opened at
+  `#promote/brand-guidelines/partners/<slug>` (same `promote` permission). The
+  first is **miPharmacy**.
+- **Partners and Markets dropdowns at the top (24 Nov 2026,
+  ssPtNYI8TSv2vzVSAFPk).** Opening Brand Guidelines still shows our own (PH)
+  guidelines. Two labelled native selects sit under the page title, on the
+  guidelines page and on every partner and market page: **Partners** and
+  **Markets**. Each starts with **PH brand guidelines** (the default, and the
+  way back), then every partner or market mirror by name
+  (`brandPickerOptionsHtml` in `public/js/promote-section.js`), so a new one
+  appears with no code change. Choosing one opens its page; the open page's
+  entry stays selected in its dropdown and the other reads PH brand
+  guidelines. A dropdown with nothing to list is hidden. The back link on a
+  partner or market page reads "PH brand guidelines". The Partners and
+  Markets lists that used to sit at the foot of the page are gone.
 - Each partner page is a repo file, `backlog-tracker/promote/partners/<slug>.md`,
   declared in `board-docs.json` with the mirror key `brand-partner-<slug>`.
-  The page lists whatever `brand-partner-*` mirrors exist
+  The Partners dropdown lists whatever `brand-partner-*` mirrors exist
   (`partnersFrom` in `public/js/promote-section.js`), so **adding a partner is
   a new file and a manifest entry, never a code change**. A superseded mirror
   is not listed.
@@ -5530,13 +5558,13 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
 ## Brand Guidelines › Markets: cultural and communication guidelines per market (19 Nov 2026)
 
 - Brand Guidelines has a **Markets** subsection, built like Partners: one page
-  per market, listed at the foot of the Brand Guidelines page (under Partners)
-  and opened at `#promote/brand-guidelines/markets/<slug>` (back link to Brand
-  Guidelines; same `promote` permission). The first are **Thailand**,
+  per market, picked from the **Markets** dropdown at the top of the Brand
+  Guidelines page and opened at `#promote/brand-guidelines/markets/<slug>`
+  (same `promote` permission). The first are **Thailand**,
   **Singapore** and the **United States**.
 - Each market page is a repo file, `backlog-tracker/promote/markets/<slug>.md`,
   declared in `board-docs.json` with the mirror key `brand-market-<slug>`. The
-  page lists whatever `brand-market-*` mirrors exist (`marketsFrom` in
+  Markets dropdown lists whatever `brand-market-*` mirrors exist (`marketsFrom` in
   `public/js/promote-section.js`), so **adding a market is a new file and a
   manifest entry, never a code change**. A superseded mirror is not listed.
 - The file starts with a `<!-- market … -->` block (`slug`, `name`,
@@ -6208,6 +6236,8 @@ opportunities, Benefits API for funding drafts) with no long-lived AWS keys.
 - Dependency (manual): link the Partner Central account to the AWS account and map the role to a Partner Central user role.
 - **ACE opportunities table (Promote › Leads, 6 Nov 2026)**: under the leads board, `#ace-section` lists PH's AWS ACE opportunities laid out like Partner Central's opportunities list: opportunity, customer, ACE stage, review status, opportunity score, expected monthly AWS revenue, target close date and AWS account manager (with a mailto icon, subject "<opportunity> – <customer>"). A summary block counts rows by ACE stage and by review status. Each row opens the matching lead card (customer name = lead company name) and the opportunity in Partner Central. Rows come from `GET /partnerCentral/v1/ace` (list + per-opportunity detail through the Selling API, normalised in `normaliseOpportunity`, cached 60 s); that one read route is open to editors and admins, every write stays admin only. Rules in `public/js/ace-core.js`; tests `test/ace.test.mjs`, `test/partner-central.test.js`. **Restyled as the PH list page (7 Nov 2026)**: title row like the other list pages: "AWS ACE opportunities", ONE count pill (`5`, with a muted `Sandbox` flag on the Sandbox catalogue, `first 100 shown` when truncated) and a Refresh text button (`refresh` icon) on the right, no divider (8 Nov 2026: the count was shown three times, as "5 Opportunities", an Opportunities KPI and a "Prospect 5" stage pill, so the Opportunities KPI and the stage pills were removed); three KPI cards in one row: Expected monthly AWS revenue (one figure per currency), Approved, Needs action (Action Required + Rejected). The table is an AG Grid (`ag-theme-alpine um-grid`, `public/js/ace-grid.js`, lazy loader from `docs-grid.js`; 40px header and floating filter row, 42px rows, no checkbox column, pagination of **50** only above 50 rows, auto height so the page scrolls, not the grid; the ACE stage and Review status select filters list every value, not only those present). Columns: Opportunity (one line, ellipsis, full title in a tooltip, teal link to Partner Central in a new tab, pinned left on phones), Customer, ACE stage (pill, select filter), Review status (dot: green Approved; amber Pending Submission/Submitted/In review; red Action Required/Rejected; select filter), Score (hidden when no row has one), Monthly AWS revenue, Target close date (past dates in the error colour with the tooltip "Past target close date"), AWS account manager (name + email icon; "Not assigned" muted), Lead ("Lead card" link or muted "No lead"), and a pinned-right ⋯ menu (View in Partner Central, Email AWS account manager, Open lead card; unavailable items are hidden). The row menu button is `.ace-manage`, not `.um-manage`, which `permissions.js` hides for people without User Management edit rights. States: grid loading overlay; empty state (`handshake` icon, "No ACE opportunities yet."); error or 403 as an alert with Retry. Works in light and dark (text contrast ≥ 4.5:1) with no horizontal page overflow at 375px. Pure rules (`kpis`, `reviewTone`, `isPastDate`) are in `ace-core.js`.
 - **ACE opportunities managed in the console (7 Nov 2026)**: an opportunity is viewed and managed inside the console, never by a link out to AWS. Columns now read **Customer, Opportunity, Score, ACE stage, Review status, Monthly AWS revenue, Expected delivery date (the ACE target close date), Created, Last updated, AWS account manager, Lead**; Score is always shown, directly right of the Opportunity column (8 Nov 2026). The grid (`.ace-grid`) has 12px padding inside its own grey border, so the header row, filters and ⋯ buttons do not sit on the boundary. The opportunity name is a button that opens the detail dialog (`public/js/ace-detail.js`, shell `#ace-backdrop`; also the first item of the ⋯ menu): every table value is editable except the ones AWS owns (Review status, Score, the dates it stamps, the AWS account manager, which are shown read-only), plus Next steps, Customer business problem and website. **Save to ACE** sends only the changed fields to `PATCH /partnerCentral/v1/ace/{id}`; the server reads the opportunity, overlays the changes and sends `UpdateOpportunity` (read-merge-write, read-only parts not sent back), drops the table cache and answers with the opportunity re-read from AWS, so the status line says "Saved to AWS ACE. Score N." and the table row updates with the refreshed score. **New opportunity** (header button, editors) opens the same dialog empty; an empty save says "Enter a title and customer."; **Create in ACE** posts `POST /partnerCentral/v1/ace` (title and customer required, created as Prospect). `GET /partnerCentral/v1/ace/{id}` returns one opportunity; all three `/v1/ace` routes are open to editors and admins (the older `/v1/opportunities` routes stay admin only) and still use only the closed `OPERATIONS` list. **Documents**: the dialog lists, attaches (PDF, Office, image or zip, up to 50 MB; checked in `checkDocument`) and removes files, with a download link each, in Firebase Storage `ace/{opportunityId}/{timestamp}-{name}` (`storage.rules`, editors; `public/js/ace-docs.js`). The Selling API cannot attach files, so documents stay in the console and are not sent to AWS. Limits: the UpdateOpportunity/CreateOpportunity payloads and the end-to-end run against the Sandbox catalogue (create, attach, edit, see it in Partner Central, score refresh) are untested live until the Partner Central role link works (`deploy/aws/README.md`). Tests: `test/ace.test.mjs`, `test/partner-central.test.js`, `test/ui/console-click.test.mjs` (dialog scenario).
+- **Partner Central agent over MCP (24 Nov 2026, ticket Eo1w5YvY0Xw8YhHDalWj)**: the console calls the AWS-hosted **Partner Central agents MCP server** (`https://partnercentral-agents-mcp.us-east-1.api.aws/mcp`, JSON-RPC 2.0 `tools/call`, answered as JSON or SSE, SigV4 signing name `partnercentral-agents-mcp`) with the same keyless role credentials as the Selling API. Only two MCP tools may be called (`AGENT_TOOLS`): `sendMessage` (`{content, catalog, sessionId?}`) and `getSession`; the catalogue is always the console's own (Sandbox until an admin types `LIVE`). **Settings → Integrations & MCP → AWS Partner Central → Ask the Partner Central agent** (admins only, as every route here): pick a session (New session, or one of the last 20 in this catalogue), optionally link a **Lead** and an **ACE opportunity ID**, type a request (e.g. list opportunities, build a customer profile, draft an opportunity) and press **Ask agent** (AI gradient button). The reply text and the **AI session id** show under it. **Every write waits for an admin**: when the agent answers `requires_approval`, each `tool_approval_request` is shown as an amber card with the AWS operation name and its full parameters, and **Approve** / **Reject** send a `tool_approval_response` for that `toolUseId` only. The server answers only a `toolUseId` it recorded as pending for that session, and only once (409 after); there is no "override" and nothing approves on its own. **AI session id logging**: each session is kept in `partnerCentralAgentSessions/{sessionId}` (server-only: catalogue, who started it, 48-hour expiry, linked lead/opportunity, the last reply, every approval with who decided and when). The first time a session is linked to a lead, one line is added to that lead's history ("Partner Central AI session <id> (<catalogue> catalogue) for ACE opportunity <id>, started from the console.", kind `note`) and the id goes in `leads/{id}.aiSessionIds`. An opportunity ID with no lead links the lead whose `aceOpportunityId` matches. A session from the other catalogue (409) or older than 48 hours (410) is refused, never silently replaced. Every call and decision is in `partnerCentralAudit` (`agent:sendMessage`, `agent:getSession`, `agent:approve`, `agent:reject`). Routes: `GET /v1/agent`, `POST /v1/agent/messages`, `POST /v1/agent/sessions/{id}` (re-read from AWS, the **Refresh session** button), `POST /v1/agent/sessions/{id}/approvals/{toolUseId}`. The role gains `partnercentral:UseSession` (`deploy/aws/partner-central-role.yaml`); benefit submission stays denied. The function's timeout is 180 s, but a Hosting rewrite still ends the browser's wait at 60 s: when a long answer times out, **Refresh session** reads it. Limits: endpoint, signing name and reply shapes come from AWS's getting-started guide as mirrored by a public client and are untested live until the Partner Central role link works; console MCP tools for staff agents are not part of this (a later ticket). Tests: `test/partner-central.test.js` (signing, both reply shapes, approval gate, logging, expiry), `test/ui/console-click.test.mjs` ("Partner Central agent" scenario).
+- **AWS funding drafts on the lead card (24 Nov 2026, ticket O37hnP69Cnn8N32HpHot)**: when a company lead becomes a **Hot Lead** (or is at Demo / Post-demo) or has an ACE opportunity (`leads/{id}.aceOpportunityId`), its summary drawer (Promote › Leads) shows an **AWS funding** section reading "Funding check suggested: Hot Lead" (or "ACE opportunity"); nothing runs by itself (no AWS call on a stage change, an import or in LIVE without an admin). An admin presses **Check funding eligibility** (AI gradient button; **Check again** afterwards) → `POST /partnerCentral/v1/funding/{leadId}/check`: one new Partner Central agent session (`sendMessage`, the console's catalogue, Sandbox until LIVE), linked to the lead and its ACE opportunity like any agent session, carrying the account context (customer, website, industry, countries, stores, customer AWS account ID, lead stage, ACE opportunity ID, research summary; never contact addresses). It asks the agent to check eligibility for POC funding, MAP, Innovation Sandbox credits and any other programme, estimate each amount, give the remaining budget where Partner Central shows it, and **draft** (never submit) the POC funding and Innovation Sandbox credit applications, ending with a fenced JSON block (`schemaVersion` 1: `programs[]` of program, eligible, reason, estimatedAmount, currency, budgetAvailable, draftId; null where unknown) that `parseFundingReply` reads defensively (last block wins; bad values become null; with no block the plain answer is shown instead). The result is kept in `leadFunding/{leadId}` (written only by the function, read by members; `firestore.rules`) and one line goes in the lead's history ("AWS funding checked (Sandbox catalogue): POC funding eligible, est. USD 25,000; … 2 drafts wait for an admin's approval. Drafts only; nothing was submitted."). The section lists each programme in the order POC, Innovation Sandbox, MAP, other, with a green/red/amber dot (Eligible / Not eligible / Unclear), the agent's estimate, **Budget available only when AWS returned it**, the reason and the draft state ("Draft waits for an admin's approval", "Draft <id>: submit it in Partner Central", "No draft yet"); then "N drafts wait for approval" with **Review drafts** (→ Settings → Integrations & MCP, the agent panel, where each `CreateBenefitApplication` waits for Approve / Reject), and the check's date, who ran it, the ACE opportunity and AI session id. **Refresh** (`…/refresh`) re-reads the session from AWS (a long answer, or draft ids after approval). **Drafts only**: the console refuses to approve any write whose operation name contains "submit" or whose parameters set an action/status/stage to submit (403, audited as `agent:approve` not ok, "submit refused: drafts only"); it can still be rejected; the role's IAM deny on `SubmitBenefitApplication` stays as the second layer. The account lead submits each draft in Partner Central as before. **After POC approval** an admin presses **POC approved** (`…/poc-approved`, optional amount, currency and reference; **Undo** clears it): the section shows "POC approved" and "Claim sign-off document due · Proof of execution · Skill: aws-ace-poc-claim", the existing claim / proof-of-execution sign-off document made by that skill, unchanged; a history line records it. Editors and viewers see the section read-only (the buttons are admin only, as every Partner Central route except `/v1/ace`). `leads` now accepts the function-written `aiSessionIds`, `aceOpportunityId` and `gaClientIds` keys in an editor's save (before, a lead the agent had logged a session on could no longer be edited). Limits: the reply format and budget fields are what the agent is asked for, untested live until the Partner Central role link works; MAP and other programmes are checked and shown but not drafted. Tests: `test/partner-central.test.js` (Sandbox eligibility on a test opportunity produces held drafts and no submit; a submit approval is refused; refresh; POC approved; parser), `test/leads.test.mjs` (funding-core.js), `test/ui/console-click.test.mjs` ("AWS funding" scenario).
 
 ### Prospects (TAM): company detail view (6 Nov 2026)
 
@@ -6417,6 +6447,25 @@ overlay. Presentation only: every field, action and datum is still there.
 - Light and dark (`data-theme="dark"`), reduced motion respected, 44px targets.
   Test: `test/ui/leads-apple.test.mjs` at 390/820/1180/1440 px in both themes.
 
+### Prospects (TAM): AWS Partner Account Mapping (24 Nov 2026, ticket U04K46GSsIEN5xQ4NyAp)
+
+The TAM is uploaded to AWS Partner Central's **Partner Account Mapping**, which matches each company to an AWS account and adds propensity-to-buy signals plus **Partner Greenfield Program** and **Partner-led Sales Motion** eligibility. Each TAM record keeps what AWS returned, and the propensity sets the stage-1 awareness targeting order.
+
+- **Route: a file both ways.** Neither the Partner Central Selling API (`functions/partner-central.js`, closed `OPERATIONS` list) nor the Partner Central agents MCP server (`sendMessage` / `getSession` only) exposes Account Mapping (checked 24 Nov 2026), so the console uses the CSV fallback. All parsing and matching is in `public/js/prospects-core.js` → "AWS Partner Account Mapping" (copied to `functions/prospects-core.js`). That section is the adapter: a future API only has to produce the same parsed rows (`parseAccountMappingCsv` shape) for `planAccountMappingImport`.
+- **Promote › Prospects (TAM) › AWS Account Mapping** (toolbar button, panel `#prospect-awsmap`). The panel shows problems first: "N companies are due a re-sync" (never synced, or last synced over `MAPPING_STALE_DAYS` = 30 days ago; disqualified and converted records are left out), or a success line. Below that are four counts: Matched to AWS, High propensity, Greenfield eligible and High-potential shared. The subtitle reads "N of M companies synced · last import <date>". Actions:
+  - **Export upload file**: CSV `Record ID, Company name, Website, Domain, Country, AWS account ID` (`toAccountMappingCsv`) with the selected rows, else the companies due a re-sync, else every company. The label says which ("(3 selected)", "(12 due)"). The record id goes out so AWS's results come back to the right record.
+  - **Import results** (editors): AWS's results CSV. Its column names are not published, so each field is read by a list of header names (`ACCOUNT_MAPPING_HEADERS`, case and punctuation ignored). Columns it does not know are listed back ("Columns not read: …"). A row is matched to a record by its Record ID, then by the AWS account ID, then by website domain, then by company name. The last three apply in the row's country when it gives one, and a domain or name that fits two records is never guessed. Each matched record gets `awsMapping`: `matched` (true/false/null), `awsAccountId`, `propensity` (`high`|`medium`|`low`|""; words read as they are, a score out of 100 or a fraction: ≥70 High, ≥40 Medium), `propensityRaw` (as AWS sent it), `signals[]` (up to 20), `greenfieldEligible`, `salesMotionEligible` (true/false/null), `lastSyncedAt` (server time) and `source: "csv-import"`. AWS's account ID fills the record's own `awsAccountId` only when it is blank. The result line says "Updated N companies from AWS Account Mapping." and lists the rows that matched no company by line number.
+  - **Rank by propensity** shows the AWS propensity and Awareness rank columns and sorts by rank. **Greenfield eligible** shows the Greenfield column filtered to Yes.
+- **Grid columns** (off by default so the default columns still fit without scrolling; Columns chooser): **AWS propensity** (pill, select filter High / Medium / Low / Not synced, with a star on a high-potential shared account), **Greenfield** (Yes / No / Unknown filter), **Awareness rank**, and **AWS match**, **Partner-led sales motion** and **AWS last synced**. The CSV export gains AWS match, AWS propensity, AWS propensity (as sent), AWS signals, Greenfield eligible, Partner-led sales motion eligible, AWS last synced and a final **Awareness rank** (ranked among the exported rows).
+- **Awareness rank** (`awarenessRanks`): the stage-1 awareness targeting order. AWS propensity comes first (High, Medium, Low), then the record's priority, then store count, then name. Rank 1 gets the Google DSP awareness spend first. Only records with a propensity band are ranked; unsynced, unmatched (`matched: false`), disqualified and converted records are not. The console does not allocate spend or call the DSP: whoever runs the awareness campaign takes the order from the grid, the CSV export or `list_prospects` (`sort: "awareness"`).
+- **Company profile** (`prospect-detail.js`, Profile tab): an **AWS Account Mapping** card for the country record shows Matched AWS account (with its ID), Propensity to buy (band, and AWS's own value when it differs), Signals, Partner Greenfield Program, Partner-led Sales Motion and Last synced. It shows "Due a re-sync" when the record is due. With no import yet the card reads "Not synced with AWS Account Mapping yet."
+- **High-potential shared account** (`isHighPotential`, rule `HIGH_POTENTIAL_RULE`): matched to an AWS account, High propensity, and eligible for the Greenfield Program or the Partner-led Sales Motion. The card shows a "High-potential shared account" chip and, for editors, **Request joint planning with AWS**. It **only drafts the request**: an editable text (`jointPlanningDraft`: subject, the match, propensity, programmes, signals, company size, ask for a planning call) saved as `jointPlanning {status: "draft", text, draftedByEmail, draftedAt}` on the record, with **Copy**. The account owner submits it in Partner Central, then **Mark submitted** (`status: "submitted"`, `submittedAt`). Nothing in the console sends it.
+- **Scheduled re-sync check** (`functions/account-mapping.js`): once a day, run from the hourly `aceToGa4` call beside the funnel ingest's due run (no Cloud Scheduler, no new workflow). It counts total, never synced, stale, due, matched and high-potential records (plus up to 50 due ids and the last import date) onto `consoleConfig/accountMapping` (server-written, members read). The panel shows "Checked daily, last <date>". It never calls AWS and never writes a prospect, so it starts no enrichment or index trigger. A re-import of AWS's results for the due records is what updates their last-synced date. There is no separate "stale-record research agent" schedule in the code; the research agent runs on create and on Refresh info, so this check runs beside the funnel ingest instead.
+- **Rules**: `firestore.rules` → `isProspect` allows `awsMapping` (a map, `propensity` in "", high, medium, low, at most 20 signals) and `jointPlanning` (a map, `status` draft|submitted, `text` up to 4000 characters).
+- **MCP**: `list_prospects` returns `awsMapping`, `highPotential` and `awarenessRank`, filters by `propensity` (high, medium, low, not-synced) and `greenfield` (yes, no, unknown), and sorts by `sort: "awareness"`. `upsert_prospects` does not write `awsMapping`: only an import does.
+- **Limits**: AWS's export column names and value wording are assumptions (header aliases) until a real Account Mapping results file is imported. The first import's "Columns not read" line shows at once if a guess was wrong. A direct API sync waits on Partner Central exposing Account Mapping and on the Partner Central role link working live.
+- Tests: `test/prospects.test.mjs` (bands, upload file, header aliases, matching, staleness, filters, ranking, high-potential rule, draft, the daily check), `test/mcp-server.test.js` (`list_prospects` fields, filters and sort), `test/ui/console-click.test.mjs` ("AWS Account Mapping" scenario).
+
 ### Leads: inbound leads matched to Prospects (TAM), one lead per company per country, AWS as its own record (10 Nov 2026)
 
 - **Matching.** A lead that comes in (the website form, `functions/lead-ingest.js`,
@@ -6480,9 +6529,16 @@ overlay. Presentation only: every field, action and datum is still there.
   Prospects (TAM)), read-only.
 - **Nine stages, top to bottom:** ad impressions, click-throughs (Google Ads);
   site visits, demo requests, calculator / model downloads (GA4); ACE
-  opportunities created, open, closed (won or lost); deployed (Launched). Each
-  row shows the count, the % of the previous stage, the % of the top, and a
-  funnel bar. "Closed" is measured against "created" (an opportunity leaves
+  opportunities created, open, closed (won or lost); deployed (Launched); then
+  **Revenue** (24 Nov 2026), from the Partner Central S3 data export. Each
+  count row shows the count, the % of the previous stage, the % of the top, and a
+  funnel bar. Revenue is an amount, not a count: it shows the currency amount
+  (AWS Revenue Measurement attributed revenue where the opportunity has it,
+  otherwise its AWS Marketplace revenue), the Partner Central funding used in
+  the period and when the export was written, with no % of the stage above or
+  of the top; its bar is as wide as Deployed's. Until the export is set up it
+  reads "Not set up yet", which is not a failure. The count line adds the
+  revenue once there is export data. "Closed" is measured against "created" (an opportunity leaves
   "open" when it closes), and its tooltip says so. Counts recalculate live as
   any filter changes; no explanatory copy on the page, only info tooltips.
 - **Filters (all combinable):** date range (local calendar days, quick ranges)
@@ -6526,6 +6582,27 @@ overlay. Presentation only: every field, action and datum is still there.
   - `leads`: day × industry × country × channel: `leads` from the console's
     `leads`; test and archived leads are never counted.
   - `ace`: day × industry: `aceCreated`, while Partner Central answers.
+  - `pc-export` (24 Nov 2026, ticket 45gMhPpfJ7naO40HM8X2, `functions/pc-export.js`):
+    day × ACE opportunity, from Partner Central's single-step S3 data export to
+    a PH-owned bucket: `attributedRevenue`, `marketplaceRevenue`, `fundingUsed`,
+    with `aceId`, `stage`, `currency`. The day is the revenue period (a month
+    counts on its 1st), else the close date, else the created date. Joined on
+    the ACE opportunity id (company, industry and stage from the live ACE
+    list), then on company name to Prospects (TAM) (industry, country) and
+    Leads (channel, content; a lead id in the export wins). A Demand Center
+    campaign on the export is the row's campaign and is added to that
+    opportunity's campaigns, so the campaign filter traces campaign → lead →
+    ACE opportunity → revenue. The live Selling API stays the source of the ACE
+    stages; the export never overrides them. The import reads the newest run
+    (the newest data file's folder; files loose under the prefix count as one
+    run when written within 6 hours of the newest), CSV or JSON, columns by
+    header alias. It replaces every `pc-export` row, so a re-import never double
+    counts, and an export whose files and ETags are unchanged is not re-read.
+    `sources.pc-export` records `recordsRead`, `joined`, `unknownHeaders`,
+    `files` and `exportedAt`. Set-up (bucket, export, the role's
+    `ExportBucketName`, `consoleConfig/funnelIngest.pcExportBucket` /
+    `pcExportPrefix` / `pcExportRegion`) is in `deploy/aws/README.md`; S3 is
+    read with the Partner Central role's short-lived credentials, never a key.
 - **Days** are calendar days in the configured zone (`timeZone`, default
   Australia/Sydney, set to match the GA4 property's zone, which is the zone GA4
   reports its dates in); the console's own records are bucketed in that zone
@@ -6547,6 +6624,22 @@ overlay. Presentation only: every field, action and datum is still there.
   API enabled on the project; Google Ads needs the Ads account linked to that
   property. `consoleConfig/funnelIngest` may override `ga4PropertyId` and
   `timeZone`.
+- **GA4 access (24 Nov 2026, ticket GIUwHBjGPqLmv6uQS692).** Every run that reaches
+  GA4 records `consoleConfig/funnelIngest.ga4Access`: `{ok, problem, serviceAccount,
+  propertyId, project, at}`. `serviceAccount` is the account the function actually
+  ran as (its credentials, then the metadata server's default account; empty if
+  neither answers, never inferred). A 403 is sorted into `problem: "no-access"`
+  (the account is not a user of the property) or `"api-disabled"` (the Google
+  Analytics Data API is off for the project). While GA4 refuses on access, a due
+  run comes every hour (50 minutes, `ACCESS_RETRY_MS`) instead of every 6, so the
+  data follows within the hour of access being granted; once GA4 answers the
+  6-hour rhythm returns. The page's status line then says which account has no
+  access to which property and that it needs Viewer (or that the API is off), in
+  place of the raw 403 on the GA4 and Google Ads lines, and a row under it offers
+  Copy service account, Copy property ID, Copy role and Open GA4 access
+  management (or Enable the Data API). The Dashboard tile's panel carries the
+  same sentence. A status written before `ga4Access` existed is read from the
+  sources' errors, without the account.
 - **A failed source is flagged, never a silent 0.** `consoleConfig/funnelIngest`
   records each source's `ok`, `error` and `lastSuccessAt`. A failing source
   keeps its earlier rows. The page's count line ends "Updated <local date and
@@ -6555,6 +6648,65 @@ overlay. Presentation only: every field, action and datum is still there.
   "Data not updated" in place of its trend, its status turns red, and its
   summary panel carries the same text; the earlier figures stay.
 - **Times:** days and dates are the viewer's local time, never UTC.
+
+## Promote section: License Manager (24 Nov 2026)
+
+- **Promote › License Manager** (`#promote/license-manager`, nav item directly below
+  Conversion Funnel; `public/js/licences-page.js`, rules in `public/js/licences-core.js`,
+  sync in `functions/marketplace-agreements.js`). Its own permission section
+  (`license-manager`, inherits Prospects (TAM)). Each AWS Marketplace subscription
+  (agreement) shows the buyer's company and contact, linked to the matching Prospects
+  (TAM) company and its lead, so a licence is no longer known by its AWS account ID only.
+- **Data**: `licences/{agreementId}`, written only by the server (members read, nobody
+  writes from a browser): `agreementId`, `awsAccountId` (the buyer's account), `status`,
+  `agreementType`, `offerId`, `productIds[]`, `startTime`, `endTime`, `contactsRaw` (the
+  GetAgreementContacts answer as JSON text), `contactsError`, `syncedAt`, `syncedBy` and
+  `manualLink {prospectId, by, at}` | null. The sync's status is
+  `consoleConfig/licenceSync` (`lastSyncAt`, `count`, `contactErrors`, `lastError`,
+  `lastErrorAt`).
+- **Sync** (`POST /partnerCentral/v1/licences/sync`, editors and admins; the header's
+  **Sync from AWS Marketplace** button): `SearchAgreements` (PH as proposer, purchase
+  agreements, 50 a page, up to 10 pages), then `GetAgreementContacts` for each agreement
+  (buyer name, email, company, country). Same keyless access as Partner Central, but its
+  own closed, read-only operation list (`LICENCE_OPERATIONS`) and its own IAM policy
+  statement (`MarketplaceAgreementsRead` in `deploy/aws/partner-central-role.yaml`); every
+  call is in `partnerCentralAudit`. A contacts call that fails keeps that licence's earlier
+  contacts and records the error; a failed sync is shown at the top of the page.
+  "After each subscription" is a manual or repeated sync for now: no Marketplace
+  subscription event reaches the console yet.
+- **Untested live**: the Agreements endpoint, signing name and target prefix follow the
+  published API, and GetAgreementContacts' request is assumed to be `{agreementId}`. Its
+  answer is stored raw and read defensively (`normaliseAgreementContacts`: a list under
+  `contacts`, `agreementContacts`, `items` or similar, camelCase or PascalCase fields), so a
+  different shape is a change to that function only, with no re-sync. Verify on the first
+  real sync, like the Partner Central link (`deploy/aws/README.md`).
+- **Linking** (worked out on the page from the current TAM records, so a TAM record added
+  or corrected later links the licence with no re-sync), strongest first: (1) a person's
+  manual link; (2) the buyer's AWS account ID on a TAM record, a TAM contact or a lead;
+  (3) the buyer's company name **and** business email domain, where the domain is the
+  record's website or an email format on the company's profile
+  (`prospectCompanies/{id}.profile.emailFormats`). The buyer's country picks that
+  country's record. The AWS record is never a customer. The lead is the TAM record's lead.
+- **Review queue** (the second tab, with its count): a licence matched by name only, by
+  domain only, or not at all. Each item shows the company, contact, country, AWS account
+  and agreement, why it wasn't linked, up to three suggested TAM companies (one click
+  links) and a picker of every TAM company with **Link**
+  (`POST /partnerCentral/v1/licences/link {agreementId, prospectId}`, editors; the server
+  records who and when). A manual link shows **Unlink** in the grid.
+- **Grid** (the console's AG Grid pattern, as ACE opportunities): Company, Contact (name
+  and email icon), Country, AWS account ID, Status (Linked / Needs review / Awaiting
+  agreement; the reason in a tooltip), TAM company, Lead (opens the lead card), Onboarding,
+  Agreement. The count line: licences, linked, to review, ready for onboarding, won leads
+  awaiting an agreement.
+- **Won leads**: every Closed Won lead (test and archived ones left out) appears — on its
+  licence's row once one links to it, otherwise as its own "Awaiting agreement" row.
+- **Onboarding**: a linked licence with a buyer email is **Ready for onboarding** (that
+  contact is who the onboarding and registration go to); linked without one is **No buyer
+  contact**. The console has no install wizard yet, so nothing is sent from here: starting
+  the RevOps install wizard from a ready licence is a follow-up.
+- Tests: `test/licences.test.mjs` (contacts, matching, rows), `test/marketplace-agreements.test.js`
+  (sync and link routes, stubbed AWS), the "Promote: License Manager" click-through scenario,
+  `test/permissions.test.mjs`, `test/promote-section.test.mjs`.
 
 ## PH Agent Context (19 Nov 2026)
 
@@ -6586,7 +6738,8 @@ extends Code Mode and the per-source searches; it replaces none of them.
   README, Requirements, documents, discussion) and their critiques; help
   centre articles; leads; prospects (TAM); Support threads; project
   documents (Requirements, README, mirrors, board documents, interface
-  contracts); and skills.
+  contracts); the documentation library (Support › Documentation, the
+  pages migrated from Confluence; source `documentation`); and skills.
 - **CTX-4** Ranking is hybrid: BM25 over the text (a title word counting
   three times) plus a vector similarity, combined 65 to 35, then a recency
   boost of at most 30% that fades over about 45 days. Every record has a
@@ -6765,8 +6918,25 @@ hello@ and aidan@ (at personalisationhub.com). Each has its own tab.
   inbox). The header line counts the inbox on show. `#support/ticket/<id>`
   still opens any ticket, under its own inbox's tab. Only the Support Inbox
   has queues and their counts (SUP-INB-9).
-- **SUP-INB-7** The Dashboard's three Support tiles count the Support
+- **SUP-INB-7** The Dashboard's Needs a person tile counts the Support
   Inbox only. Mail written only to hello@ or aidan@ is in none of its figures.
+  Needs a person counts support queries only (SUP-TKT-4): an Aidan request
+  that came back to support@, and support@ mail not about PH, are not in it.
+  AI drafts to approve and Resolved & automation count every inbox, with an
+  inbox filter (SUP-INB-7a).
+- **SUP-INB-7a** Inbox filter on the Dashboard (24 Nov 2026, ticket
+  ZCNIxvtORgZN0csAlO44). The summary panels of AI drafts to approve and
+  Resolved & automation each open with their own filter: All inboxes
+  (selected by default), Support Inbox, Hello and Aidan, each with the tile's
+  figure for that choice. A ticket written to two addresses is in both
+  inboxes, so the inboxes' figures need not add up to All. The choice narrows
+  the tile's figure, its trend, "By AI alone" and the panel's lists (the FAQ
+  gaps too), and a filtered tile reads "<inbox> only". With All inboxes, each
+  draft and FAQ gap names its inbox ("Hello · <subject>"); an empty list names
+  the inbox ("No drafts waiting in Aidan"). The choice is kept while the page
+  is open, closing the panel included, and never saved: after a reload both
+  tiles are on All inboxes. Open section goes to the Support Inbox queue for
+  All inboxes or Support Inbox, and to the Hello or Aidan tab for those.
 - **SUP-INB-8** Only a ticket in the Support Inbox can be answered without a
   person. With sending switched on, a draft for mail written only to hello@
   or aidan@ still waits for a person to approve it.
@@ -7882,6 +8052,15 @@ Ticket Ebq2oqSH3Lp1UrHWnfgJ. Code: `functions/aidan-core.js`
 - **SUP-TKT-4** Queues: Needs a person, AI drafts to approve, Automated &
   unsorted, Waiting on customer, Resolved, Spam, All tickets. An open,
   waiting, resolved or spam ticket is in exactly one of the first six.
+  Needs a person holds support queries only (24 Nov 2026, ticket
+  j7fSAp4aZO4HGd7iCR3G): an open ticket that needs a person and is a
+  question about the platform or Personalisation Hub. A thread that carries
+  an Aidan request (it started at aidan@; Aidan replies from support@, so a
+  reply to him also files it under the Support Inbox) and mail triage found
+  automated, not about PH or spam-like are not in it, even when they need a
+  person (a high-value sender's unrelated mail, Aidan needing a person): they
+  sit in Automated & unsorted, and Aidan's still show in the Aidan tab. A
+  failed triage stays in Needs a person.
 - **SUP-TKT-5** Marking spam asks first, moves the thread to Gmail's Spam
   too, and can be undone ("Not spam"). It is available in all three tabs
   (SUP-INB-14), and cancels a request Aidan has queued on the thread
@@ -8036,8 +8215,9 @@ with nothing sent and nothing touching the mailbox.
 - **SUP-STAT-1** Removed 17 Nov 2026: the Support Inbox has no Stats tab.
   `#support/stats` opens the inbox. SUP-STAT-2 to 4 went with it.
 - **SUP-STAT-5** The support figures are the Dashboard's three Support
-  tiles (Needs a person, AI drafts to approve, Resolved & automation), all of
-  the support@ inbox (SUP-INB-7). See "Dashboard —
+  tiles (Needs a person, AI drafts to approve, Resolved & automation). Needs a
+  person is of the support@ inbox (SUP-INB-7); the other two cover every inbox
+  with an inbox filter (SUP-INB-7a). See "Dashboard —
   the console's landing page".
 
 ### Writing a new email (17 Nov 2026)
@@ -8191,14 +8371,14 @@ tiles. A tile never opens its section (see "Dashboard v2"); the panel's
 
 | Section | Tile | Headline (on the tile) | Summary panel | Open section |
 |---|---|---|---|---|
-| Internal | Delivery | Tickets deployed yesterday (`mergedAt`, else `statusEnteredAt` of a Merged to Main card), against the day before, with a 7-day line; average lead time from Backlog (`createdAt`) to Live and the first-time pass rate, both over the tickets deployed in the last 7 days | Per project: deployed yesterday, last 7 days, lead time, first-time pass | `#board` |
-| Internal | Flow & blockers | Tickets stuck now, split blocked / failed testing / waiting to test | Each stuck ticket with its project, the reason and how long it has waited, longest first | `#board` |
+| Internal | Delivery | Tickets deployed in the selected range — Yesterday (the default) or the last 7 days — (`mergedAt`, else `statusEnteredAt` of a Merged to Main card), against the previous period of the same length, with a 7-day line; the first-time pass rate over those tickets with its change, and their average lead time from Backlog (`createdAt`) to Live | A Yesterday / Last 7 days switch; per project: tickets deployed and first-time pass, each with its change on the previous period, and lead time | `#board` |
+| Internal | Flow & blockers | Tickets stuck now, split blocked / failed testing / waiting to test; beside them, how many tickets went back through retesting ("N retested") | Each stuck ticket with its project, the reason and how long it has waited, longest first; then each retested ticket with its project, round and how many times it was retested, most first, with **Open list** to `#testing-loops?view=retested` | `#board` |
 | Internal | Staff Kanban | Open tasks of the current release split To do (Backlog, Ready for Dev) / In progress / Testing (Ready for Testing, Approved); the release's name and % done; amber flags for overdue, unassigned, unestimated and waiting on you in Testing | Workload per person: remaining effort as hours with days in brackets at 8 h a day ("24h (3d)"), open tasks, overdue, and which tasks have no estimate | `#staff-kanban` |
 | External | Leads | New leads in the last 7 days against the 7 days before, with a 7-day line and yesterday's count; the company pipeline Lead → Hot Lead → Demo → Post-demo → Closed Won with the count at each stage now and the conversion from the stage before; stale and not-contacted flags | The last 7 days' leads by source (Website, Network operator, Partner, Other), industry and market, with names; the pipeline with conversion; the stale and not-contacted leads by name | `#promote/leads` |
 | External | Conversion funnel | Unique visitors over the last 7 days against the 7 days before, with a 7-day line; visitor-to-lead %; a mini funnel Visitors → Industry → Engaged → Leads → Opps with the biggest drop-off in amber; the top-moving industry and market | The full funnel with count and drop-off at each step; industries and markets ranked by visitors with the change on the week before; traffic sources | `#promote/conversion-funnel` |
 | Support | Needs a person | The Support Inbox's Needs a person queue count, and the age of the oldest | Each ticket with the customer and its wait, longest first (the first 10) | `#support` |
-| Support | AI drafts to approve | The AI drafts to approve queue count, and how many are high confidence (80% or more) | Each draft with the customer and its confidence, most confident first (the first 10) | `#support?queue=ai-drafts` |
-| Support | Resolved & automation | Tickets resolved yesterday against the day before; the % resolved by the AI with no person involved | FAQ gaps: questions from the last 30 days the Help Centre couldn't answer (the first 10) | `#support?queue=resolved` |
+| Support | AI drafts to approve | Drafts waiting for approval in every inbox (or the inbox chosen in the panel's filter), and how many are high confidence (80% or more) | The inbox filter (All inboxes, Support Inbox, Hello, Aidan, each with its count); each draft with the customer, its inbox and its confidence, most confident first (the first 10) | `#support?queue=ai-drafts`; with Hello or Aidan chosen, that inbox's tab |
+| Support | Resolved & automation | Tickets resolved yesterday in every inbox (or the chosen one) against the day before; the % resolved by the AI with no person involved | The inbox filter; FAQ gaps: questions from the last 30 days the Help Centre couldn't answer, each with its inbox (the first 10) | `#support?queue=resolved`; with Hello or Aidan chosen, that inbox's tab |
 
 Rules:
 
@@ -8207,6 +8387,21 @@ Rules:
   passed first time when it has no counted send-back and one testing round
   (`countedSendBacks`, `testRound`); a ticket from before testing rounds were
   kept passed when it has no `lastFailureReason`.
+  **Change on the previous period** (7KcZdqFjytcmD9S85Fnq): the Delivery
+  panel's switch picks the range, Yesterday (against the day before) or the
+  last 7 days (against the 7 days before); it is remembered per viewer in
+  `localStorage` (`bt-dash-delivery-range`), and the tile's headline, pass
+  rate and lead time follow it (the 7-day line does not). Every figure is over
+  the tickets deployed in that period, in total and per project (a project is
+  listed when it deployed in either period, most deployed first). Ticket
+  counts change as a relative %: an arrow and "+50%", "New" when the previous
+  period had none (never ∞%), "0%" when equal. First-time pass changes in
+  percentage points ("+12 pp"), since a relative change of a rate misleads;
+  when either period deployed nothing there is no rate to compare, shown as
+  "—" with no arrow. Up is green, down red, no change neutral; the full
+  sentence ("+50% vs the day before: 3 against 2") is on hover and for screen
+  readers (`deliveryPeriod`, `countChange`, `passChange` in
+  `public/js/dashboard-core.js`).
 - **Flow & blockers**: a ticket is stuck when it is blocked (except a plain
   `waiting-on-dependency` wait, which releases itself; one marked `stuckOn`
   counts), when it was sent back with Failed testing and is not rebuilding (a
@@ -8216,6 +8411,19 @@ Rules:
   trigger afterwards, so it is always a little later), or when it has
   been in Ready for Testing (waiting on a person) for more than 24 hours.
   Approved and live tickets are never stuck.
+- **Retested tickets** (0I93kb0fqXL4Qr4qyzwv): beside the stuck count, every
+  ticket not archived that went back through retesting, i.e. has at least one
+  counted send-back (`loopOf(item).counted`, "Testing rounds": a person's
+  Failed testing, a red train test, a review kick-back; not a ticket taken off
+  a release, a red main or a flaky test), at any time. Each is shown
+  "Retested N times" with N the counted send-backs (not the round, which is
+  one more), most retested first, then the latest send-back. They are
+  information, not stuck: they leave the tile's colour alone. The panel's
+  **Open list** opens the Testing loops page's **Retested** view
+  (`#testing-loops?view=retested`, every project), which lists the same
+  tickets from the same selector (`retestedRows` in
+  `public/js/test-rounds-view.js`), so the tile's count is always the list's
+  length.
 - **Staff Kanban** reads every open task (`kanbanCards` where `open == true`,
   the query Staff Kanban itself uses; `kanbanTasks` while the cards lag) and
   the current release's tasks for its progress. The current release is Staff
@@ -8257,9 +8465,16 @@ Rules:
   now at Demo or beyond. The biggest drop-off is the step with the largest
   percentage drop. A top mover is the industry or market whose visitors grew
   most on the week before.
-- **Support figures**: all three tiles are of the support@ inbox only
-  (SUP-INB-7) and use the Support Inbox's own queues, so Needs a person and AI
-  drafts to approve equal those two queue counts on the Support Inbox tab. The
+- **Support figures**: Needs a person is of the support@ inbox only
+  (SUP-INB-7). AI drafts to approve and Resolved & automation cover every
+  inbox by default (SUP-INB-7a). All three use the Support Inbox's own queue
+  tests, so Needs a person, and AI drafts to approve with Support Inbox
+  chosen, equal those two queue counts on the Support Inbox tab.
+- **Inbox filter** (ZCNIxvtORgZN0csAlO44): toggle buttons (`aria-pressed`) at
+  the top of the AI drafts to approve and Resolved & automation panels, one
+  filter per tile, All inboxes by default, kept in memory only (a saved narrow
+  choice would silently under-count on the next visit). Needs a person has
+  none. See SUP-INB-7a. The
   wait runs from `lastInboundAt` (else the last message). Resolved yesterday is
   a ticket still resolved whose `resolvedAt` is yesterday; by the AI alone is
   `resolvedBy: "ai"` with no `humanInvolved`. An FAQ gap is a ticket from the
@@ -8324,11 +8539,47 @@ shows is in the table above (cMyA3FMlUUrSjGtPkLZC, eight tiles).
   open at a time; the tile shows it is pinned (`aria-expanded`). The panel
   has an **Open section** link to the tile's section; the tile itself never
   navigates (people use the sidebar for that). Hover does not preview the
-  panel.
+  panel. A **count** on the tile is the exception (24 Nov 2026, below): it
+  opens its list, so the tile's own pin target is everywhere else on it (its
+  head, labels and spaces).
 - **Redraws keep the panel.** A backlogItems snapshot updates the figures
   in place: a focused tile keeps its focus, and a pinned panel stays open and
   shows the new figures. Only the panel moves when the row breaks change (a
   resize or rotation), never a tile.
+
+### Every count opens its filtered list (24 Nov 2026)
+
+Ticket uAp6fukjDyNxKusotmcQ. Every count on a tile or in its summary panel is
+a drill-down: clicking it opens the list behind that number, never just the
+section, and never toggles or closes the panel (the click is taken before the
+tile's own). In a tile a count is a span (a tile is a button), underlined on
+hover; in the panel it is a link, so a keyboard reaches it.
+
+- **Staff Kanban** opens filtered: `#staff-kanban?show=…` (kanban-staff-board
+  REQUIREMENTS.md → KB-FLT-1a). Open tasks, each column, overdue, unassigned,
+  unestimated and waiting on you, each scoped to the tile's release; in the
+  panel, a person's open and overdue tasks, and a task without an estimate
+  opens that task.
+- **Needs a person** opens its Support Inbox queue (`#support`), which counts
+  the same tickets. **AI drafts to approve** and **Resolved & automation** count
+  the inbox their panel's filter shows (every inbox by default), so their
+  counts open the Dashboard's list for that inbox (`&inbox=<key>`).
+- **Every other count opens the Dashboard's list view**,
+  `#dashboard?list=<key>&…` (`drillRows` in `dashboard-core.js`, picked by the
+  same rules the tile counts with, so the list holds the count's number). It
+  replaces the tiles and Needs attention, with a back link to the Dashboard, a
+  title and a count line; a ticket row opens the ticket over the Dashboard, a
+  Support row its ticket page; a lead row is its name, stage and source. The
+  lists: Delivery (deployed yesterday and in the last 7 days, all or one
+  project), Flow & blockers (stuck, or one kind: blocked, failed testing,
+  waiting to test; each stuck row in the panel opens its ticket), Leads (new
+  in 7 days, yesterday, a pipeline stage, stale, not contacted, a source,
+  industry or market group), Conversion funnel (its Lead step, and its
+  Opportunity step when that counts website leads), AI drafts (high
+  confidence), Resolved & automation (resolved yesterday, by the AI alone, FAQ
+  gaps), each for the inbox the tile's filter shows.
+- **Not drill-downs:** figures that are not a list of items: website visitors
+  and the funnel's GA4 steps, percentages, hours, lead time, the trend.
 
 Code: `public/js/dashboard-core.js` (rules, no DOM) and
 `public/js/dashboard-page.js` (reads and rendering); routing in `app.js`
@@ -8354,6 +8605,13 @@ Confluence (see `README.md` → "Documentation").
 - Sections nest to any depth; a section shows its folders, then its documents.
 - Search covers every document's title, summary, keywords and body text, and
   shows where each hit sits.
+- A document opens read-only (24 Nov 2026): clicking it shows the reader
+  (`#doc/<id>`), which fills the content area with no editor fields: its
+  section path, title, state badges (Draft, Needs review, Archived), type,
+  last update, summary and the formatted body in a centred reading column,
+  then where it was carried over from. Back (or Escape) returns to its
+  section. An Edit icon, shown to editors only, opens the editor
+  (`#doc/<id>/edit`), as does a row's pencil; Cancel returns to the reader.
 - A document uses the Help Centre's editor and properties; website-only
   fields (SEO & agents, Hide from website, live link) are not offered, and no
   product/program is required.

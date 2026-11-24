@@ -3,7 +3,7 @@ import assert from "node:assert";
 import { readFileSync } from "node:fs";
 import { SECTION_KEYS, effectiveLevels, storedLevel, roleLevels, setLevel, canView, canEdit, canAdmin, sectionForHash, firstAllowedSection, permissionCss, isAdminRole, PERMISSION_GROUPS, sectionForSettingsPage, SECTIONS, discoverNavSections, SECTION_HASH } from "../public/js/permissions.js";
 
-assert.deepStrictEqual(SECTION_KEYS, ["agent-board", "staff-kanban", "concepts", "whiteboard", "promote", "promote-leads", "prospects", "conversion-funnel", "support-inbox", "faq", "documentation", "settings", "user-management", "releases", "skills", "project-docs"]);
+assert.deepStrictEqual(SECTION_KEYS, ["agent-board", "staff-kanban", "concepts", "whiteboard", "promote", "promote-leads", "prospects", "conversion-funnel", "license-manager", "support-inbox", "faq", "documentation", "settings", "user-management", "releases", "skills", "project-docs"]);
 
 const engineer = { id: "e", name: "Engineer", permissions: { concepts: "none", faq: "view" } };
 const lv = effectiveLevels("editor", engineer);
@@ -47,6 +47,7 @@ assert.strictEqual(sectionForHash("#concept-abc"), "concepts");
 assert.strictEqual(sectionForHash("#promote/brand-guidelines"), "promote");
 assert.strictEqual(sectionForHash("#promote/prospects"), "prospects", "Prospects (TAM) has its own permission section");
 assert.strictEqual(sectionForHash("#promote/conversion-funnel"), "conversion-funnel", "the funnel has its own permission section");
+assert.strictEqual(sectionForHash("#promote/license-manager"), "license-manager", "the License Manager has its own permission section");
 assert.strictEqual(sectionForHash("#faq-article/x"), "faq");
 // Documentation (internal docs library): its own section, following the Help Centre's grant until set.
 assert.strictEqual(sectionForHash("#documentation"), "documentation");

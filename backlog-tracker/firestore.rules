@@ -721,8 +721,14 @@ service cloud.firestore {
       // "tour" or "").
       return d.keys().hasOnly(["company", "contacts", "stage", "source", "assignee", "customerAccount", "prospectId", "enrichment", "test", "sourcePage", "sourceIndustry",
           "sourceLabel", "sourceDetail", "websiteActivity", "history", "archivedAt", "archivedByEmail", "inboundCount",
-          "leadType", "operator", "tam", "rank",
+          "leadType", "operator", "tam", "rank", "aiSessionIds", "aceOpportunityId", "gaClientIds",
           "createdAt", "updatedAt", "stageChangedAt", "createdByEmail", "updatedByEmail"])
+        // Written by the functions, kept by an editor's save: the Partner Central AI
+        // session ids (partner-central.js), the linked ACE opportunity and the
+        // website's GA4 client ids (lead-ingest.js).
+        && (d.get("aiSessionIds", null) == null || d.get("aiSessionIds", null) is list)
+        && (d.get("aceOpportunityId", "") is string && d.get("aceOpportunityId", "").size() <= 64)
+        && (d.get("gaClientIds", null) == null || d.get("gaClientIds", null) is list)
         // `rank`: its priority within its lane, lower is higher (set by dragging it up or down the lane).
         && (d.get("rank", null) == null || d.get("rank", null) is number)
         // `tam`: a readable copy of the linked TAM record's own fields, written by
@@ -772,7 +778,7 @@ service cloud.firestore {
     function isProspect(d) {
       return d.keys().hasOnly(["name", "country", "website", "industry", "subIndustry", "hqCountry", "markets", "awsRegion", "storeCount", "sizeBand",
           "priority", "storePresence", "ownership", "insights", "decisionMakers", "linkedinUrl", "linkedinOrgId", "linkedinVerified", "contacts",
-          "vendors", "campaigns", "status", "leadId", "source", "notes", "awsAccountId", "enrichment",
+          "vendors", "campaigns", "status", "leadId", "source", "notes", "awsAccountId", "enrichment", "awsMapping", "jointPlanning",
           "createdAt", "updatedAt", "createdByEmail", "updatedByEmail"])
         && isNonEmptyBoundedString(d.get("name", null), 120)
         && d.get("country", "") is string && d.get("country", "").size() <= 60
@@ -803,11 +809,26 @@ service cloud.firestore {
         && d.get("source", "") is string && d.get("source", "").size() <= 80
         && d.get("notes", "") is string && d.get("notes", "").size() <= 2000
         // Written by the enrichment function as the service account (lead-enrich.js); an editor's save keeps it.
-        && (d.get("enrichment", null) == null || d.get("enrichment", null) is map);
+        && (d.get("enrichment", null) == null || d.get("enrichment", null) is map)
+        // AWS Partner Account Mapping's match and signals, from the page's Import results (prospects-core.js
+        // planAccountMappingImport), and the drafted joint-planning request (a person submits it to AWS).
+        && (d.get("awsMapping", null) == null || (d.get("awsMapping", null) is map
+          && d.get("awsMapping", {}).get("propensity", "") in ["", "high", "medium", "low"]
+          && d.get("awsMapping", {}).get("signals", []) is list && d.get("awsMapping", {}).get("signals", []).size() <= 20))
+        && (d.get("jointPlanning", null) == null || (d.get("jointPlanning", null) is map
+          && d.get("jointPlanning", {}).get("status", "draft") in ["draft", "submitted"]
+          && d.get("jointPlanning", {}).get("text", "") is string && d.get("jointPlanning", {}).get("text", "").size() <= 4000));
     }
     // Conversion Funnel's Google Ads + GA4 daily rows (public/js/funnel-core.js). Written only by the
     // server-side ingest (admin SDK bypasses rules); members read them.
     match /funnelDaily/{rowId} {
+      allow read: if isBoardReader();
+      allow write: if false;
+    }
+    // Promote › License Manager: AWS Marketplace agreements and their buyer contacts,
+    // written only by the server sync and the manual-link route
+    // (functions/marketplace-agreements.js, through the partnerCentral function). Members read.
+    match /licences/{licenceId} {
       allow read: if isBoardReader();
       allow write: if false;
     }
@@ -1109,6 +1130,13 @@ service cloud.firestore {
     }
     match /partnerCentralState/{doc} {
       allow read, write: if false;
+    }
+    // A lead's AWS funding check (POST /partnerCentral/v1/funding/{leadId}/check):
+    // eligibility, estimates, budget and draft state, written only by the function;
+    // members read it on the lead card. Nothing here submits anything.
+    match /leadFunding/{leadId} {
+      allow read: if isBoardReader();
+      allow write: if false;
     }
 
     // ── Staff pronunciations (functions/kanban.js) ─────────────────────────

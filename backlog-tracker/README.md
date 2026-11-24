@@ -2108,6 +2108,28 @@ opportunities under the board (`ace-core.js`, `leads-page.js`, `ace-grid.js`) fr
 exercised without AWS access: verify on the first Sandbox call (see
 `deploy/aws/README.md`).
 
+**Partner Central agent over MCP (24 Nov 2026).** The same module also relays
+to AWS's hosted Partner Central agents MCP server (`sendMessage` /
+`getSession` only, SigV4 name `partnercentral-agents-mcp`). Settings →
+Integrations & MCP → AWS Partner Central → **Ask the Partner Central agent**
+(admins): ask in plain words, optionally linked to a lead and an ACE
+opportunity ID. Any write the agent proposes is held by AWS and shown as an
+approval card (operation + parameters) until an admin clicks **Approve** or
+**Reject**; nothing else answers it. Sessions (48 h) and decisions are in
+`partnerCentralAgentSessions` (server-only), and the AI session id is written
+once to the linked lead's history and `aiSessionIds`. See `REQUIREMENTS.md` →
+"Partner Central agent over MCP".
+
+**AWS funding drafts on the lead card (24 Nov 2026).** A Hot Lead, or a lead with an ACE
+opportunity, shows an **AWS funding** section in its summary drawer with "Funding check suggested".
+An admin's **Check funding eligibility** (`POST /partnerCentral/v1/funding/{leadId}/check`) asks the
+Partner Central agent, with the account context, for eligibility (POC, MAP, Innovation Sandbox credits,
+others), estimates and budget, and to draft the POC and Innovation Sandbox applications; each draft
+waits for an admin's Approve in the agent panel, and the console refuses to approve anything that
+submits. Results are in `leadFunding/{leadId}` (server-written, member-readable); rules in
+`public/js/funding-core.js`. **POC approved** marks the claim sign-off document (skill
+`aws-ace-poc-claim`) as due. See `REQUIREMENTS.md` → "AWS funding drafts on the lead card".
+
 **ACE stages → GA4 (9 Nov 2026).** `functions/ace-ga4.js`, the HTTP function `aceToGa4`, run hourly by `.github/workflows/ace-ga4.yml` (POST with `X-Board-Key`; not Cloud Scheduler, which this project deliberately has none of — the deploy account can't create scheduler jobs): website leads now carry the visitor's GA4 client_id (`leads/{id}.gaClientIds`, from the website's PH GA4 snippet via `leadIngest`), and the job sends `ace_opportunity_qualified` / `_launched` / `_won` once each to GA4 by Measurement Protocol, keyed on that client_id, with `ace_stage`, `company_name`, `industry`, `lead_source` and the original `session_id`. *won* is the console lead reaching Closed Won (ACE has no won stage). It sends for real only while the Partner Central catalogue is "AWS"; in Sandbox it only calls GA4's validation endpoint. What was sent is in `aceGa4Sync/{opportunityId}` (server-only), so nothing is sent twice. Secret: `GA4_MP_API_SECRET` (repo secret, synced by the deploy). Test: `node test/ace-ga4.test.js`. Full GA4 setup: `docs/ga4-industry-attribution.md`.
 
 **ACE opportunities in the console (7 Nov 2026).** Promote › Leads lists Customer, Opportunity, stage, review status, Score, revenue, Expected delivery date, Created and Last updated. Clicking an opportunity opens `public/js/ace-detail.js`: edit and **Save to ACE** (`PATCH /partnerCentral/v1/ace/{id}`, read-merge-write `UpdateOpportunity`, score re-read), **New opportunity** (`POST /partnerCentral/v1/ace`), and documents in Storage `ace/{id}/` (`public/js/ace-docs.js`, `storage.rules`; not sent to AWS). Live sync needs the role link in `deploy/aws/README.md`. See REQUIREMENTS.md → "ACE opportunities managed in the console".
@@ -2804,8 +2826,10 @@ every destination already existed.
   width until the pointer leaves (`data-nav-peek`, `nav-shell.js`); the page
   does not move for that, and a touch on a rail icon just goes there. The
   topbar hamburger is not shown at this width. 641 to 1023px, the overlay drawer;
-  640px and down, a bottom tab bar (Build, Promote, Publish, Settings, Search, Profile) that opens
-  one section at a time. The Board's columns stay stacked top to bottom on a
+  640px and down, a bottom tab bar (Build, Promote, Support, Settings) that opens
+  one section at a time; Profile is the top-right avatar at every width, opening
+  its menu as a dropdown under it, and Search is not offered on a phone
+  (LJrgkj70zFIXSG6PuwGg). The Board's columns stay stacked top to bottom on a
   phone (tap a column header to collapse it); a swipe-one-column-at-a-time
   strip was tried and reverted the same day (see below).
 - **Promote › Brand Guidelines** (`#promote/brand-guidelines`,
@@ -2947,8 +2971,9 @@ every destination already existed.
   Firestore `prospects/{id}`; own permission section `prospects` in
   User Management › Roles. Agents use `list_prospects` and `upsert_prospects`
   (`functions/prospects.js`). A company name opens a detail view (profile, org chart with buying roles and lead overlay, AWS account team, document library; `prospect-detail.js` / `prospect-detail-core.js`); that detail is stored once per company in `prospectCompanies/{companyKey}` and shared by every country record, and a lead card shows a compact org chart and AWS team. `awsAccountId` (12 digits, optional) is on the prospect, the lead and each contact or person. See REQUIREMENTS.md → Promote section: Prospects (TAM).
+- **Prospects (TAM) › AWS Partner Account Mapping (24 Nov 2026)**: the Prospects page's **AWS Account Mapping** panel exports the upload file for Partner Central's Account Mapping (Record ID, company, website, domain, country, AWS account ID) and imports AWS's results CSV onto the matching records (`awsMapping`: match, propensity, signals, Greenfield and Partner-led Sales Motion eligibility, last-synced date). Grid columns AWS propensity / Greenfield / Awareness rank (the stage-1 awareness targeting order) are in the Columns chooser, and the panel's Rank by propensity and Greenfield eligible buttons show them. The company profile shows an AWS Account Mapping card, and a high-potential shared account can **Request joint planning with AWS**, which only drafts the request for a person to submit. `functions/account-mapping.js` checks daily, from the hourly `aceToGa4` call, which records are due a re-sync (30 days) and writes `consoleConfig/accountMapping`. Account Mapping is not in the Partner Central API or agents MCP server, so the route is CSV; rules in `prospects-core.js`. See REQUIREMENTS.md → "Prospects (TAM): AWS Partner Account Mapping".
 - **Prospects (TAM) › Contacts tab (17 Nov 2026)** (`#promote/prospects?tab=contacts`; `public/js/prospect-contacts.js`, rules in `prospect-contacts-core.js`): the page has two tabs, Companies (the grid above) and Contacts, every person at the TAM companies in Firestore `prospectContacts/{id}` (name, role, company link or Unmatched, LinkedIn profile, email, notes, date added; search, sort, company and Unmatched filters). The TAM spreadsheet's contacts (the `contacts[]` on the company records) are copied in by themselves, once each, when an editor opens the page; Add contact and Add from URL add more; a company's detail view has a Contacts tab. **`chrome-extension/`** is a Chrome extension (loaded unpacked by the account owner): one click on a LinkedIn profile adds or updates that person through the signed-in console tab (`window.__phAddProspectContact`), deduplicated on the profile URL. See REQUIREMENTS.md → "Prospects (TAM): Contacts tab and the LinkedIn extension" and `chrome-extension/README.md`.
-- **Command-K** (Ctrl/Cmd+K, the sidebar's Search row or the Search tab) jumps to
+- **Command-K** (Ctrl/Cmd+K or the sidebar's Search row; not offered on a phone) jumps to
   any ticket, concept, project or release. Archived tickets are included once
   the archive has been loaded.
 - Tests: `npm run test:ui` now runs at 1440, 1180, 820 and 390px and includes
@@ -3235,8 +3260,10 @@ management" scenario in `test/ui/console-click.test.mjs`.
 - `functions/help-search.js` — the public, read-only help search for AI agents (`helpSearch` function, `/help-api/**`: search, article, a stateless public read-only remote MCP server that proxies the site's eight WebMCP tools live from `/wp-json/ph-agent/v1/tools`, cached 5 min with `X-Cache`; presents as "Personalisation Hub" with agent `instructions`, serves the site's `llms.txt`/`llms-full.txt` as MCP resources, and an empty `prompts/list`). Published and in-range only, never drafts or `pendingRevision`; rate limited per address and endpoint (429 + `X-RateLimit-*`), cached (search and article, `X-Cache`), monitored with abuse/error alerts to `NOTIFY_WEBHOOK_URL` (test with the `helpApiTestAlert` function), logs queries to `helpSearchLog`. See REQUIREMENTS.md → "Public help search for AI agents".
 - `functions/faq-feed.js` — the published-content record builders shared with `scripts/faq-export.js`, the live feed `GET /help-api/data/{index,releases}.json` / `articles/<id>.json` (served by `help-search.js`), and the debounced Support Centre refresh ping (`pingSupportCentreOnArticleChange` / `…OnCategoryChange` in `index.js`). See REQUIREMENTS.md → "Live data feed and refresh ping".
 
-- **Promote › Conversion Funnel** (`#promote/conversion-funnel`, 9 Nov 2026; `public/js/funnel-page.js` and `funnel-core.js`): nine-stage funnel from ad impression to deployed opportunity, with combinable filters and compare-to-previous-period. Stages 1-5 read the server-written `funnelDaily` collection, filled by the daily ingest (`functions/funnel-ingest.js`, below); stages 6-9 come from the ACE opportunities joined to Leads and Prospects (TAM). The page and the Dashboard tile show when the data was last updated and flag a source that failed (`consoleConfig/funnelIngest`). See REQUIREMENTS.md → Promote section: Conversion Funnel.
+- **Promote › Conversion Funnel** (`#promote/conversion-funnel`, 9 Nov 2026; `public/js/funnel-page.js` and `funnel-core.js`): nine-stage funnel from ad impression to deployed opportunity, then Revenue from the Partner Central S3 export (`functions/pc-export.js`), with combinable filters and compare-to-previous-period. Stages 1-5 read the server-written `funnelDaily` collection, filled by the daily ingest (`functions/funnel-ingest.js`, below); stages 6-9 come from the ACE opportunities joined to Leads and Prospects (TAM). The page and the Dashboard tile show when the data was last updated and flag a source that failed (`consoleConfig/funnelIngest`). See REQUIREMENTS.md → Promote section: Conversion Funnel.
+- **Promote › License Manager** (`#promote/license-manager`, 24 Nov 2026; `public/js/licences-page.js` and `licences-core.js`): every AWS Marketplace agreement with the buyer's company and contact (GetAgreementContacts), linked to the matching Prospects (TAM) company and lead by AWS account ID or by company name plus email domain; weaker matches wait in a Review queue for a person to link. Won leads without an agreement are listed as awaiting one. Server-written `licences` collection; **Sync from AWS Marketplace** calls `functions/marketplace-agreements.js` through the Partner Central function (`/partnerCentral/v1/licences/sync`, `/link`). See REQUIREMENTS.md → Promote section: License Manager.
 - `functions/funnel-ingest.js` — the Conversion Funnel's daily ingest (HTTP function `funnelIngest`, 19 Nov 2026): GA4 (unique users, sessions, `/industries/*` page views, unique industry-page users per day and per industry, product tour starts, calculator uses, demo requests, downloads, lead forms), Google Ads impressions and clicks (through the Ads account linked to GA4), the console's leads (test and archived ones left out) and ACE opportunities, written per calendar day in the configured zone (default Australia/Sydney, set to match the GA4 property; never UTC) with industry and country. No new schedule or secret: the hourly `aceToGa4` call runs it when due (the first run backfills 90 days, then every 6 hours or more it refreshes the last 3 days; a 150 s budget per hourly call, with any sources left over run on the next call), or POST `funnelIngest` with `X-Board-Key` and `{"mode":"backfill"}`. GA4 is read with the function's own service account, which needs Viewer on GA4 property 473743482 (and the Analytics Data API enabled); `consoleConfig/funnelIngest` may override `ga4PropertyId` / `timeZone` and holds each source's status. Test: `node test/funnel-ingest.test.js`.
+- `functions/pc-export.js` — the Partner Central S3 data export importer (24 Nov 2026): the funnel ingest's `pc-export` source reads the newest export run from the PH-owned bucket set in `consoleConfig/funnelIngest.pcExportBucket` (+ `pcExportPrefix`, `pcExportRegion`), with the Partner Central role's own short-lived credentials (no key; `s3:ListBucket`/`s3:GetObject` on that bucket only, `deploy/aws/partner-central-role.yaml` → `ExportBucketName`). Columns are read by header aliases (`HEADER_ALIASES`); each opportunity's attributed revenue, Marketplace revenue and funding used become `pc-export` rows in `funnelDaily`, joined on the ACE opportunity id and then the company to Prospects (TAM) and Leads, with any Demand Center campaign. They feed the funnel's Revenue stage. Until a bucket is set the Revenue row reads "Not set up yet". Set-up steps: `deploy/aws/README.md` → "Partner Central data export". Test: `node test/funnel-ingest.test.js`.
 
 ## PH Agent Context (19 Nov 2026)
 
@@ -3249,7 +3276,9 @@ Context"; the requirements are CTX-1 to CTX-24 in `REQUIREMENTS.md`.
 
 - `search_console`: ranked hits across tickets (every project, archived
   ones, comments), Staff Kanban, projects, concepts and critiques, the help
-  centre, leads, prospects, Support threads, project documents and skills.
+  centre, leads, prospects, Support threads, project documents, the
+  documentation library (Support › Documentation, every page migrated from
+  Confluence) and skills.
 - `get_topic_context`: a compact pack on one topic (a summary, the key
   records per source with links, open items, blockers, decisions, what
   changed, related topics), cached.
@@ -3985,8 +4014,10 @@ holds it to them:
 
 The console opens on **Dashboard** (`#dashboard`): eight KPI tiles in three
 sections, all in the viewer's local time (19 Nov 2026, cMyA3FMlUUrSjGtPkLZC).
-Internal: **Delivery** (tickets deployed yesterday, average lead time Backlog
-to Live and first-time test pass rate over the last 7 days), **Flow &
+Internal: **Delivery** (tickets deployed and first-time test pass rate for
+Yesterday or the last 7 days, picked in its panel, each with its change on the
+previous period of the same length — % for tickets, percentage points for the
+pass rate — in total and per project, plus average lead time Backlog to Live), **Flow &
 blockers** (tickets stuck now: blocked, failed testing and not rebuilding, or
 over 24 h in Ready for Testing) and **Staff Kanban** (open tasks of the
 current release by column, its % done, and overdue / unassigned / unestimated
@@ -3995,10 +4026,13 @@ never blank). External: **Leads** (new leads in the last 7 days, yesterday's
 count, the pipeline Lead to Closed Won with stage conversion, stale and
 not-contacted flags; test leads left out) and **Conversion funnel** (visitors
 over the last 7 days, visitor-to-lead %, a mini funnel to opportunities with
-the biggest drop-off in amber, top-moving industry and market). Support, all
-of the support@ inbox only: **Needs a person**, **AI drafts to approve** and
+the biggest drop-off in amber, top-moving industry and market). Support:
+**Needs a person** (the support@ inbox only; platform and Personalisation
+Hub questions only: not Aidan requests that came back to support@, nor mail
+not about PH), **AI drafts to approve** and
 **Resolved & automation** (resolved yesterday, % by the AI alone; the panel
-lists FAQ gaps). Dashboard v2 (19 Nov 2026): the tiles of all
+lists FAQ gaps). Those two cover every inbox, and each panel opens with an
+inbox filter (All inboxes, Support Inbox, Hello, Aidan; kept until a reload). Dashboard v2 (19 Nov 2026): the tiles of all
 three sections flow through one grid, each section's heading above its first
 tile, four across on a wide desktop, three on a laptop,
 two on an iPad in portrait and one on a phone; each tile is a headline figure,
@@ -4006,7 +4040,10 @@ a 7-day sparkline where it has a daily history, a trend arrow and a green / ambe
 red status dot, with its explanation in an info tooltip. A tile never
 navigates: a click or tap pins its summary panel open, full width under its
 row, until it is closed or another tile is chosen; the panel's "Open section"
-goes to the section. Below the tiles sits **Needs attention**, which is on the
+goes to the section. Every count on a tile or in its panel opens its own
+list (24 Nov 2026): Staff Kanban filtered (`#staff-kanban?show=…`), the
+Needs a person queue, or the Dashboard's list view (`#dashboard?list=…`), each with
+the count's own items. Below the tiles sits **Needs attention**, which is on the
 Dashboard only (not the Agent Board or any other page). The Agent Board's own address is now `#board`. Rules in
 `public/js/dashboard-core.js`, page in `public/js/dashboard-page.js`; full
 spec in `REQUIREMENTS.md` → "Dashboard — the console's landing page". Tests:
@@ -4015,7 +4052,7 @@ spec in `REQUIREMENTS.md` → "Dashboard — the console's landing page". Tests:
 
 ## Documentation — the internal docs library (19 Nov 2026)
 
-**Support › Documentation** (`#documentation`, `#doc/<id>`) is the team's
+**Support › Documentation** (`#documentation`, `#doc/<id>`, `#doc/<id>/edit`) is the team's
 internal product and technical documentation. It replaced the Confluence space
 (`offline2online.atlassian.net/wiki`, spaces OPTUS/"Personalisation Hub", PH
 and PROC), which is no longer needed: every page was carried over on
@@ -4032,8 +4069,19 @@ and PROC), which is no longer needed: every page was carried over on
   and the properties (category, document type, linked project, program,
   releases, needs review, slug, keywords, status) are the same. The
   website-only fields (SEO & agents, Hide from website, the live link) carry
-  `data-faq-only` in `index.html` and are hidden for a document. Clicking a
-  title opens it read-only (View live); the pencil opens it for editing.
+  `data-faq-only` in `index.html` and are hidden for a document.
+- **Reading** (24 Nov 2026): clicking a title opens the document in the
+  read-only reader (`#doc/<id>`, `#doc-reader-page` in `index.html`,
+  `openDocReaderPage` in `app.js`): the whole content area, no editor fields,
+  a centred reading column (16px, 1.7 line height, at most 760px) holding its
+  section path, title, badges (Draft, Needs review, Archived), type, last
+  update, summary, the formatted body (the same `renderFaqBodyMd` and
+  `.fa-body-viewer` rules as the editor's View live) and where it was carried
+  over from. Back names the section and returns to it, as does Escape. The
+  Edit icon (editors only) and a row's pencil open the editor at
+  `#doc/<id>/edit`; Cancel there returns to the reader, a new or deleted
+  document to its section. The reader's header comes from `docReaderInfo` in
+  `documentation-core.js`.
 - **Page**: `public/js/documentation-page.js` (tree, list, search across every
   document's text, status filter, drag to re-order, new section/folder/
   document); pure helpers in `documentation-core.js`

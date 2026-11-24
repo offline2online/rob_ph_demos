@@ -2876,7 +2876,8 @@ function getPartnerCentralApi() {
   }
   return partnerCentralApi;
 }
-exports.partnerCentral = onRequest({ cors: false, timeoutSeconds: 60, maxInstances: 3 }, (req, res) => getPartnerCentralApi().handle(req, res));
+// 180 s: the Partner Central agent (MCP) can take up to two minutes on a multi-step answer.
+exports.partnerCentral = onRequest({ cors: false, timeoutSeconds: 180, maxInstances: 3 }, (req, res) => getPartnerCentralApi().handle(req, res));
 
 // ACE opportunity stages → GA4 Measurement Protocol, keyed on the GA4
 // client_id the website captured with each lead (ace-ga4.js). Run hourly by
@@ -2898,9 +2899,20 @@ exports.aceToGa4 = onRequest({ cors: false, secrets: [GA4_MP_API_SECRET, BOARD_A
   // 320 s curl limit.
   if (req.method === "POST" && keyMatches(req.get("x-board-key"), BOARD_API_KEY.value())) {
     try { await getFunnelIngestJob().runIfDue(); } catch (err) { logger.error("funnelIngest (due run) failed", { error: String((err && err.message) || err) }); }
+    // Prospects (TAM): the daily AWS Partner Account Mapping re-sync check
+    // (account-mapping.js). It counts the records due a re-sync onto
+    // consoleConfig/accountMapping; it never calls AWS and never fails the ACE job.
+    try { await getAccountMappingCheck().runIfDue(); } catch (err) { logger.error("accountMapping check failed", { error: String((err && err.message) || err) }); }
   }
   return aceGa4Job.handle(req, res);
 });
+
+const { createAccountMappingCheck } = require("./account-mapping");
+let accountMappingCheck = null;
+function getAccountMappingCheck() {
+  if (!accountMappingCheck) accountMappingCheck = createAccountMappingCheck({ db: getFirestore(), logger });
+  return accountMappingCheck;
+}
 
 // Promote › Conversion Funnel: the daily GA4 / Google Ads / leads / ACE ingest
 // that fills funnelDaily (funnel-ingest.js). Reads GA4 with this function's own
@@ -2909,6 +2921,7 @@ exports.aceToGa4 = onRequest({ cors: false, secrets: [GA4_MP_API_SECRET, BOARD_A
 //   POST /funnelIngest  X-Board-Key: <BOARD_API_KEY>  {"mode": "backfill"}  (90 days)
 //   POST /funnelIngest  X-Board-Key: <BOARD_API_KEY>  {"mode": "daily"}     (last 3 days)
 const { createFunnelIngestJob } = require("./funnel-ingest");
+const { createS3Reader } = require("./pc-export");
 const { keyMatches } = require("./lead-ingest");
 let funnelIngestJob = null;
 function getFunnelIngestJob() {
@@ -2918,7 +2931,22 @@ function getFunnelIngestJob() {
     funnelIngestJob = createFunnelIngestJob({
       db: getFirestore(),
       ga4AccessToken: async () => { const client = await auth.getClient(); const t = await client.getAccessToken(); return (t && t.token) || t; },
+      // The account GA4 is read as, recorded on consoleConfig/funnelIngest.ga4Access so the
+      // Conversion Funnel can name who needs Viewer on the property. Read, never inferred:
+      // the credentials first, then the metadata server's default account; "" if neither answers.
+      serviceAccountEmail: async () => {
+        try { const c = await auth.getCredentials(); if (c && c.client_email) return c.client_email; } catch { /* fall through */ }
+        try {
+          const r = await fetch("http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/email", { headers: { "Metadata-Flavor": "Google" } });
+          if (r.ok) return (await r.text()).trim();
+        } catch { /* not on Google Cloud */ }
+        return "";
+      },
+      gcpProject: process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || "",
       partnerCentral: getPartnerCentralApi(),
+      // The Partner Central S3 data export (pc-export.js), read with the same
+      // keyless role credentials; dormant until consoleConfig/funnelIngest.pcExportBucket is set.
+      pcExportS3: createS3Reader({ credentials: () => getPartnerCentralApi().awsCredentials() }),
       boardKey: () => BOARD_API_KEY.value(),
       serverTimestamp: () => FieldValue.serverTimestamp(),
       logger,

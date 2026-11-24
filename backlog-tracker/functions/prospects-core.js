@@ -16,6 +16,9 @@
 //   awsAccountId (12 digits or ""),
 //   contacts[{name, role, lastContact, awsAccountId?, email?}], vendors[], campaigns[],
 //   status (one of STATUSES), leadId ("" until converted), source, notes,
+//   awsMapping (AWS Partner Account Mapping's match and signals, written by an
+//   import, see "AWS Partner Account Mapping" below), jointPlanning (a drafted
+//   joint-planning request; a person submits it to AWS),
 //   createdAt / updatedAt / createdByEmail / updatedByEmail
 // "The same prospect" is the same company (companyKey of name) in the same
 // country, read from the fields, never from the doc id (prospectKey).
@@ -344,6 +347,8 @@ function normaliseProspect(id, d) {
     source: String(x.source || ""),
     notes: String(x.notes || ""),
     enrichment: x.enrichment && typeof x.enrichment === "object" && !Array.isArray(x.enrichment) ? x.enrichment : null, // written by functions/lead-enrich.js
+    awsMapping: normaliseAwsMapping(x.awsMapping),
+    jointPlanning: normaliseJointPlanning(x.jointPlanning),
     updatedAtMs: ms(x.updatedAt), createdAtMs: ms(x.createdAt),
   };
 }
@@ -357,7 +362,7 @@ function ms(v) {
 }
 
 // ── Filtering ──────────────────────────────────────────────────────────────
-const EMPTY_FILTER = { q: "", industry: "", country: "", priority: "", market: "", awsRegion: "", campaign: "", sizeBand: "", status: "", minStores: "", maxStores: "" };
+const EMPTY_FILTER = { q: "", industry: "", country: "", priority: "", market: "", awsRegion: "", campaign: "", sizeBand: "", status: "", minStores: "", maxStores: "", propensity: "", greenfield: "" };
 const FILTER_KEYS = Object.keys(EMPTY_FILTER);
 
 const eq = (a, b) => String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
@@ -375,6 +380,8 @@ function matchesFilter(p, f) {
   if (x.campaign && !hasItem(p.campaigns, x.campaign)) return false;
   if (x.sizeBand && p.sizeBand !== x.sizeBand) return false;
   if (x.status && p.status !== x.status) return false;
+  if (x.propensity && mappingPropensity(p) !== String(x.propensity).trim().toLowerCase()) return false;
+  if (x.greenfield && eligibilityKey(p.awsMapping && p.awsMapping.greenfieldEligible) !== String(x.greenfield).trim().toLowerCase()) return false;
   const min = parseStoreCount(x.minStores);
   const max = parseStoreCount(x.maxStores);
   if (min != null && !Number.isNaN(min) && (p.storeCount == null || p.storeCount < min)) return false;
@@ -436,6 +443,10 @@ const CSV_COLUMNS = [
   ["LinkedIn page", (p) => p.linkedinUrl], ["LinkedIn org id", (p) => p.linkedinOrgId], ["LinkedIn verified", (p) => (p.linkedinVerified ? "yes" : "")],
   ["Current vendors", (p) => p.vendors.join("; ")], ["Campaigns", (p) => p.campaigns.join("; ")], ["Status", (p) => statusLabel(p.status)],
   ["Source", (p) => p.source], ["Lead", (p) => p.leadId],
+  ["AWS match", (p) => yesNoText(p.awsMapping && p.awsMapping.matched)], ["AWS propensity", (p) => (p.awsMapping && p.awsMapping.propensity ? propensityLabel(p.awsMapping.propensity) : "")],
+  ["AWS propensity (as sent)", (p) => (p.awsMapping ? p.awsMapping.propensityRaw : "")], ["AWS signals", (p) => (p.awsMapping ? p.awsMapping.signals.join("; ") : "")],
+  ["Greenfield eligible", (p) => yesNoText(p.awsMapping && p.awsMapping.greenfieldEligible)], ["Partner-led sales motion eligible", (p) => yesNoText(p.awsMapping && p.awsMapping.salesMotionEligible)],
+  ["AWS last synced", (p) => (p.awsMapping && p.awsMapping.lastSyncedAtMs ? new Date(p.awsMapping.lastSyncedAtMs).toISOString().slice(0, 10) : "")],
 ];
 // A cell that starts like a formula is prefixed so a spreadsheet shows it as text.
 function csvCell(v) {
@@ -443,9 +454,13 @@ function csvCell(v) {
   if (/^[=+\-@\t\r]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = `'${s}`;
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
+// The last column is the awareness rank among the exported rows (awarenessRanks):
+// 1 is the company stage-1 awareness spend goes to first.
 function toCsv(rows) {
-  const lines = [CSV_COLUMNS.map(([h]) => csvCell(h)).join(",")];
-  for (const p of rows || []) lines.push(CSV_COLUMNS.map(([, get]) => csvCell(get(p))).join(","));
+  const list = rows || [];
+  const ranks = awarenessRanks(list);
+  const lines = [[...CSV_COLUMNS.map(([h]) => h), "Awareness rank"].map(csvCell).join(",")];
+  for (const p of list) lines.push([...CSV_COLUMNS.map(([, get]) => get(p)), ranks.get(p.id) || ""].map(csvCell).join(","));
   return lines.join("\r\n") + "\r\n";
 }
 
@@ -617,4 +632,260 @@ function planInbound({ prospects, leads, company, contact } = {}) {
   return { kind: "lead", prospectId, prospect, createProspect, how: prospect ? (m.prospect ? m.how : "id") : "new", leadId, lead, linkProspect: !prospect || prospect.leadId !== leadId || prospect.status !== "converted" };
 }
 
-module.exports = { STATUSES, STATUS_KEYS, DEFAULT_STATUS, statusLabel, isStatus, SIZE_BANDS, SIZE_BAND_KEYS, sizeBandLabel, sizeBandFor, LIMITS, PRIORITIES, PRIORITY_KEYS, priorityLabel, INDUSTRIES, INDUSTRY_LABELS, UNASSIGNED_INDUSTRY, normaliseIndustry, COUNTRIES, canonicalCountry, AWS_REGIONS, awsRegionForCountry, parseList, parseStorePresence, parseStoreCount, normaliseUrl, normaliseLinkedinUrl, companyKey, slugId, prospectKey, prospectIdFor, normaliseAwsAccountId, AWS_ACCOUNT_ID_ERROR, prospectFromInput, normaliseProspect, EMPTY_FILTER, FILTER_KEYS, matchesFilter, filterProspects, isFilterEmpty, filterOptions, sanitiseSavedFilters, withSavedFilter, CSV_COLUMNS, csvCell, toCsv, LINKEDIN_COLUMNS, toLinkedInCsv, leadIdForProspect, LEAD_SOURCE, leadFieldsFromProspect, FREE_EMAIL_DOMAINS, emailDomain, businessDomain, websiteHost, sameDomain, isAwsDomain, AWS_PROSPECT_ID, AWS_COMPANY_KEYS, isAwsProspect, INBOUND_SOURCE, matchProspect, prospectForInbound, awsProspectFields, awsContactFrom, mergeContact, planInbound };
+// ── AWS Partner Account Mapping (ticket U04K46GSsIEN5xQ4NyAp) ───────────────
+// The TAM is uploaded to AWS Partner Central's Account Mapping, which matches
+// each company to an AWS account and adds propensity-to-buy signals and
+// Partner Greenfield Program / Partner-led Sales Motion eligibility. Neither
+// the Partner Central Selling API nor its agents MCP server exposes Account
+// Mapping (checked 24 Nov 2026), so the route is a file both ways: the page's
+// "Export upload file" (toAccountMappingCsv) and "Import results"
+// (parseAccountMappingCsv → planAccountMappingImport). Everything below is the
+// adapter: a future API only has to produce the same parsed rows.
+// Stored on the record as awsMapping: { matched: true|false|null,
+// awsAccountId, propensity ("high"|"medium"|"low"|""), propensityRaw (what AWS
+// sent), signals[], greenfieldEligible / salesMotionEligible (true|false|null),
+// lastSyncedAt, source ("csv-import") }.
+const PROPENSITY_BANDS = [
+  { key: "high", label: "High" },
+  { key: "medium", label: "Medium" },
+  { key: "low", label: "Low" },
+];
+const PROPENSITY_KEYS = PROPENSITY_BANDS.map((b) => b.key);
+const NOT_SYNCED = "not-synced";
+const propensityLabel = (key) => (PROPENSITY_BANDS.find((b) => b.key === key) || { label: key === NOT_SYNCED ? "Not synced" : "" }).label;
+const ELIGIBILITY_OPTIONS = [{ key: "yes", label: "Yes" }, { key: "no", label: "No" }, { key: "unknown", label: "Unknown" }];
+const eligibilityKey = (v) => (v === true ? "yes" : v === false ? "no" : "unknown");
+const yesNoText = (v) => (v === true ? "yes" : v === false ? "no" : "");
+// A record never synced, or last synced more than this many days ago, is due a re-sync.
+const MAPPING_STALE_DAYS = 30;
+const MAPPING_LIMITS = { signals: 20, signal: 200, raw: 40, rows: 5000, draft: 4000 };
+
+// AWS's propensity as a band. Words are read as they are; a number is a score
+// out of 100 (or a fraction of 1): 70 and above High, 40 and above Medium.
+function propensityBand(raw) {
+  if (typeof raw === "number") return Number.isFinite(raw) ? bandOfScore(raw) : "";
+  const s = String(raw == null ? "" : raw).trim().toLowerCase();
+  if (!s) return "";
+  const n = Number(s.replace(/%$/, ""));
+  if (/^-?\d+(\.\d+)?%?$/.test(s) && Number.isFinite(n)) return bandOfScore(n);
+  if (/\b(very high|high|strong)\b/.test(s)) return "high";
+  if (/\b(medium|med|moderate)\b/.test(s)) return "medium";
+  if (/\b(low|weak|very low)\b/.test(s)) return "low";
+  return "";
+}
+function bandOfScore(n) {
+  const v = n > 0 && n <= 1 ? n * 100 : n;
+  return v >= 70 ? "high" : v >= 40 ? "medium" : "low";
+}
+// Yes / No / blank from the values a file or API might use.
+function readYesNo(v) {
+  if (v === true || v === false) return v;
+  const s = String(v == null ? "" : v).trim().toLowerCase();
+  if (!s) return null;
+  if (/^(n|no|false|0|not eligible|ineligible|not matched|unmatched|no match|none)$/.test(s)) return false;
+  if (/^(y|yes|true|1|eligible|matched|match|match found|mapped)$/.test(s)) return true;
+  return null;
+}
+const boolOrNull = (v) => (v === true || v === false ? v : null);
+
+function normaliseAwsMapping(v) {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const acct = normaliseAwsAccountId(v.awsAccountId);
+  return {
+    matched: boolOrNull(v.matched),
+    awsAccountId: acct || "",
+    propensity: PROPENSITY_KEYS.includes(v.propensity) ? v.propensity : propensityBand(v.propensityRaw),
+    propensityRaw: str(v.propensityRaw, MAPPING_LIMITS.raw),
+    signals: (Array.isArray(v.signals) ? v.signals : []).map((x) => str(x, MAPPING_LIMITS.signal)).filter(Boolean).slice(0, MAPPING_LIMITS.signals),
+    greenfieldEligible: boolOrNull(v.greenfieldEligible),
+    salesMotionEligible: boolOrNull(v.salesMotionEligible),
+    lastSyncedAtMs: ms(v.lastSyncedAt),
+    source: str(v.source, 20),
+  };
+}
+// The band a filter or column shows: "not-synced" for a record with no import yet.
+const mappingPropensity = (p) => (p && p.awsMapping && p.awsMapping.propensity) || NOT_SYNCED;
+
+function isMappingStale(p, nowMs, days = MAPPING_STALE_DAYS) {
+  const m = p && p.awsMapping;
+  if (!m || !m.lastSyncedAtMs) return true;
+  return Number(nowMs) - m.lastSyncedAtMs > days * 864e5;
+}
+
+// A "high-potential shared account": AWS matched it to an AWS account, its
+// propensity is High, and it is eligible for at least one partner programme.
+// These get the "Request joint planning with AWS" action.
+const HIGH_POTENTIAL_RULE = { matched: true, propensity: "high", anyOf: ["greenfieldEligible", "salesMotionEligible"] };
+function isHighPotential(p) {
+  const m = p && p.awsMapping;
+  return Boolean(m) && m.matched === HIGH_POTENTIAL_RULE.matched && m.propensity === HIGH_POTENTIAL_RULE.propensity
+    && HIGH_POTENTIAL_RULE.anyOf.some((k) => m[k] === true);
+}
+
+// Stage-1 awareness targeting order: AWS propensity first (High, Medium, Low),
+// then the record's own priority, then store count, then name. Only records
+// with a propensity band are ranked (an unsynced or unmatched one has nothing
+// to rank on), and a disqualified or converted one is left out. Rank 1 gets
+// the Google DSP awareness spend first. Returns Map(id → rank).
+const BAND_ORDER = { high: 3, medium: 2, low: 1 };
+const PRIORITY_ORDER = { high: 3, medium: 2, low: 1 };
+function awarenessRanks(rows) {
+  const ranked = (rows || []).filter((p) => p && p.awsMapping && p.awsMapping.matched !== false && BAND_ORDER[p.awsMapping.propensity]
+    && p.status !== "disqualified" && p.status !== "converted");
+  ranked.sort((a, b) => (BAND_ORDER[b.awsMapping.propensity] - BAND_ORDER[a.awsMapping.propensity])
+    || ((PRIORITY_ORDER[b.priority] || 0) - (PRIORITY_ORDER[a.priority] || 0))
+    || ((b.storeCount || 0) - (a.storeCount || 0))
+    || String(a.name).localeCompare(String(b.name)) || String(a.id).localeCompare(String(b.id)));
+  return new Map(ranked.map((p, i) => [p.id, i + 1]));
+}
+
+// What Account Mapping is sent: one row per record, its id included so the
+// results come back to the right record.
+const ACCOUNT_MAPPING_UPLOAD_COLUMNS = [
+  ["Record ID", (p) => p.id], ["Company name", (p) => p.name], ["Website", (p) => p.website], ["Domain", (p) => siteHostOf(p.website)],
+  ["Country", (p) => p.country], ["AWS account ID", (p) => p.awsAccountId || ""],
+];
+const siteHostOf = (w) => { try { return new URL(w).hostname.replace(/^www\./i, "").toLowerCase(); } catch { return ""; } };
+function toAccountMappingCsv(rows) {
+  const lines = [ACCOUNT_MAPPING_UPLOAD_COLUMNS.map(([h]) => csvCell(h)).join(",")];
+  for (const p of rows || []) lines.push(ACCOUNT_MAPPING_UPLOAD_COLUMNS.map(([, get]) => csvCell(get(p))).join(","));
+  return lines.join("\r\n") + "\r\n";
+}
+
+// RFC 4180 CSV → rows of strings (quoted fields, "" escapes, CRLF, a BOM).
+function parseCsvText(text) {
+  const rows = [];
+  let row = [], field = "", q = false;
+  const src = String(text || "").replace(/^﻿/, "");
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (q) {
+      if (c === '"') { if (src[i + 1] === '"') { field += '"'; i++; } else q = false; } else field += c;
+    } else if (c === '"') q = true;
+    else if (c === ",") { row.push(field); field = ""; }
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && src[i + 1] === "\n") i++;
+      row.push(field); field = "";
+      if (row.some((x) => x.trim() !== "")) rows.push(row);
+      row = [];
+    } else field += c;
+  }
+  row.push(field);
+  if (row.some((x) => x.trim() !== "")) rows.push(row);
+  return rows;
+}
+
+// Account Mapping's result columns are not published, so each field is read by
+// a list of header names (case, spaces and punctuation ignored). Columns it
+// doesn't know are listed back to the person, never silently dropped.
+const ACCOUNT_MAPPING_HEADERS = {
+  recordId: ["record id", "external id", "partner record id", "customer reference", "reference id"],
+  name: ["company name", "company", "account name", "customer name", "customer company name", "name"],
+  website: ["website", "company website", "website url", "url", "company domain", "customer website"], // and a bare Domain column (parseAccountMappingCsv)
+  country: ["country", "company country", "customer country", "country code"],
+  awsAccountId: ["aws account id", "matched aws account id", "aws account", "account id", "customer aws account id"],
+  matched: ["matched", "match", "aws match", "match status", "matched aws account", "is matched", "mapping status", "mapped"],
+  propensity: ["propensity", "propensity score", "propensity to buy", "buying propensity", "propensity signal", "propensity level", "aws propensity"],
+  signals: ["signals", "propensity signals", "buying signals", "signal", "propensity reasons", "insights"],
+  greenfield: ["greenfield", "greenfield eligible", "greenfield eligibility", "partner greenfield program", "partner greenfield program eligible", "partner greenfield program eligibility", "greenfield program eligibility"],
+  salesMotion: ["sales motion", "sales motion eligible", "sales motion eligibility", "partner led sales motion", "partner led sales motion eligible", "partner led sales motion eligibility"],
+};
+const headerKey = (h) => String(h == null ? "" : h).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+function parseAccountMappingCsv(text) {
+  const table = parseCsvText(text);
+  if (!table.length) return { errors: ["The file is empty."], rows: [], unknownHeaders: [] };
+  const header = table[0].map(headerKey);
+  const col = {};
+  const used = new Set();
+  for (const [field, names] of Object.entries(ACCOUNT_MAPPING_HEADERS)) {
+    const i = header.findIndex((h, idx) => !used.has(idx) && (names.includes(h) || (field === "website" && /^domain$/.test(h))));
+    if (i >= 0) { col[field] = i; used.add(i); }
+  }
+  const unknownHeaders = table[0].filter((h, i) => !used.has(i) && String(h).trim()).map((h) => String(h).trim());
+  if (col.recordId == null && col.name == null && col.website == null && col.awsAccountId == null) {
+    return { errors: ["The file has no Record ID, Company name, Website or AWS account ID column, so no row can be matched to a company."], rows: [], unknownHeaders };
+  }
+  const cell = (r, f) => (col[f] == null ? "" : String(r[col[f]] == null ? "" : r[col[f]]).trim());
+  const rows = [];
+  for (let i = 1; i < table.length && rows.length < MAPPING_LIMITS.rows; i++) {
+    const r = table[i];
+    const acct = normaliseAwsAccountId(cell(r, "awsAccountId"));
+    const matchedCell = cell(r, "matched");
+    rows.push({
+      line: i + 1,
+      recordId: cell(r, "recordId"),
+      name: str(cell(r, "name"), LIMITS.name),
+      website: cell(r, "website"),
+      country: str(cell(r, "country"), LIMITS.country),
+      awsAccountId: acct || "",
+      // No match column: a row that names an AWS account was matched.
+      matched: col.matched != null ? readYesNo(matchedCell) : (acct ? true : null),
+      propensityRaw: str(cell(r, "propensity"), MAPPING_LIMITS.raw),
+      propensity: propensityBand(cell(r, "propensity")),
+      signals: cell(r, "signals").split(/[;|\n]/).map((x) => str(x, MAPPING_LIMITS.signal)).filter(Boolean).slice(0, MAPPING_LIMITS.signals),
+      greenfieldEligible: readYesNo(cell(r, "greenfield")),
+      salesMotionEligible: readYesNo(cell(r, "salesMotion")),
+    });
+  }
+  return { errors: [], rows, unknownHeaders };
+}
+
+// Which record each result row belongs to: its Record ID, else the AWS account
+// ID, else the website's domain (in the same country when the row names one),
+// else the company name in that country (or the only record with that name).
+function planAccountMappingImport(prospects, parsed, nowMs) {
+  const list = prospects || [];
+  const byId = new Map(list.map((p) => [p.id, p]));
+  const updates = new Map();
+  const unmatched = [];
+  let repeated = 0;
+  const inCountry = (p, c) => !c || sameCountry(p.country, c);
+  for (const r of (parsed && parsed.rows) || []) {
+    let p = r.recordId ? byId.get(r.recordId) : null;
+    if (!p && r.awsAccountId) p = list.find((x) => x.awsAccountId && x.awsAccountId === r.awsAccountId && inCountry(x, r.country)) || null;
+    const host = siteHostOf(/^https?:\/\//i.test(r.website) ? r.website : r.website ? `https://${r.website}` : "");
+    if (!p && host) { const hits = list.filter((x) => sameDomain(siteHostOf(x.website), host) && inCountry(x, r.country)); if (hits.length === 1) p = hits[0]; }
+    if (!p && r.name) { const hits = list.filter((x) => companyKey(x.name) === companyKey(r.name) && inCountry(x, r.country)); if (hits.length === 1) p = hits[0]; }
+    if (!p) { unmatched.push({ line: r.line, name: r.name || r.website || r.recordId || r.awsAccountId }); continue; }
+    if (updates.has(p.id)) repeated++;
+    const awsMapping = {
+      matched: r.matched, awsAccountId: r.awsAccountId, propensity: r.propensity, propensityRaw: r.propensityRaw, signals: r.signals,
+      greenfieldEligible: r.greenfieldEligible, salesMotionEligible: r.salesMotionEligible, lastSyncedAt: new Date(nowMs), source: "csv-import",
+    };
+    const fields = { awsMapping };
+    // AWS's account ID fills the record's own when it has none; a different one is kept on the mapping only.
+    if (r.awsAccountId && !p.awsAccountId) fields.awsAccountId = r.awsAccountId;
+    updates.set(p.id, { id: p.id, name: p.name, country: p.country, fields });
+  }
+  return { updates: [...updates.values()], unmatched, repeated };
+}
+
+function normaliseJointPlanning(v) {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const text = str(v.text, MAPPING_LIMITS.draft);
+  if (!text) return null;
+  return { status: v.status === "submitted" ? "submitted" : "draft", text, draftedByEmail: str(v.draftedByEmail, 200), draftedAtMs: ms(v.draftedAt), submittedAtMs: ms(v.submittedAt) };
+}
+// The request a person sends AWS from Partner Central: a draft only, nothing
+// here submits it.
+function jointPlanningDraft(p) {
+  const m = (p && p.awsMapping) || {};
+  const programmes = [m.greenfieldEligible === true ? "the Partner Greenfield Program" : "", m.salesMotionEligible === true ? "the Partner-led Sales Motion" : ""].filter(Boolean);
+  const where = p.country ? ` (${p.country})` : "";
+  const acct = m.awsAccountId || p.awsAccountId;
+  const lines = [
+    `Subject: Joint account planning request: ${p.name}${where}`,
+    "",
+    "Hello,",
+    "",
+    `We would like to plan ${p.name}${where} jointly with the AWS account team.`,
+    `Account Mapping matched it to an AWS account${acct ? ` (${acct})` : ""} with ${propensityLabel(m.propensity || "") ? `${propensityLabel(m.propensity).toLowerCase()} propensity to buy` : "a propensity to buy"}${m.propensityRaw && m.propensityRaw.toLowerCase() !== String(m.propensity || "").toLowerCase() ? ` (${m.propensityRaw})` : ""}${programmes.length ? `, and it is eligible for ${programmes.join(" and ")}` : ""}.`,
+  ];
+  if (m.signals && m.signals.length) lines.push(`AWS signals: ${m.signals.join("; ")}.`);
+  if (p.industry || p.storeCount != null) lines.push(`About the company: ${[p.industry, p.storeCount != null ? `${p.storeCount.toLocaleString("en-GB")} stores` : ""].filter(Boolean).join(", ")}.`);
+  lines.push("", "Could we set up a planning call to agree the target contacts, the joint message and next steps?", "", "Thank you");
+  return lines.join("\n").slice(0, MAPPING_LIMITS.draft);
+}
+
+module.exports = { STATUSES, STATUS_KEYS, DEFAULT_STATUS, statusLabel, isStatus, SIZE_BANDS, SIZE_BAND_KEYS, sizeBandLabel, sizeBandFor, LIMITS, PRIORITIES, PRIORITY_KEYS, priorityLabel, INDUSTRIES, INDUSTRY_LABELS, UNASSIGNED_INDUSTRY, normaliseIndustry, COUNTRIES, canonicalCountry, AWS_REGIONS, awsRegionForCountry, parseList, parseStorePresence, parseStoreCount, normaliseUrl, normaliseLinkedinUrl, companyKey, slugId, prospectKey, prospectIdFor, normaliseAwsAccountId, AWS_ACCOUNT_ID_ERROR, prospectFromInput, normaliseProspect, EMPTY_FILTER, FILTER_KEYS, matchesFilter, filterProspects, isFilterEmpty, filterOptions, sanitiseSavedFilters, withSavedFilter, CSV_COLUMNS, csvCell, toCsv, LINKEDIN_COLUMNS, toLinkedInCsv, leadIdForProspect, LEAD_SOURCE, leadFieldsFromProspect, FREE_EMAIL_DOMAINS, emailDomain, businessDomain, websiteHost, sameDomain, isAwsDomain, AWS_PROSPECT_ID, AWS_COMPANY_KEYS, isAwsProspect, INBOUND_SOURCE, matchProspect, prospectForInbound, awsProspectFields, awsContactFrom, mergeContact, planInbound, PROPENSITY_BANDS, PROPENSITY_KEYS, NOT_SYNCED, propensityLabel, ELIGIBILITY_OPTIONS, eligibilityKey, MAPPING_STALE_DAYS, MAPPING_LIMITS, propensityBand, readYesNo, normaliseAwsMapping, mappingPropensity, isMappingStale, HIGH_POTENTIAL_RULE, isHighPotential, awarenessRanks, ACCOUNT_MAPPING_UPLOAD_COLUMNS, toAccountMappingCsv, parseCsvText, ACCOUNT_MAPPING_HEADERS, parseAccountMappingCsv, planAccountMappingImport, normaliseJointPlanning, jointPlanningDraft };

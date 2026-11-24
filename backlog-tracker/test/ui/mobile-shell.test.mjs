@@ -32,7 +32,7 @@ const PAGES = [
 
 async function go(page, width, how) {
   if (how.profile) {
-    if (width <= 640) await page.click('.tab[data-tab="profile"]'); else await page.click("#profile-btn");
+    await page.click("#profile-btn"); // the top-right avatar at every width (LJrgkj70zFIXSG6PuwGg)
     await page.click(`#${how.profile}`);
   } else if (width <= 640) {
     await page.click(`.tab[data-tab="${how.group}"]`);
@@ -75,7 +75,7 @@ try {
           assert.ok(m.tabbar && Math.abs(m.tabbar.bottom - m.vh) < 2, "tab bar not pinned to the bottom");
           assert.ok(m.tabbarOnTop, "tab bar is covered");
           const tabs = await page.locator(".tab").count();
-          assert.strictEqual(tabs, 6, "six tabs: Build, Promote, Support, Settings, Search, Profile");
+          assert.strictEqual(tabs, 4, "four tabs: Build, Promote, Support, Settings (Profile is the top-right avatar, no Search on a phone)");
         } else assert.ok(m.hamburger && m.hamburger.top >= 0 && m.hamburger.bottom <= m.vh, "hamburger not reachable");
         assert.ok(m.overflow <= 0, `scrolls sideways by ${m.overflow}px`);
         assert.strictEqual(m.small, 0, "nav controls under 44px");

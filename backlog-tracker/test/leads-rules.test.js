@@ -5,7 +5,7 @@
 const fs = require("fs");
 const path = require("path");
 const { initializeTestEnvironment, assertSucceeds, assertFails } = require("@firebase/rules-unit-testing");
-const { doc, setDoc, updateDoc, writeBatch, deleteField } = require("firebase/firestore");
+const { doc, getDoc, setDoc, updateDoc, writeBatch, deleteField } = require("firebase/firestore");
 
 const RULES = fs.readFileSync(path.join(__dirname, "..", "firestore.rules"), "utf8");
 const MEMBER = { uid: "member", claims: { email: "sam@ph.example", email_verified: true } };
@@ -24,6 +24,9 @@ async function reset() {
     await setDoc(doc(db, "consoleUsers/kit@ph.example"), { email: "kit@ph.example", role: "viewer" });
     await setDoc(doc(db, "leads/l1"), LEAD);
     await setDoc(doc(db, "leads/l2"), { ...LEAD, rank: 1024 });
+    // What the functions add: an agent session logged on the lead, its ACE opportunity, GA4 ids, its funding check.
+    await setDoc(doc(db, "leads/l4"), { ...LEAD, stage: "hot-lead", aiSessionIds: ["fund-1"], aceOpportunityId: "O-TEST-1", gaClientIds: [{ clientId: "1.2" }] });
+    await setDoc(doc(db, "leadFunding/l4"), { leadId: "l4", catalog: "Sandbox", programs: [], pendingApprovals: 2 });
   });
 }
 async function check(label, expectation, run) {
@@ -48,6 +51,12 @@ async function main() {
     return b.commit();
   });
   await check("A new lead may be created with a priority", "allow", () => setDoc(doc(as(MEMBER), "leads/l3"), { ...LEAD, rank: 0 }));
+  // O37hnP69Cnn8N32HpHot: the AWS funding check is the function's alone; the lead stays editable after it.
+  await check("An editor can still edit a lead the Partner Central agent logged a session on", "allow", () => updateDoc(doc(as(MEMBER), "leads/l4"), { stage: "demo" }));
+  await check("aiSessionIds must be a list", "deny", () => updateDoc(doc(as(MEMBER), "leads/l1"), { aiSessionIds: "fund-1" }));
+  await check("A member can read a lead's AWS funding check", "allow", () => getDoc(doc(as(VIEWER), "leadFunding/l4")));
+  await check("No browser can write a lead's AWS funding check", "deny", () => setDoc(doc(as(MEMBER), "leadFunding/l4"), { pendingApprovals: 0 }));
+  await check("A signed-out visitor can't read a lead's AWS funding check", "deny", () => getDoc(doc(as(null), "leadFunding/l4")));
   await check("A viewer can't reorder a lane", "deny", () => updateDoc(doc(as(VIEWER), "leads/l1"), { rank: 1 }));
   await check("A signed-out visitor can't reorder a lane", "deny", () => updateDoc(doc(as(null), "leads/l1"), { rank: 1 }));
 

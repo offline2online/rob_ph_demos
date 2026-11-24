@@ -28,17 +28,18 @@ import { clearFirestoreLocalCache } from "./local-cache.js";
 import { INTAKE_SECTIONS, missingSections, applyAnswers } from "./ticket-intake.js";
 import { FAILED_TESTING_CHOICES, DEFAULT_FAILED_TESTING_CHOICE, sendBackFields, followUpWrites } from "./follow-up.js";
 import { rejectionSummaryHTML, lastRejectionLine } from "./rejection-summary.js";
-import { roundChipHTML, sentBackLastTimeHTML, isLooping, testingLoopRows, formatDuration, LOOP_ROUND, REPORT_DAYS } from "./test-rounds-view.js";
+import { roundChipHTML, sentBackLastTimeHTML, isLooping, testingLoopRows, retestedRows, formatDuration, LOOP_ROUND, REPORT_DAYS } from "./test-rounds-view.js";
 import { suggestModel, suggestionHint, modelChipText, reviewNeedsOpus, reviewedForCommit, buildsByModel } from "./model-suggest.js";
 import { cardState, deployGate, trainState, needsAttention, waitingOnMe, statusEnteredMs, ageLabel, AGE_THRESHOLDS, selfAnswering, personQuestion } from "./card-state.js";
 import { trainTestChipHTML, approvalWarningLines, APPROVAL_WARNING_TITLE, APPROVAL_WARNING_FOOTER, approvalFields, approvedByLine } from "./card-test-status.js";
 import { sharedWithChipsHTML, foreignPathsChipsHTML, sharedFilesHeaderHTML, deployQueuedHintHTML, parseOwnedPaths } from "./train-overlap.js";
 import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mirrorChipHTML, openInGithubHTML, startHereChipHTML, projectDocRowHTML, interfaceActionsHTML } from "./docs-view.js";
 import { initNavShell } from "./nav-shell.js";
+import { docReaderInfo } from "./documentation-core.js";
 import { initAidanChat } from "./aidan-chat.js";
 import { ROUTINE_SETUP_HASH, ticketOwner, ownerFireBlock, deployOwnerBlock, groomOwnerBlock } from "./owner-fire.js";
 import { renderMarkdown } from "./docs-markdown.js";
-import { promotePageFromHash, promoteHash, promoteDocsFor, PROMOTE_PAGES, teamFacingMd, brandHeaderHtml, promotePartnerFromHash, partnerHash, partnersFrom, partnersListHtml, partnerLockupHtml, promoteMarketFromHash, marketHash, marketsFrom, marketsListHtml } from "./promote-section.js";
+import { promotePageFromHash, promoteHash, promoteDocsFor, PROMOTE_PAGES, teamFacingMd, brandHeaderHtml, promotePartnerFromHash, partnerHash, partnersFrom, brandPickerOptionsHtml, partnerLockupHtml, promoteMarketFromHash, marketHash, marketsFrom } from "./promote-section.js";
 import { supportRoute, supportHash } from "./support-core.js";
 import { createDocsList } from "./docs-grid.js";
 import { classifyAudit, auditCounts, sortedLog, reviewLogEntry, AUDIT_KIND_LABELS, AUDIT_LOG_LABELS } from "./release-audit.js";
@@ -482,8 +483,10 @@ let editingDocId = null; // null while adding, an id while editing (Additional d
 
 // ── Archive page state ─────────────────────────────────────────────────
 let archiveProjectId = null;
-// The Testing loops page's project (null when closed) — see openTestingLoopsPage.
+// The Testing loops page's project (null when closed; TESTING_LOOPS_ALL for
+// every project) and view ("loops" or "retested") — see openTestingLoopsPage.
 let testingLoopsProjectId = null;
+let testingLoopsView = "loops";
 // The Builds by model page's project (null when closed) — see openBuildsByModelPage.
 let buildsByModelProjectId = null;
 let archiveSort = { field: "date", dir: "desc" };
@@ -604,6 +607,7 @@ function closeAllSubPages() {
   closePromotePage();
   closeSupportPage();
   closeDocumentationPage();
+  closeDocReaderPage();
   closeFaqArticlesPage();
   closeFaqArticleEditorPage();
   closeFaqRevisionReviewPage();
@@ -7051,16 +7055,57 @@ archiveFilterCategory.addEventListener("change", () => {
 // their round, reasons and time from first build to approval. Same table
 // component and page shell as Archived tickets. Includes archived tickets,
 // so it loads them (ensureArchivedItems) like the archive page does.
+//
+// Its "retested" view (0I93kb0fqXL4Qr4qyzwv) is the list the Dashboard's
+// Flow & blockers panel opens: every ticket not archived that went back
+// through retesting at least once, with how many times (retestedRows, the
+// same rows the tile counts), across every project. It is routed
+// ("#testing-loops?view=retested", optionally "#testing-loops/<projectId>?…")
+// so the dashboard can link to it and a reload keeps it; the project menu
+// still opens the 30-day loops view for one project, unrouted as before.
+const TESTING_LOOPS_ALL = "*all*";
+const TESTING_LOOPS_VIEWS = {
+  loops: {
+    heading: "Testing loops", countHeader: "Send-backs",
+    info: "Tickets sent back from testing twice or more in the last 30 days. A person's Failed testing, the train's tests and a review kick-back count together; taking a ticket off a release, a red main and a flaky test do not count.",
+    empty: `No ticket was sent back twice or more in the last ${REPORT_DAYS} days.`,
+  },
+  retested: {
+    heading: "Retested tickets", countHeader: "Times retested",
+    info: "Tickets that went back through retesting: every ticket not archived that was sent back from testing at least once, most retested first. A person's Failed testing, the train's tests and a review kick-back count; taking a ticket off a release, a red main and a flaky test do not. The Dashboard's Flow & blockers counts the same tickets.",
+    empty: "No ticket has been sent back from testing.",
+  },
+};
 let testingLoopsList = null;
+let testingLoopsListView = null;
 const STATUS_LABELS = { backlog: "Backlog", "ready-for-testing": "Ready for Testing", "ready-to-publish": "Approved for Deployment", "published-live": "Merged to Main (Live)", archived: "Archived" };
-function openTestingLoopsPage(pid) {
+function openTestingLoopsPage(pid, view = "loops") {
   closeAllSubPages();
   ensureArchivedItems();
-  testingLoopsProjectId = pid;
+  testingLoopsProjectId = pid || TESTING_LOOPS_ALL;
+  testingLoopsView = TESTING_LOOPS_VIEWS[view] ? view : "loops";
   document.getElementById("projects-root").hidden = true;
   document.getElementById("board-page-header").hidden = true;
   document.getElementById("testing-loops-page").hidden = false;
   renderTestingLoopsPage();
+}
+// "#testing-loops[/<projectId>][?view=retested]": the routed way in (the
+// Dashboard's link). openTestingLoopsPage closes every sub-page first, which
+// clears the hash; put it back once it has run.
+function testingLoopsRoute(hash) {
+  const m = /^#testing-loops(?:\/([^?]*))?(?:\?(.*))?$/.exec(hash || "");
+  if (!m) return null;
+  const view = new URLSearchParams(m[2] || "").get("view");
+  return { pid: m[1] ? decodeURIComponent(m[1]) : TESTING_LOOPS_ALL, view: TESTING_LOOPS_VIEWS[view] ? view : "loops" };
+}
+function openTestingLoopsRouteFromHash(hash) {
+  const r = testingLoopsRoute(hash);
+  if (!r) return;
+  if (!sectionAllowed("agent-board")) { showAccessDenied("agent-board"); return; }
+  const page = document.getElementById("testing-loops-page");
+  if (page.hidden || testingLoopsProjectId !== r.pid || testingLoopsView !== r.view) openTestingLoopsPage(r.pid, r.view);
+  setRouteHash(hash, { replace: true });
+  updateTopbarTitle();
 }
 function closeTestingLoopsPage() {
   const page = document.getElementById("testing-loops-page");
@@ -7071,30 +7116,40 @@ function closeTestingLoopsPage() {
   document.getElementById("board-page-header").hidden = false;
 }
 function getTestingLoopsList() {
-  if (!testingLoopsList) {
-    const pad = (n) => String(n == null ? -1 : n).padStart(14, "0");
-    testingLoopsList = createDocsList(document.getElementById("testing-loops-grid"), {
-      id: "testing-loops", searchLabel: "Search title or reasons", emptyText: `No ticket was sent back twice or more in the last ${REPORT_DAYS} days.`,
-      columns: [
-        { key: "title", header: "Ticket", flex: 1, minWidth: 220, text: (r) => r.title,
-          html: (r) => `<a class="archive-row-title" href="#item-${escapeHTML(r.id)}">${escapeHTML(r.title || r.id)}</a><p class="archive-row-desc">${escapeHTML(STATUS_LABELS[r.status] || r.status)}</p>` },
-        { key: "round", header: "Round", width: 100, text: (r) => pad(r.round),
-          html: (r) => `<span class="round-chip round-chip-static${r.round >= LOOP_ROUND ? " round-chip-warn" : ""}"><span class="material-symbols-outlined" aria-hidden="true">replay</span>Round ${r.round}</span>` },
-        { key: "recent", header: "Send-backs", width: 120, text: (r) => pad(r.recent), html: (r) => `${r.recent}${r.counted > r.recent ? ` <span class="archive-row-desc">(${r.counted} ever)</span>` : ""}` },
-        { key: "reasons", header: "Reasons", flex: 1, minWidth: 260, text: (r) => r.reasons.join(" "),
-          html: (r) => `<ol class="loop-reasons">${r.reasons.map((x) => `<li>${escapeHTML(x)}</li>`).join("")}</ol>` },
-        { key: "toApproval", header: "First build → approval", width: 170, text: (r) => pad(r.buildToApprovalMs),
-          html: (r) => (r.buildToApprovalMs != null ? escapeHTML(formatDuration(r.buildToApprovalMs)) : '<span class="archive-row-desc">Not approved yet</span>') },
-        { key: "last", header: "Last sent back", width: 140, text: (r) => (r.lastAt ? r.lastAt.toISOString() : ""), html: (r) => (r.lastAt ? escapeHTML(r.lastAt.toLocaleDateString()) : "—") },
-      ],
-    });
-  }
+  // One list per view: the column header and empty text differ, so switching
+  // view builds the list again in the same container.
+  if (testingLoopsList && testingLoopsListView === testingLoopsView) return testingLoopsList;
+  const v = TESTING_LOOPS_VIEWS[testingLoopsView];
+  const allProjects = () => testingLoopsProjectId === TESTING_LOOPS_ALL;
+  const pad = (n) => String(n == null ? -1 : n).padStart(14, "0");
+  testingLoopsListView = testingLoopsView;
+  testingLoopsList = createDocsList(document.getElementById("testing-loops-grid"), {
+    id: "testing-loops", searchLabel: "Search title or reasons", emptyText: v.empty,
+    columns: [
+      { key: "title", header: "Ticket", flex: 1, minWidth: 220, text: (r) => `${r.title} ${allProjects() ? projectName(r.projectId || GENERAL_PROJECT_ID) : ""}`,
+        html: (r) => `<a class="archive-row-title" href="#item-${escapeHTML(r.id)}">${escapeHTML(r.title || r.id)}</a><p class="archive-row-desc">${allProjects() ? `${escapeHTML(projectName(r.projectId || GENERAL_PROJECT_ID))} · ` : ""}${escapeHTML(STATUS_LABELS[r.status] || r.status)}</p>` },
+      { key: "round", header: "Round", width: 100, text: (r) => pad(r.round),
+        html: (r) => `<span class="round-chip round-chip-static${r.round >= LOOP_ROUND ? " round-chip-warn" : ""}"><span class="material-symbols-outlined" aria-hidden="true">replay</span>Round ${r.round}</span>` },
+      { key: "recent", header: v.countHeader, width: 130, text: (r) => pad(r.recent), html: (r) => `${r.recent}${r.counted > r.recent ? ` <span class="archive-row-desc">(${r.counted} ever)</span>` : ""}` },
+      { key: "reasons", header: "Reasons", flex: 1, minWidth: 260, text: (r) => r.reasons.join(" "),
+        html: (r) => `<ol class="loop-reasons">${r.reasons.map((x) => `<li>${escapeHTML(x)}</li>`).join("")}</ol>` },
+      { key: "toApproval", header: "First build → approval", width: 170, text: (r) => pad(r.buildToApprovalMs),
+        html: (r) => (r.buildToApprovalMs != null ? escapeHTML(formatDuration(r.buildToApprovalMs)) : '<span class="archive-row-desc">Not approved yet</span>') },
+      { key: "last", header: "Last sent back", width: 140, text: (r) => (r.lastAt ? r.lastAt.toISOString() : ""), html: (r) => (r.lastAt ? escapeHTML(r.lastAt.toLocaleDateString()) : "—") },
+    ],
+  });
   return testingLoopsList;
 }
 function renderTestingLoopsPage() {
   if (!testingLoopsProjectId) return;
-  document.getElementById("testing-loops-project-name").textContent = projectName(testingLoopsProjectId);
-  const rows = testingLoopRows(allItems.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === testingLoopsProjectId));
+  const v = TESTING_LOOPS_VIEWS[testingLoopsView];
+  const all = testingLoopsProjectId === TESTING_LOOPS_ALL;
+  document.getElementById("testing-loops-heading").textContent = v.heading;
+  const info = document.getElementById("testing-loops-info");
+  if (info) info.title = v.info;
+  document.getElementById("testing-loops-project-name").textContent = all ? "All projects" : projectName(testingLoopsProjectId);
+  const scoped = all ? allItems : allItems.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === testingLoopsProjectId);
+  const rows = testingLoopsView === "retested" ? retestedRows(scoped) : testingLoopRows(scoped);
   document.getElementById("testing-loops-count").textContent = `${rows.length} ticket${rows.length === 1 ? "" : "s"}`;
   getTestingLoopsList().setRows(rows);
 }
@@ -11989,6 +12044,7 @@ const promotePage = document.getElementById("promote-page");
 const leadsPage = document.getElementById("leads-page");
 const prospectsPage = document.getElementById("prospects-page");
 const funnelPage = document.getElementById("funnel-page");
+const licencesPage = document.getElementById("licences-page");
 const supportPage = document.getElementById("support-page");
 const documentationPage = document.getElementById("documentation-page");
 let promotePageKey = "";
@@ -12036,6 +12092,7 @@ const LAZY_PROMOTE = {
   leads: { label: "Leads", page: () => leadsPage, reset: () => { leadsUiLoading = null; }, ensure: () => ensureLeadsUi() },
   prospects: { label: "Prospects (TAM)", page: () => prospectsPage, reset: () => { prospectsUiLoading = null; }, ensure: () => ensureProspectsUi() },
   "conversion-funnel": { label: "Conversion Funnel", page: () => funnelPage, reset: () => { funnelUiLoading = null; }, ensure: () => ensureFunnelUi() },
+  "license-manager": { label: "License Manager", page: () => licencesPage, reset: () => { licencesUiLoading = null; }, ensure: () => ensureLicencesUi() },
 };
 function openLazyPromotePage(key) {
   const lp = LAZY_PROMOTE[key];
@@ -12084,6 +12141,19 @@ function ensureFunnelUi() {
   }
   return funnelUiLoading;
 }
+// Promote › License Manager (licences-page.js): mounted the first time the page opens.
+let licencesUi = null;
+let licencesUiLoading = null;
+function ensureLicencesUi() {
+  if (licencesUi) return Promise.resolve(licencesUi);
+  if (!licencesUiLoading) {
+    licencesUiLoading = import(`./licences-page.js${pageRetrySuffix("license-manager")}`).then(({ mountLicencesPage }) => {
+      licencesUi = mountLicencesPage({ db, canEdit: () => canEditSection("license-manager"), apiHeaders: consoleApiHeaders, openLead: (id) => { openPromotePage("leads"); ensureLeadsUi().then((ui) => ui.open(id)).catch((err) => console.warn("backlog-tracker: open lead", err)); } });
+      return licencesUi;
+    });
+  }
+  return licencesUiLoading;
+}
 // Promote › Leads (leads-page.js): mounted the first time the page opens.
 let leadsUi = null;
 let leadsUiLoading = null;
@@ -12105,18 +12175,16 @@ function renderPromotePage() {
   const g = document.getElementById("promote-guidelines");
   const r = document.getElementById("promote-requirements");
   const partners = partnersFrom(projectDocs);
-  const partnersBox = document.getElementById("promote-partners");
+  const markets = marketsFrom(projectDocs);
   const lockups = document.getElementById("promote-partner-lockups");
   const header = document.getElementById("promote-brand-header");
-  const marketsBox = document.getElementById("promote-markets");
   document.getElementById("promote-back").hidden = !promotePartnerSlug && !promoteMarketSlug;
+  renderBrandPickers(partners, markets);
   if (promoteMarketSlug) {
     // A market page: its team-facing text (agent-only detail stays for MCP).
-    const market = marketsFrom(projectDocs).find((m) => m.slug === promoteMarketSlug);
+    const market = markets.find((m) => m.slug === promoteMarketSlug);
     document.getElementById("promote-title").textContent = market ? market.name : "Market";
     header.hidden = true;
-    partnersBox.hidden = true;
-    marketsBox.hidden = true;
     lockups.hidden = true;
     g.innerHTML = market ? renderMarkdown(teamFacingMd(market.body)) : "";
     r.innerHTML = "";
@@ -12131,8 +12199,6 @@ function renderPromotePage() {
     const partner = partners.find((p) => p.slug === promotePartnerSlug);
     document.getElementById("promote-title").textContent = partner ? partner.name : "Partner";
     header.hidden = true;
-    partnersBox.hidden = true;
-    marketsBox.hidden = true;
     lockups.innerHTML = partner ? partnerLockupHtml(partner) : "";
     lockups.hidden = !partner;
     g.innerHTML = partner ? renderMarkdown(teamFacingMd(partner.body)) : "";
@@ -12144,11 +12210,6 @@ function renderPromotePage() {
     return;
   }
   lockups.hidden = true;
-  partnersBox.innerHTML = partnersListHtml(partners);
-  partnersBox.hidden = !partners.length;
-  const markets = marketsFrom(projectDocs);
-  marketsBox.innerHTML = marketsListHtml(markets);
-  marketsBox.hidden = !markets.length;
   document.getElementById("promote-empty").textContent = "The brand guidelines are copied here from the repository after each merge to main, and haven't arrived yet. Check back in a few minutes.";
   document.getElementById("promote-title").textContent = page.label;
   // Team view: look and feel only. Agent-only sections stay in the document
@@ -12160,8 +12221,27 @@ function renderPromotePage() {
   document.getElementById("promote-empty").hidden = !!docs.guidelines;
   document.getElementById("promote-requirements-wrap").hidden = true;
 }
+// Brand Guidelines › the Partners and Markets pickers at the top of the page
+// (ssPtNYI8TSv2vzVSAFPk). Each select shows the open partner or market, or
+// "PH brand guidelines" (our own, the default); a select with nothing to list
+// is hidden. Choosing an option opens that page; choosing "PH brand
+// guidelines" returns to ours.
+function renderBrandPickers(partners, markets) {
+  const box = document.getElementById("promote-pickers");
+  const ps = document.getElementById("promote-partner-select");
+  const ms = document.getElementById("promote-market-select");
+  if (document.activeElement !== ps) ps.innerHTML = brandPickerOptionsHtml(partners, promotePartnerSlug);
+  if (document.activeElement !== ms) ms.innerHTML = brandPickerOptionsHtml(markets, promoteMarketSlug);
+  ps.value = promotePartnerSlug && partners.some((p) => p.slug === promotePartnerSlug) ? promotePartnerSlug : "";
+  ms.value = promoteMarketSlug && markets.some((m) => m.slug === promoteMarketSlug) ? promoteMarketSlug : "";
+  document.getElementById("promote-partner-field").hidden = !partners.length;
+  document.getElementById("promote-market-field").hidden = !markets.length;
+  box.hidden = promotePageKey !== "brand-guidelines" || (!partners.length && !markets.length);
+}
+document.getElementById("promote-partner-select").addEventListener("change", (e) => openPromotePage("brand-guidelines", e.target.value, ""));
+document.getElementById("promote-market-select").addEventListener("change", (e) => openPromotePage("brand-guidelines", "", e.target.value));
 function openPromotePage(key = PROMOTE_PAGES[0].key, partnerSlug = "", marketSlug = "") {
-  if (!pageAllowed(key === "prospects" || key === "conversion-funnel" ? key : "promote")) return;
+  if (!pageAllowed(key === "prospects" || key === "conversion-funnel" || key === "license-manager" ? key : "promote")) return;
   closeAllSubPages();
   ensureLazy("projectDocs");
   document.getElementById("projects-root").hidden = true;
@@ -12180,8 +12260,9 @@ function openPromotePage(key = PROMOTE_PAGES[0].key, partnerSlug = "", marketSlu
   renderPromotePage();
 }
 function closePromotePage() {
-  if (promotePage.hidden && leadsPage.hidden && prospectsPage.hidden && funnelPage.hidden) return;
+  if (promotePage.hidden && leadsPage.hidden && prospectsPage.hidden && funnelPage.hidden && licencesPage.hidden) return;
   funnelPage.hidden = true;
+  licencesPage.hidden = true;
   promotePage.hidden = true;
   leadsPage.hidden = true;
   prospectsPage.hidden = true;
@@ -12214,6 +12295,8 @@ function ensureDashboardUi() {
         canView: (key) => sectionAllowed(key),
         me: () => normEmail(auth.currentUser && auth.currentUser.email),
         go: (hash) => { setRouteHash(hash); applyRouteFromHash(); },
+        // A list row opens its Agent board ticket over the Dashboard.
+        openItem: (id) => openEditItemModal(id),
       });
       return dashboardUi;
     }).catch((err) => { dashboardUiLoading = null; throw err; });
@@ -12226,14 +12309,14 @@ function renderDashboardIfOpen() {
   const page = document.getElementById("dashboard-page");
   if (dashboardUi && page && !page.hidden) dashboardUi.render();
 }
-function openDashboardPage() {
+function openDashboardPage(hash) {
   const page = document.getElementById("dashboard-page");
   if (!page) return;
   if (page.hidden) closeAllSubPages();
   document.getElementById("projects-root").hidden = true;
   document.getElementById("board-page-header").hidden = true;
   page.hidden = false;
-  setRouteHash("#dashboard");
+  setRouteHash(typeof hash === "string" && hash.startsWith("#dashboard") ? hash : "#dashboard");
   updateTopbarTitle();
   ensureDashboardUi().then((ui) => { if (!page.hidden) ui.refresh(); })
     .catch((err) => showPageLoadError(page, "Dashboard", err, () => { pageRetries.dashboard = (pageRetries.dashboard || 0) + 1; openDashboardPage(); }));
@@ -12265,7 +12348,8 @@ function ensureDocsUi() {
         getCategories: () => docCategories,
         getArticles: () => docArticles,
         canEdit: () => currentConsoleRole() !== "viewer" && canEditSection("documentation"),
-        openDoc: (id, { mode } = {}) => openFaqArticleEditorPage(id, { library: "docs", mode }),
+        // A title opens the read-only reader; the pencil opens the editor.
+        openDoc: (id, { mode } = {}) => (mode === "edit" ? openFaqArticleEditorPage(id, { library: "docs", mode: "edit" }) : openDocReaderPage(id)),
         newDoc: (categoryId) => openFaqArticleEditorPage(null, { library: "docs", categoryId }),
         alert: (m) => showAlert(m),
         confirm: (m, opts) => showConfirmDialog(m, opts),
@@ -12279,6 +12363,7 @@ function ensureDocsUi() {
 }
 function refreshDocumentationViews() {
   if (docsUi && documentationPage && !documentationPage.hidden) docsUi.render();
+  if (docReaderPage && !docReaderPage.hidden && docReaderId) renderDocReader();
 }
 function openDocumentationPage({ categoryId = null } = {}) {
   if (!documentationPage) return;
@@ -12304,22 +12389,97 @@ function closeDocumentationPage() {
   document.getElementById("board-page-header").hidden = false;
 }
 document.getElementById("documentation-btn")?.addEventListener("click", () => { closeNavDrawer(); openDocumentationPage(); });
-// "#doc/<id>" opens a document; a cold load waits for docArticles to arrive.
+// ── The document reader (#doc/<id>) ─────────────────────────────────────
+// A document opens read-only, on a page of its own: the whole content area,
+// a centred reading column, no editor fields. The pencil (editors only) opens
+// the article editor at "#doc/<id>/edit"; Back returns to its section.
+const docReaderPage = document.getElementById("doc-reader-page");
+let docReaderId = null;
+function renderDocReader() {
+  const $ = (id) => document.getElementById(id);
+  const a = docArticles.find((x) => x.id === docReaderId);
+  $("doc-reader").hidden = !a;
+  $("doc-reader-missing").hidden = !!a || !docArticles.length;
+  $("doc-reader-edit").hidden = !a;
+  if (!a) { $("doc-reader-back-label").textContent = "Documentation"; return; }
+  const info = docReaderInfo(a, docCategories);
+  $("doc-reader-back-label").textContent = info.path.length ? info.path[info.path.length - 1] : "Documentation";
+  // The back button already names the section; the full path only adds
+  // something once the document sits in a folder.
+  $("doc-reader-path").hidden = info.path.length < 2;
+  $("doc-reader-path").textContent = info.path.join(" › ");
+  $("doc-reader-title").textContent = a.title || "(untitled)";
+  const meta = $("doc-reader-meta");
+  meta.innerHTML = info.badges.map((b) => `<span class="badge ${b.cls}">${escapeHTML(b.label)}</span>`).join("") +
+    [info.typeLabel, info.updated].filter(Boolean).map((t) => `<span class="doc-reader-meta-item">${escapeHTML(t)}</span>`).join("");
+  meta.hidden = !meta.innerHTML;
+  $("doc-reader-summary").hidden = !a.summary;
+  $("doc-reader-summary").textContent = a.summary || "";
+  const body = $("doc-reader-body");
+  const html = renderFaqBodyMd(a.bodyMd || "");
+  if (body.dataset.src !== html) { body.innerHTML = html || '<p class="empty-hint">This document has no text yet.</p>'; body.dataset.src = html; }
+  $("doc-reader-source").hidden = !info.source;
+  $("doc-reader-source").textContent = info.source;
+  document.title = `${a.title || "Document"} — PH Agent Console`;
+}
+function openDocReaderPage(id) {
+  if (!docReaderPage || !pageAllowed("documentation")) return;
+  closeAllSubPages();
+  ensureLazy("docCategories", "docArticles");
+  docReaderId = id;
+  document.getElementById("projects-root").hidden = true;
+  document.getElementById("board-page-header").hidden = true;
+  document.getElementById("doc-reader-body").dataset.src = "";
+  docReaderPage.hidden = false;
+  setRouteHash(`#doc/${encodeURIComponent(id)}`);
+  updateTopbarTitle();
+  renderDocReader();
+  window.scrollTo(0, 0);
+}
+function closeDocReaderPage() {
+  if (!docReaderPage || docReaderPage.hidden) return;
+  docReaderPage.hidden = true;
+  docReaderId = null;
+  document.getElementById("projects-root").hidden = false;
+  document.getElementById("board-page-header").hidden = false;
+}
+function docReaderBack() {
+  const a = docArticles.find((x) => x.id === docReaderId);
+  openDocumentationPage({ categoryId: a ? a.categoryId : null });
+}
+document.getElementById("doc-reader-back")?.addEventListener("click", docReaderBack);
+document.getElementById("doc-reader-edit")?.addEventListener("click", () => {
+  if (docReaderId) openFaqArticleEditorPage(docReaderId, { library: "docs", mode: "edit" });
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || e.defaultPrevented || !docReaderPage || docReaderPage.hidden) return;
+  if (document.querySelector("dialog[open], .modal-backdrop:not([hidden])")) return;
+  docReaderBack();
+});
+// "#doc/<id>" opens a document in the reader, "#doc/<id>/edit" in the editor;
+// a cold load waits for docArticles to arrive.
 let pendingDocRoute = null;
+function openDocRoute({ id, edit }) {
+  if (edit) openFaqArticleEditorPage(id, { library: "docs", mode: "edit" });
+  else openDocReaderPage(id);
+}
 function resolvePendingDocRoute() {
-  if (!pendingDocRoute || !docArticles.some((a) => a.id === pendingDocRoute)) return;
-  const id = pendingDocRoute;
+  if (!pendingDocRoute || !docArticles.some((a) => a.id === pendingDocRoute.id)) return;
+  const route = pendingDocRoute;
   pendingDocRoute = null;
-  openFaqArticleEditorPage(id, { library: "docs", mode: "view" });
+  openDocRoute(route);
 }
 function openDocRouteFromHash(hash) {
   ensureLazy("docCategories", "docArticles");
-  const id = decodeURIComponent(hash.slice("#doc/".length));
+  const rest = hash.slice("#doc/".length);
+  const edit = rest.endsWith("/edit");
+  const id = decodeURIComponent(edit ? rest.slice(0, -"/edit".length) : rest);
   if (!id) return;
   if (id === "new") { openFaqArticleEditorPage(null, { library: "docs" }); return; }
-  if (!faqArticleEditorPage.hidden && faLibrary === "docs" && editingFaqArticleId === id) return;
-  if (docArticles.some((a) => a.id === id)) openFaqArticleEditorPage(id, { library: "docs", mode: "view" });
-  else pendingDocRoute = id;
+  if (edit && !faqArticleEditorPage.hidden && faLibrary === "docs" && editingFaqArticleId === id) return;
+  if (!edit && docReaderPage && !docReaderPage.hidden && docReaderId === id) return;
+  if (docArticles.some((a) => a.id === id)) openDocRoute({ id, edit });
+  else pendingDocRoute = { id, edit };
 }
 
 // ── Support › Support Inbox (#support, support-page.js) ──────────────────
@@ -12807,10 +12967,11 @@ async function partnerCentralCall(path, opts = {}) {
   if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
   return data;
 }
-async function loadPartnerCentral() {
+async function loadPartnerCentral({ agent = true } = {}) {
   const box = document.getElementById("partner-central-status");
   const auditBox = document.getElementById("partner-central-audit");
   if (!box) return;
+  if (agent) loadPartnerCentralAgent();
   try {
     const [s, a] = await Promise.all([partnerCentralCall("status", { method: "GET" }), partnerCentralCall("audit", { method: "GET" })]);
     const label = { connected: "Connected", "not-linked": "Not linked yet", error: "Error" }[s.state] || s.state;
@@ -12824,6 +12985,119 @@ async function loadPartnerCentral() {
     box.innerHTML = `<p class="interface-row-empty">Couldn't load the Partner Central status: ${escapeHTML(err.message)}</p>`;
   }
 }
+// ── Settings → AWS Partner Central → Ask the Partner Central agent ───────
+// The agent proposes writes; each one waits here as a pending approval until
+// an admin approves or rejects it (the server only answers ones it recorded).
+const pca = { sessions: [], current: null };
+function pcaSetStatus(msg, bad) {
+  const el = document.getElementById("pca-status");
+  if (el) { el.textContent = msg || ""; el.classList.toggle("is-bad", !!bad); }
+}
+function pcaRenderSession(session) {
+  pca.current = session || null;
+  const reply = document.getElementById("pca-reply");
+  const box = document.getElementById("pca-approvals");
+  const refresh = document.getElementById("pca-refresh");
+  if (refresh) refresh.hidden = !session;
+  if (!reply || !box) return;
+  if (!session) { reply.innerHTML = ""; box.innerHTML = ""; return; }
+  const linked = [session.leadName ? `Lead: ${escapeHTML(session.leadName)}` : "", session.opportunityId ? `Opportunity: ${escapeHTML(session.opportunityId)}` : ""].filter(Boolean).join(" · ");
+  reply.innerHTML = `<div class="pca-reply">
+      <div class="pca-meta">AI session <code>${escapeHTML(session.sessionId)}</code> · ${escapeHTML(session.catalog || "")}${linked ? ` · ${linked}` : ""}</div>
+      <div class="pca-text">${session.lastReply ? escapeHTML(session.lastReply) : '<span class="field-hint">No reply yet.</span>'}</div>
+    </div>`;
+  const approvals = Array.isArray(session.approvals) ? session.approvals : [];
+  const pending = approvals.filter((a) => a.state === "pending");
+  const decided = approvals.filter((a) => a.state !== "pending").slice(-5);
+  box.innerHTML = (pending.length ? `<p class="pca-approvals-title"><span class="pca-dot is-amber" aria-hidden="true"></span><b>${pending.length}</b> ${pending.length === 1 ? "write waits" : "writes wait"} for your approval</p>` : "")
+    + pending.map((a) => `<div class="pca-approval" data-tool-use-id="${escapeHTML(a.toolUseId)}">
+        <div class="pca-approval-head"><span class="material-symbols-outlined" aria-hidden="true">pending_actions</span> ${escapeHTML(a.toolName || "Write to Partner Central")}</div>
+        <pre class="pca-params">${escapeHTML(JSON.stringify(a.parameters || {}, null, 2))}</pre>
+        <div class="pca-approval-actions">
+          <button type="button" class="btn-primary" data-pca-decide="approve">Approve</button>
+          <button type="button" class="btn-ghost" data-pca-decide="reject">Reject</button>
+        </div>
+      </div>`).join("")
+    + decided.map((a) => `<p class="pca-decided"><span class="pca-dot ${a.state === "approved" ? "is-green" : "is-red"}" aria-hidden="true"></span>${escapeHTML(a.toolName || "Write")}: ${a.state === "approved" ? "approved" : "rejected"} by ${escapeHTML(a.decidedBy || "")}${a.decidedAt ? ` · ${escapeHTML(mediaKeyDate(a.decidedAt))}` : ""}</p>`).join("");
+}
+function pcaApply(out) {
+  if (!out || !out.session) { pcaSetStatus("The agent answered without an AI session id.", true); return; }
+  const s = out.session;
+  pca.sessions = [s, ...pca.sessions.filter((x) => x.sessionId !== s.sessionId)];
+  pcaFillSessions(s.sessionId);
+  pcaRenderSession(s);
+  const waiting = (s.approvals || []).filter((a) => a.state === "pending").length;
+  pcaSetStatus(waiting ? "Waiting for your approval." : "Done.");
+}
+function pcaFillSessions(selected) {
+  const sel = document.getElementById("pca-session");
+  if (!sel) return;
+  sel.innerHTML = '<option value="">New session</option>' + pca.sessions.map((x) => {
+    const pending = (x.approvals || []).filter((a) => a.state === "pending").length;
+    return `<option value="${escapeHTML(x.sessionId)}">${escapeHTML(mediaKeyDate(x.updatedAt || x.createdAt))}${x.leadName ? ` · ${escapeHTML(x.leadName)}` : ""}${pending ? ` · ${pending} to approve` : ""}</option>`;
+  }).join("");
+  sel.value = selected || "";
+}
+async function loadPartnerCentralAgent() {
+  if (!document.getElementById("pca")) return;
+  try {
+    const out = await partnerCentralCall("agent", { method: "GET" });
+    pca.sessions = out.sessions || [];
+    const lead = document.getElementById("pca-lead");
+    if (lead) lead.innerHTML = '<option value="">No lead</option>' + (out.leads || []).map((l) => `<option value="${escapeHTML(l.id)}">${escapeHTML(l.name)}</option>`).join("");
+    const keep = pca.current && pca.sessions.find((x) => x.sessionId === pca.current.sessionId);
+    pcaFillSessions(keep ? keep.sessionId : "");
+    pcaRenderSession(keep || null);
+  } catch (err) {
+    pcaSetStatus(`Couldn't load the agent sessions: ${err.message}`, true);
+  }
+}
+document.getElementById("pca-session")?.addEventListener("change", (e) => {
+  const s = pca.sessions.find((x) => x.sessionId === e.target.value) || null;
+  pcaRenderSession(s);
+  pcaSetStatus("");
+});
+document.getElementById("pca-send")?.addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  const textEl = document.getElementById("pca-text");
+  const text = (textEl?.value || "").trim();
+  if (!text) { pcaSetStatus("Type a message for the agent.", true); return; }
+  const body = { text, sessionId: document.getElementById("pca-session")?.value || undefined, leadId: document.getElementById("pca-lead")?.value || undefined, opportunityId: (document.getElementById("pca-opportunity")?.value || "").trim() || undefined };
+  btn.disabled = true;
+  pcaSetStatus("Asking the agent… this can take a minute.");
+  try {
+    pcaApply(await partnerCentralCall("agent/messages", { method: "POST", body: JSON.stringify(body) }));
+    if (textEl) textEl.value = "";
+  } catch (err) {
+    pcaSetStatus(err.message, true);
+  }
+  btn.disabled = false;
+  loadPartnerCentral({ agent: false });
+});
+document.getElementById("pca-refresh")?.addEventListener("click", async (e) => {
+  if (!pca.current) return;
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  pcaSetStatus("Reading the session from Partner Central…");
+  try { pcaApply(await partnerCentralCall(`agent/sessions/${encodeURIComponent(pca.current.sessionId)}`, { method: "POST", body: "{}" })); } catch (err) { pcaSetStatus(err.message, true); }
+  btn.disabled = false;
+});
+document.getElementById("pca-approvals")?.addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-pca-decide]");
+  if (!btn || !pca.current) return;
+  const card = btn.closest("[data-tool-use-id]");
+  const decision = btn.getAttribute("data-pca-decide");
+  card.querySelectorAll("button").forEach((b) => { b.disabled = true; });
+  pcaSetStatus(decision === "approve" ? "Approving… the agent is writing to Partner Central." : "Rejecting…");
+  try {
+    pcaApply(await partnerCentralCall(`agent/sessions/${encodeURIComponent(pca.current.sessionId)}/approvals/${encodeURIComponent(card.getAttribute("data-tool-use-id"))}`, { method: "POST", body: JSON.stringify({ decision }) }));
+  } catch (err) {
+    card.querySelectorAll("button").forEach((b) => { b.disabled = false; });
+    pcaSetStatus(err.message, true);
+  }
+  loadPartnerCentral({ agent: false });
+});
+
 document.getElementById("partner-central-test")?.addEventListener("click", async (e) => {
   const btn = e.currentTarget;
   btn.disabled = true;
@@ -13715,6 +13989,7 @@ const ROUTE_TITLES = {
   "#promote/leads": "Promote: Leads",
   "#promote/prospects": "Promote: Prospects (TAM)",
   "#promote/conversion-funnel": "Promote: Conversion Funnel",
+  "#promote/license-manager": "Promote: License Manager",
   "#settings/projects": "Settings: Projects",
   "#settings/releases": "Settings: Releases",
   "#settings/skills": "Settings: Skills & phase bindings",
@@ -13725,6 +14000,7 @@ const ROUTE_TITLES = {
   "#releases": "Releases",
   "#concept-incubator": "Concept Incubator",
   "#staff-kanban": "Staff Kanban",
+  "#testing-loops": "Retested tickets",
   "#staff-kanban/report": "Release report",
   "#staff-kanban/settings": "Kanban settings",
 };
@@ -13857,7 +14133,8 @@ function openDocsRouteFromHash(hash) {
 }
 function applyRouteFromHash() {
   const hash = window.location.hash;
-  if (hash === "#dashboard") { const d = document.getElementById("dashboard-page"); if (d && d.hidden) openDashboardPage(); }
+  // "#dashboard?list=…" is a count's list on the Dashboard (dashboard-page.js renderList).
+  if (hash === "#dashboard" || hash.startsWith("#dashboard?")) { const d = document.getElementById("dashboard-page"); if (d && d.hidden) openDashboardPage(hash); else renderDashboardIfOpen(); }
   else if (hash === "#board") { if (anySubPageOpen()) returnToBoard(); }
   else if (hash === "#faq-management" || hash.startsWith("#faq-management?")) openFaqArticlesPage(faqFilterFromHash(hash));
   else if (legacyUserManagementHash(hash)) { setRouteHash(legacyUserManagementHash(hash), { replace: true }); applyRouteFromHash(); }
@@ -13871,7 +14148,7 @@ function applyRouteFromHash() {
     if (faqSettingsPage.hidden) openFaqSettingsPage(k, um && um.tab);
     else if (k !== settingsPage || (um && um.tab !== umTab)) showSettingsPage(k, um && um.tab);
   }
-  else if (promotePageFromHash(hash)) { const k = promotePageFromHash(hash); const ps = promotePartnerFromHash(hash) || ""; const ms = promoteMarketFromHash(hash) || ""; if (promotePageKey !== k || promotePartnerSlug !== ps || promoteMarketSlug !== ms || (k === "leads" ? leadsPage.hidden : k === "prospects" ? prospectsPage.hidden : k === "conversion-funnel" ? funnelPage.hidden : promotePage.hidden)) openPromotePage(k, ps, ms); }
+  else if (promotePageFromHash(hash)) { const k = promotePageFromHash(hash); const ps = promotePartnerFromHash(hash) || ""; const ms = promoteMarketFromHash(hash) || ""; if (promotePageKey !== k || promotePartnerSlug !== ps || promoteMarketSlug !== ms || (k === "leads" ? leadsPage.hidden : k === "prospects" ? prospectsPage.hidden : k === "conversion-funnel" ? funnelPage.hidden : k === "license-manager" ? licencesPage.hidden : promotePage.hidden)) openPromotePage(k, ps, ms); }
   else if (supportRoute(hash)) openSupportPage(supportRoute(hash));
   else if (hash === "#documentation" || hash.startsWith("#documentation?")) { if (!documentationPage || documentationPage.hidden) openDocumentationPage(); }
   else if (hash.startsWith("#doc/")) openDocRouteFromHash(hash);
@@ -13882,6 +14159,7 @@ function applyRouteFromHash() {
   else if (hash.startsWith("#concept-")) openConceptRouteFromHash(hash);
   else if (hash.startsWith("#faq-article/")) openFaqArticleRouteFromHash(hash);
   else if (hash.startsWith("#docs/")) openDocsRouteFromHash(hash);
+  else if (testingLoopsRoute(hash)) openTestingLoopsRouteFromHash(hash);
   else if (hash === "#staff-kanban" || hash.startsWith("#staff-kanban/") || hash.startsWith("#staff-kanban?")) openStaffKanbanRouteFromHash(hash);
   else if (conceptDetailId) closeConceptDetailPage();
   else if (docsOpenedByRoute && !docsPage.hidden) closeDocsPage();
@@ -13889,7 +14167,7 @@ function applyRouteFromHash() {
 }
 function anySubPageOpen() {
   const dash = document.getElementById("dashboard-page");
-  return !faqArticlesPage.hidden || !faqSettingsPage.hidden || !rolePage.hidden || !promotePage.hidden || !leadsPage.hidden || !prospectsPage.hidden || !funnelPage.hidden || (supportPage && !supportPage.hidden) || (documentationPage && !documentationPage.hidden) || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden || (dash && !dash.hidden);
+  return !faqArticlesPage.hidden || !faqSettingsPage.hidden || !rolePage.hidden || !promotePage.hidden || !leadsPage.hidden || !prospectsPage.hidden || !funnelPage.hidden || !licencesPage.hidden || (supportPage && !supportPage.hidden) || (documentationPage && !documentationPage.hidden) || (docReaderPage && !docReaderPage.hidden) || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden || (dash && !dash.hidden);
 }
 // popstate (back/forward) and hashchange (a typed-in or pasted #hash) both
 // need to re-sync the visible page — pushState/replaceState above never
@@ -14712,7 +14990,7 @@ function openFaqArticleEditorPageNow(articleId, { pendingRevision = false, libra
   // falling back to the board. A no-op when this call is itself the result
   // of applying that same hash on load/hashchange (setRouteHash already
   // skips re-pushing an unchanged hash).
-  if (faLibrary === "docs") setRouteHash(articleId ? `#doc/${encodeURIComponent(articleId)}` : "#doc/new");
+  if (faLibrary === "docs") setRouteHash(articleId ? `#doc/${encodeURIComponent(articleId)}/edit` : "#doc/new");
   else setRouteHash(articleId ? `#faq-article/${encodeURIComponent(articleId)}${faEditingPendingRevision ? "/revision" : ""}` : "#faq-article/new");
   document.title = `${document.getElementById("fa-title").textContent} — PH Agent Console`;
   maybeRestoreInitialScroll();
@@ -14728,8 +15006,13 @@ function closeFaqArticleEditorPage() {
   document.getElementById("projects-root").hidden = false;
   document.getElementById("board-page-header").hidden = false;
 }
-function backToFaqArticleList() {
-  if (faLibrary === "docs") { const cat = faCategorySelect.value; openDocumentationPage({ categoryId: cat || null }); return; }
+// A saved document goes back to its reader (where Edit was clicked); a new
+// one never saved, or a deleted one ({ toList: true }), to its section.
+function backToFaqArticleList({ toList = false } = {}) {
+  if (faLibrary === "docs") {
+    if (!toList && editingFaqArticleId && docArticles.some((a) => a.id === editingFaqArticleId)) { openDocReaderPage(editingFaqArticleId); return; }
+    const cat = faCategorySelect.value; openDocumentationPage({ categoryId: cat || null }); return;
+  }
   openFaqArticlesPage();
 }
 
@@ -14737,16 +15020,18 @@ document.getElementById("fa-new-article-btn").addEventListener("click", async ()
   if (faqCategories.length === 0) { await showAlert("Add a category first."); return; }
   openFaqArticleEditorPage(null);
 });
-document.getElementById("fa-cancel").addEventListener("click", backToFaqArticleList);
+document.getElementById("fa-cancel").addEventListener("click", () => backToFaqArticleList());
 faDeleteBtn.addEventListener("click", async () => {
   if (!editingFaqArticleId) return;
   if (await showConfirmDialog("Delete this article? This can't be undone.", { title: "Delete article", okLabel: "Delete", danger: true })) {
     await deleteFaqArticle(editingFaqArticleId);
-    backToFaqArticleList();
+    backToFaqArticleList({ toList: true });
   }
 });
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || faqArticleEditorPage.hidden) return;
+  // Claimed, so the reader it may return to doesn't take the same key too.
+  e.preventDefault();
   backToFaqArticleList();
 });
 
@@ -14872,7 +15157,7 @@ async function submitFaqArticleFromEditor(publish) {
   if (faLibrary === "docs") {
     document.getElementById("fa-title").textContent = "Edit document";
     document.title = "Edit document — PH Agent Console";
-    setRouteHash(`#doc/${encodeURIComponent(savedId)}`);
+    setRouteHash(`#doc/${encodeURIComponent(savedId)}/edit`);
   } else {
     renderFaqLiveHint({ ...(faqArticles.find((x) => x.id === savedId) || {}), id: savedId, status, bodyMd: (faqArticles.find((x) => x.id === savedId) || {}).bodyMd });
     document.getElementById("fa-title").textContent = "Edit article";

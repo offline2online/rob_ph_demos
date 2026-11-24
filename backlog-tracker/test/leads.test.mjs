@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import * as L from "../public/js/leads-core.js";
+import * as F from "../public/js/funding-core.js";
 import { buildCopy } from "./leads-core-copy.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -154,5 +155,42 @@ t("planLaneOrder: an unranked lane (or no room left) is renumbered in its new or
 t("topRank puts a lead above every ranked lead in the lane", () => {
   assert.equal(L.topRank([{ id: "a", rank: 100 }, { id: "b", rank: null }], "z"), 100 - L.RANK_STEP);
   assert.equal(L.topRank([{ id: "b", rank: null }], "z"), 0);
+});
+// ── AWS funding on the lead card (public/js/funding-core.js, ticket O37hnP69Cnn8N32HpHot) ──
+t("funding: a check is suggested at Hot Lead or with an ACE opportunity, never for an operator or a lost lead", () => {
+  assert.deepEqual(F.fundingSuggestion({ stage: "lead" }, null), { show: false, suggested: false, reason: "" });
+  assert.deepEqual(F.fundingSuggestion({ stage: "hot-lead" }, null), { show: true, suggested: true, reason: "Hot Lead" });
+  assert.deepEqual(F.fundingSuggestion({ stage: "lead", aceOpportunityId: "O123" }, null), { show: true, suggested: true, reason: "ACE opportunity" });
+  assert.equal(F.fundingSuggestion({ stage: "closed-lost", aceOpportunityId: "O1" }, null).show, false);
+  assert.equal(F.fundingSuggestion({ stage: "hot-lead", leadType: "operator" }, null).show, false);
+  const checked = F.normaliseFunding({ checkedAt: "2026-11-24T01:00:00Z", programs: [] });
+  assert.deepEqual(F.fundingSuggestion({ stage: "hot-lead" }, checked), { show: true, suggested: false, reason: "Hot Lead" }, "already checked: no prompt");
+  assert.equal(F.fundingSuggestion({ stage: "closed-won" }, checked).show, true, "a checked lead keeps its section");
+  assert.equal(L.normaliseLead("x", { company: { name: "A" }, aceOpportunityId: "O9" }).aceOpportunityId, "O9");
+});
+t("funding: programmes are ordered POC, Innovation Sandbox, MAP, other; budget only when AWS returned it", () => {
+  const f = F.normaliseFunding({ checkedAt: "2026-11-24T01:00:00Z", pendingApprovals: 2, programs: [
+    { key: "other", name: "Partner Opportunity Acceleration", eligible: null },
+    { key: "map", name: "MAP", eligible: false, reason: "No migration in scope" },
+    { key: "sandbox", name: "Innovation Sandbox credits", eligible: true, estimatedAmount: 5000, currency: "USD", budgetAvailable: null },
+    { key: "poc", name: "POC funding", eligible: true, estimatedAmount: 25000, currency: "USD", budgetAvailable: 80000 },
+  ] });
+  assert.deepEqual(f.programs.map((p) => p.key), ["poc", "sandbox", "map", "other"]);
+  const poc = F.programView(f.programs[0], f);
+  assert.equal(poc.tone, "green"); assert.equal(poc.label, "Eligible");
+  assert.match(poc.detail, /^Agent estimate US\$25,000 · Budget available US\$80,000$/);
+  assert.equal(poc.draft, "Draft waits for an admin's approval");
+  const sb = F.programView(f.programs[1], f);
+  assert.doesNotMatch(sb.detail, /Budget/, "no budget line when none was returned");
+  assert.equal(F.programView(f.programs[2], f).tone, "red"); assert.equal(F.programView(f.programs[2], f).draft, "", "MAP is checked, not drafted");
+  assert.equal(F.programView(f.programs[3], f).label, "Unclear");
+  const drafted = F.normaliseFunding({ checkedAt: "x", programs: [{ key: "poc", name: "POC funding", eligible: true, draftId: "ba-1" }] });
+  assert.equal(F.programView(drafted.programs[0], drafted).draft, "Draft ba-1: submit it in Partner Central");
+});
+t("funding: once the POC is approved the claim sign-off document is due", () => {
+  assert.equal(F.claimDue(null), false);
+  assert.equal(F.claimDue(F.normaliseFunding({ pocApproved: null })), false);
+  const f = F.normaliseFunding({ pocApproved: { at: "2026-11-24T02:00:00Z", by: "owner@example.com", amount: 25000, currency: "USD", reference: "FR-1" } });
+  assert.equal(F.claimDue(f), true); assert.equal(f.pocApproved.reference, "FR-1"); assert.equal(F.CLAIM_SKILL, "aws-ace-poc-claim");
 });
 console.log(`${n} passed (with inbound merge)`);

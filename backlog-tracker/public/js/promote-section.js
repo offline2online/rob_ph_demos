@@ -9,13 +9,15 @@
 // which is what a page looks them up by. Agents read the same documents over
 // MCP with list_project_documents / get_project_document.
 //
-// Brand Guidelines also lists its Partners and Markets subsections: one page
-// per brand-partner-<slug> / brand-market-<slug> mirror, so a new one is a file
-// and a manifest entry, never a code change.
+// Brand Guidelines also has Partners and Markets: one page per
+// brand-partner-<slug> / brand-market-<slug> mirror, picked from two dropdowns
+// at the top of the page, so a new one is a file and a manifest entry, never
+// a code change.
 //
 // Leads (leads-page.js) is the second entry: a board of its own, not a document page.
 // Prospects (TAM) (prospects-page.js) is the third, directly below Leads: an AG Grid.
 // Conversion Funnel (funnel-page.js) is the fourth, directly below Prospects.
+// License Manager (licences-page.js) is the fifth, directly below the Conversion Funnel.
 
 export const PROMOTE_PAGES = [
   { key: "brand-guidelines", label: "Brand Guidelines", icon: "palette", navId: "promote-brand-btn",
@@ -23,6 +25,7 @@ export const PROMOTE_PAGES = [
   { key: "leads", label: "Leads", icon: "group", navId: "promote-leads-btn", docs: {} },
   { key: "prospects", label: "Prospects (TAM)", icon: "travel_explore", navId: "promote-prospects-btn", docs: {} },
   { key: "conversion-funnel", label: "Conversion Funnel", icon: "filter_alt", navId: "promote-funnel-btn", docs: {} },
+  { key: "license-manager", label: "License Manager", icon: "license", navId: "promote-licences-btn", docs: {} },
 ];
 export const DEFAULT_PROMOTE_PAGE = PROMOTE_PAGES[0].key;
 
@@ -105,7 +108,7 @@ export function brandHeaderHtml() {
 // ── Partners (co-branding) under Brand Guidelines ─────────────────────────
 // One page per partner, each a repo file backlog-tracker/promote/partners/
 // <slug>.md declared in board-docs.json with the mirror key
-// "brand-partner-<slug>". The page lists whatever partner mirrors exist, so a
+// "brand-partner-<slug>". The Partners picker lists whatever partner mirrors exist, so a
 // second partner is a new file and a manifest entry, never a code change.
 // Agents read the same documents over MCP (get_project_document).
 export const PARTNER_MIRROR_PREFIX = "brand-partner-";
@@ -151,14 +154,15 @@ export function partnersFrom(projectDocs) {
 const esc = (v) => String(v == null ? "" : v).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const safeUrl = (u) => (/^(https:\/\/|\/|img\/)/.test(String(u || "")) ? String(u) : "");
 
-// The Partners list on the Brand Guidelines page.
-export function partnersListHtml(partners) {
-  if (!partners.length) return "";
-  const cards = partners.map((p) => `<li><a class="partner-card" href="${partnerHash(p.slug)}">`
-    + `<span class="partner-card-text"><span class="partner-card-name">${esc(p.name)}</span>`
-    + (p.industry ? `<span class="partner-card-meta">${esc(p.industry)}</span>` : "")
-    + `</span><span class="material-symbols-outlined" aria-hidden="true">chevron_right</span></a></li>`).join("");
-  return `<h2 class="partners-title">Partners</h2><ul class="partner-list" aria-label="Partners">${cards}</ul>`;
+// The Partners and Markets pickers at the top of the Brand Guidelines page
+// (ssPtNYI8TSv2vzVSAFPk): the <option>s of one native <select>. The first
+// option ("PH brand guidelines", value "") is the way back to our own
+// guidelines; then one option per partner or market mirror, by name, so a
+// new one appears without a code change. `selected` is the open page's slug.
+export const BRAND_DEFAULT_OPTION = "PH brand guidelines";
+export function brandPickerOptionsHtml(items, selected = "") {
+  const opts = (items || []).map((x) => `<option value="${esc(x.slug)}"${x.slug === selected ? " selected" : ""}>${esc(x.name)}</option>`).join("");
+  return `<option value=""${selected && (items || []).some((x) => x.slug === selected) ? "" : " selected"}>${BRAND_DEFAULT_OPTION}</option>${opts}`;
 }
 
 // The visual lockups at the top of a partner page: each lead brand, on a
@@ -184,7 +188,7 @@ export function partnerLockupHtml(p) {
 // ── Markets (cultural and communication guidelines) under Brand Guidelines ──
 // One page per market, each a repo file backlog-tracker/promote/markets/
 // <slug>.md declared in board-docs.json with the mirror key
-// "brand-market-<slug>". The page lists whatever market mirrors exist, so a
+// "brand-market-<slug>". The Markets picker lists whatever market mirrors exist, so a
 // new market is a new file and a manifest entry, never a code change. Agents
 // read the same documents over MCP (get_project_document); Aidan picks one by
 // country (functions/market-core.js).
@@ -227,14 +231,4 @@ export function marketsFrom(projectDocs) {
       return { id: d.id, slug, name: meta.name || slug, region: meta.region || "", spelling: meta.spelling || "", currency: meta.currency || "", summary: meta.summary || "", body };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
-}
-
-// The Markets list on the Brand Guidelines page (the Partners list's cards).
-export function marketsListHtml(markets) {
-  if (!markets.length) return "";
-  const cards = markets.map((m) => `<li><a class="partner-card" href="${marketHash(m.slug)}">`
-    + `<span class="partner-card-text"><span class="partner-card-name">${esc(m.name)}</span>`
-    + (m.region ? `<span class="partner-card-meta">${esc(m.region)}</span>` : "")
-    + `</span><span class="material-symbols-outlined" aria-hidden="true">chevron_right</span></a></li>`).join("");
-  return `<h2 class="partners-title">Markets</h2><ul class="partner-list" aria-label="Markets">${cards}</ul>`;
 }

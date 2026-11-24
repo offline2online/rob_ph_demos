@@ -1,7 +1,7 @@
 // Promote section: routes, nav ids and how a page finds its mirrored documents.
 // Run with:  node test/promote-section.test.mjs
 import assert from "node:assert";
-import { PROMOTE_PAGES, promotePageFromHash, promoteHash, promoteNavId, mirrorBody, promoteDocsFor, teamFacingMd, brandHeaderHtml, promotePartnerFromHash, partnerHash, parsePartnerDoc, partnersFrom, partnersListHtml, partnerLockupHtml, PARTNER_MIRROR_PREFIX, promoteMarketFromHash, marketHash, parseMarketDoc, marketsFrom, marketsListHtml, MARKET_MIRROR_PREFIX } from "../public/js/promote-section.js";
+import { PROMOTE_PAGES, promotePageFromHash, promoteHash, promoteNavId, mirrorBody, promoteDocsFor, teamFacingMd, brandHeaderHtml, promotePartnerFromHash, partnerHash, parsePartnerDoc, partnersFrom, brandPickerOptionsHtml, partnerLockupHtml, PARTNER_MIRROR_PREFIX, promoteMarketFromHash, marketHash, parseMarketDoc, marketsFrom, MARKET_MIRROR_PREFIX } from "../public/js/promote-section.js";
 
 assert.strictEqual(promotePageFromHash("#promote"), "brand-guidelines");
 assert.strictEqual(promotePageFromHash("#promote/brand-guidelines"), "brand-guidelines");
@@ -12,13 +12,15 @@ assert.strictEqual(promoteHash("brand-guidelines"), "#promote/brand-guidelines")
 assert.strictEqual(promoteNavId("#promote/brand-guidelines"), "promote-brand-btn");
 assert.strictEqual(promoteNavId("#skills"), null);
 assert.ok(PROMOTE_PAGES.every((p) => p.navId));
-assert.ok(PROMOTE_PAGES.filter((p) => p.key !== "leads" && p.key !== "prospects" && p.key !== "conversion-funnel").every((p) => p.docs.guidelines));
-assert.deepStrictEqual(PROMOTE_PAGES.map((p) => p.key), ["brand-guidelines", "leads", "prospects", "conversion-funnel"], "Leads sits beneath Brand Guidelines, Prospects (TAM) below Leads, Conversion Funnel below Prospects");
+assert.ok(PROMOTE_PAGES.filter((p) => p.key !== "leads" && p.key !== "prospects" && p.key !== "conversion-funnel" && p.key !== "license-manager").every((p) => p.docs.guidelines));
+assert.deepStrictEqual(PROMOTE_PAGES.map((p) => p.key), ["brand-guidelines", "leads", "prospects", "conversion-funnel", "license-manager"], "Leads sits beneath Brand Guidelines, Prospects (TAM) below Leads, Conversion Funnel below Prospects, License Manager below the funnel");
 assert.strictEqual(promotePageFromHash("#promote/prospects"), "prospects");
 assert.strictEqual(promoteHash("prospects"), "#promote/prospects");
 assert.strictEqual(promoteNavId("#promote/prospects"), "promote-prospects-btn");
 assert.strictEqual(promotePageFromHash("#promote/conversion-funnel"), "conversion-funnel");
 assert.strictEqual(promoteNavId("#promote/conversion-funnel"), "promote-funnel-btn");
+assert.strictEqual(promotePageFromHash("#promote/license-manager"), "license-manager");
+assert.strictEqual(promoteNavId("#promote/license-manager"), "promote-licences-btn");
 assert.strictEqual(promotePageFromHash("#promote/leads"), "leads");
 assert.strictEqual(promoteHash("leads"), "#promote/leads");
 assert.strictEqual(promoteNavId("#promote/leads"), "promote-leads-btn");
@@ -78,9 +80,14 @@ const plist = partnersFrom([
 ]);
 assert.deepStrictEqual(plist.map((p) => p.slug), ["mipharmacy", "zeta"], "every brand-partner-* mirror is listed, by name; a superseded one is not");
 assert.strictEqual(plist[0].body, "# miPharmacy");
-const lhtml = partnersListHtml(plist);
-assert.ok(lhtml.includes("Partners") && lhtml.includes('href="#promote/brand-guidelines/partners/zeta"') && lhtml.includes("Zeta Co"), "a second partner needs no code change");
-assert.strictEqual(partnersListHtml([]), "");
+// The Partners picker (ssPtNYI8TSv2vzVSAFPk): "PH brand guidelines" first, then every partner by name.
+const lhtml = brandPickerOptionsHtml(plist);
+assert.ok(lhtml.startsWith('<option value="" selected>PH brand guidelines</option>') && lhtml.includes('<option value="zeta">Zeta Co</option>'), "a second partner needs no code change");
+assert.ok(lhtml.indexOf("miPharmacy") < lhtml.indexOf("Zeta Co"), "sorted by name");
+assert.ok(brandPickerOptionsHtml(plist, "zeta").includes('<option value="zeta" selected>') && !brandPickerOptionsHtml(plist, "zeta").includes('value="" selected'), "the open partner is selected");
+assert.ok(brandPickerOptionsHtml(plist, "nobody").includes('value="" selected'), "an unknown slug falls back to PH");
+assert.strictEqual(brandPickerOptionsHtml([]), '<option value="" selected>PH brand guidelines</option>');
+assert.ok(!brandPickerOptionsHtml([{ slug: "x", name: "<b>X</b>" }]).includes("<b>"), "names are escaped");
 const lock = partnerLockupHtml(plist[0]);
 assert.strictEqual((lock.match(/<figure/g) || []).length, 4);
 assert.ok(lock.includes("img/brand/ph-logo-full-color.svg") && lock.includes("img/brand/ph-logo-white.svg") && lock.includes("lockup-missing"));
@@ -114,9 +121,8 @@ const mlist = marketsFrom([
   prow(`${MARKET_MIRROR_PREFIX}old`, "x", { status: "superseded" }),
 ]);
 assert.deepStrictEqual(mlist.map((m) => m.slug), ["thailand", "zeta"], "every brand-market-* mirror, by name; not partners, not superseded");
-const mhtml = marketsListHtml(mlist);
-assert.ok(mhtml.includes("Markets") && mhtml.includes('href="#promote/brand-guidelines/markets/zeta"') && mhtml.includes("Southeast Asia"), "a new market needs no code change");
-assert.strictEqual(marketsListHtml([]), "");
+const mhtml = brandPickerOptionsHtml(mlist, "thailand");
+assert.ok(mhtml.includes('<option value="thailand" selected>Thailand</option>') && mhtml.includes('<option value="zeta">Zetaland</option>') && mhtml.includes(">PH brand guidelines<"), "a new market needs no code change");
 // The real market files: every section on the page, agent detail hidden, no long dashes in what the team sees.
 for (const slug of ["thailand", "singapore", "united-states"]) {
   const md = readFileSync(new URL(`../promote/markets/${slug}.md`, import.meta.url), "utf8");

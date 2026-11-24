@@ -23,6 +23,8 @@
 //   assignee       a member's email, or ""
 //   customerAccount { id, name } once the lead has converted, else null
 //   prospectId     the Prospects (TAM) record it belongs to (converted from, or matched when it came in), else absent
+//   aceOpportunityId  the linked AWS ACE opportunity (written by the functions), else absent; its AWS funding
+//                  check lives in leadFunding/{id} (functions/partner-central.js, public/js/funding-core.js)
 //   inboundCount   how many times someone from this company and country came in (website form or New lead)
 //   enrichment     { at, by, techStack[], summary, sources[{source,status,message}] }
 //   test           true for a lead submitted with the website's test flag
@@ -381,6 +383,8 @@ function normaliseLead(id, d) {
     websiteActivity: (Array.isArray(x.websiteActivity) ? x.websiteActivity : []).filter((a) => a && typeof a === "object")
       .map((a) => ({ at: typeof a.at === "string" ? a.at : "", atMs: ms(a.at), label: String(a.label || ""), detail: String(a.detail || ""), page: String(a.page || "") })),
     prospectId: String(x.prospectId || ""),
+    // The ACE opportunity linked to the lead (written by the functions), "" when none.
+    aceOpportunityId: String(x.aceOpportunityId || ""),
     // Older leads have no count: their website submissions are what came in.
     inboundCount: typeof x.inboundCount === "number" && x.inboundCount > 0 ? Math.round(x.inboundCount) : (Array.isArray(x.websiteActivity) ? x.websiteActivity.length : 0),
     archived: !!x.archivedAt,

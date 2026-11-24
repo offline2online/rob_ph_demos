@@ -18,6 +18,23 @@ const tk = (id, d) => normaliseTicket(id, { key: `SUP-${id}`, subject: `Subject 
 const checks = [];
 const check = (name, fn) => checks.push([name, fn]);
 
+check("Needs a person holds support queries only: not an Aidan request, nor mail that is automated, not about PH or spam-like", () => {
+  const rows = [
+    tk("q", { status: "open", needsHuman: true }),
+    tk("ai", { status: "open", needsHuman: true, inboxes: ["support", "aidan"], aidan: { status: "needs-person", reason: "No skill matches." } }),
+    tk("un", { status: "open", needsHuman: true, highValue: true, unrelated: true }),
+    tk("cat", { status: "open", needsHuman: true, category: "unrelated" }),
+    tk("au", { status: "open", needsHuman: true, automated: "noreply" }),
+    tk("sp", { status: "open", needsHuman: true, spamLikely: true }),
+    tk("tf", { status: "open", needsHuman: true, triageReason: "No draft could be written." }),
+  ];
+  const working = QUEUES.filter((q) => q.key !== "all");
+  for (const t of rows) assert.strictEqual(working.filter((q) => q.test(t)).length, 1, `${t.id} is in one queue`);
+  assert.deepStrictEqual(filterTickets(rows, "needs-person", "", "support").map((t) => t.id).sort(), ["q", "tf"], "a failed triage still needs a person");
+  assert.deepStrictEqual(filterTickets(rows, "to-sort", "", "support").map((t) => t.id).sort(), ["ai", "au", "cat", "sp", "un"]);
+  assert.deepStrictEqual(filterTickets(rows, "all", "", "aidan").map((t) => t.id), ["ai"], "the Aidan request is still in the Aidan tab");
+});
+
 check("every open, pending, resolved or spam ticket is in exactly one working queue", () => {
   const rows = [
     tk("a", { status: "open", needsHuman: true }),

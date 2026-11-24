@@ -1348,6 +1348,21 @@ async function rpc(token, method, params, id = 1) {
     assert.deepStrictEqual(await ids({ country: "united kingdom" }), ["pr1"], "a document without country reads as its first market");
     assert.deepStrictEqual(await ids({ country: "Ireland" }), [], "country is the record's country, not any market");
   });
+  await test("list_prospects carries AWS Account Mapping, filters by propensity and Greenfield, and sorts by awareness rank", async () => {
+    const col = env.store.col("prospects");
+    col.set("am1", { name: "Map Low", country: "Spain", status: "new", awsMapping: { matched: true, propensity: "low", lastSyncedAt: new Date("2026-11-20T00:00:00Z") } });
+    col.set("am2", { name: "Map High", country: "Spain", status: "new", awsMapping: { matched: true, awsAccountId: "123456789012", propensity: "high", propensityRaw: "91", signals: ["Cloud migration"], greenfieldEligible: true, salesMotionEligible: false, lastSyncedAt: new Date("2026-11-20T00:00:00Z") } });
+    try {
+      const list = async (a) => JSON.parse((await prCall("list_prospects", a)).content[0].text).prospects;
+      const all = await list({ country: "Spain", sort: "awareness" });
+      assert.deepStrictEqual(all.map((p) => [p.id, p.awarenessRank]), [["am2", 1], ["am1", 2]]);
+      assert.deepStrictEqual(all[0].awsMapping, { matched: true, awsAccountId: "123456789012", propensity: "high", propensityRaw: "91", signals: ["Cloud migration"], greenfieldEligible: true, salesMotionEligible: false, lastSyncedAt: "2026-11-20T00:00:00.000Z" });
+      assert.strictEqual(all[0].highPotential, true);
+      assert.deepStrictEqual((await list({ propensity: "high" })).map((p) => p.id), ["am2"]);
+      assert.deepStrictEqual((await list({ greenfield: "yes" })).map((p) => p.id), ["am2"]);
+      assert.ok((await list({ propensity: "not-synced" })).every((p) => p.awsMapping === null && p.awarenessRank === null));
+    } finally { col.delete("am1"); col.delete("am2"); }
+  });
   await test("upsert_prospects creates new companies and merges into existing ones by name + country", async () => {
     const out = JSON.parse((await prCall("upsert_prospects", { prospects: [
       { name: "acme grocer", country: "United Kingdom", vendors: ["Signage Co"] },

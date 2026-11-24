@@ -482,6 +482,12 @@ async function main() {
   await check("A prospect's priority is high, medium or low", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { priority: "urgent" }));
   await check("A prospect's insights are capped at 2000 characters", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { insights: "x".repeat(2001) }));
   await check("A prospect holds at most 30 contacts", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { contacts: Array.from({ length: 31 }, () => ({ name: "A", role: "B", lastContact: "" })) }));
+  await check("An editor can import AWS Account Mapping results onto a prospect", "allow", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { awsMapping: { matched: true, awsAccountId: "123456789012", propensity: "high", propensityRaw: "92", signals: ["Cloud migration"], greenfieldEligible: true, salesMotionEligible: null, lastSyncedAt: new Date(), source: "csv-import" } }));
+  await check("AWS Account Mapping's propensity is high, medium, low or blank", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { awsMapping: { propensity: "urgent" } }));
+  await check("AWS Account Mapping must be a map", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { awsMapping: "high" }));
+  await check("An editor can save a joint planning draft on a prospect", "allow", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { jointPlanning: { status: "draft", text: "Subject: Joint account planning request", draftedByEmail: "editor@ph.example", draftedAt: new Date() } }));
+  await check("A joint planning draft is draft or submitted", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { jointPlanning: { status: "sent", text: "x" } }));
+  await check("A joint planning draft is capped at 4000 characters", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { jointPlanning: { status: "draft", text: "x".repeat(4001) } }));
   await check("A prospect's verified flag is a boolean", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { linkedinVerified: "yes" }));
   await check("A new prospect must name its country", "deny", () => { const { country, ...rest } = PROSPECT; return setDoc(doc(as(MEMBER), "prospects/p5"), rest); });
   await check("A document without a country still updates (older records)", "allow", async () => { const { country, ...rest } = PROSPECT; await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), "prospects/old1"), rest)); return updateDoc(doc(as(MEMBER), "prospects/old1"), { status: "researching" }); });
@@ -493,6 +499,10 @@ async function main() {
   await check("A member may read a funnel row", "allow", () => getDoc(doc(as(MEMBER), "funnelDaily/2026-11-01_x")));
   await check("A stranger cannot read a funnel row", "deny", () => getDoc(doc(as(STRANGER), "funnelDaily/2026-11-01_x")));
   await check("An editor cannot write a funnel row (ingest only)", "deny", () => setDoc(doc(as(MEMBER), "funnelDaily/2026-11-01_x"), { date: "2026-11-01", impressions: 1 }));
+  await check("A member may read a licence", "allow", () => getDoc(doc(as(MEMBER), "licences/agmt-1")));
+  await check("A viewer may read a licence", "allow", () => getDoc(doc(as(VIEWER), "licences/agmt-1")));
+  await check("A stranger cannot read a licence", "deny", () => getDoc(doc(as(STRANGER), "licences/agmt-1")));
+  await check("An editor cannot write a licence (the server sync and link route only)", "deny", () => setDoc(doc(as(MEMBER), "licences/agmt-1"), { agreementId: "agmt-1", manualLink: { prospectId: "p1" } }));
   await check("A member may read a prospect", "allow", () => getDoc(doc(as(MEMBER), "prospects/p1")));
   await check("A viewer may read a prospect", "allow", () => getDoc(doc(as(VIEWER), "prospects/p1")));
   await check("A viewer cannot create a prospect", "deny", () => setDoc(doc(as(VIEWER), "prospects/p4"), PROSPECT));

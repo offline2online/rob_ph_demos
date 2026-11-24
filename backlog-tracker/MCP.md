@@ -1065,7 +1065,13 @@ low), `storePresence` (the count as written; `storeCount` is parsed from it),
 refused), `linkedinOrgId` (digits), `linkedinVerified` and `contacts` (up to 30
 of `{name, role, lastContact}`), alongside the earlier fields. `list_prospects`
 returns all of them and filters by `country` and `priority` as well as
-industry, market, region, campaign, size, status and store range.
+industry, market, region, campaign, size, status and store range. Since 24 Nov 2026 each record also carries `awsMapping` (AWS Partner
+Account Mapping's match, propensity, signals, Greenfield / Partner-led Sales
+Motion eligibility and last-synced date, from the page's import), `highPotential`
+and `awarenessRank` (the stage-1 awareness targeting order); `list_prospects`
+filters by `propensity` (high, medium, low, not-synced) and `greenfield` (yes,
+no, unknown) and sorts with `sort: "awareness"`. `upsert_prospects` does not
+write `awsMapping`.
 
 ## Leads over MCP
 
