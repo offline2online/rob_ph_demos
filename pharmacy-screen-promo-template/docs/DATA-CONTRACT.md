@@ -131,7 +131,7 @@ until the player loads its next campaign, so the campaign's playback duration on
 
 Copy and template HTML use Personalisation Hub's token format, `${TokenName}`.
 
-**In copy** (headlines, accent lines, lines 1 and 2, bar messages):
+**In copy** (headlines, accent lines, lines 1 and 2, service chip labels, the seasonal lines, bar messages):
 
 | Token | Value |
 |---|---|
@@ -143,13 +143,17 @@ Copy and template HTML use Personalisation Hub's token format, `${TokenName}`.
 | `${State}` | `store_info.address_info.state`, e.g. `Victoria` |
 | `${StoreCode}` | `store_location.store_code`, e.g. `VIC-MP-001` |
 
-Every headline field in the editor (each scene's headline, the hours headlines, the seasonal beats' main lines and
-the bar messages) has **+ Add token** on its label row: a menu of Store name (`${StoreName}`), Suburb, Store code,
-State and Phone number that inserts the token at the caret (`ADD_TOKENS` in `pharmacy-screen/js/tokens.js`). The
-store-data entries have no "From Personalisation Hub" sub-line. Brand name, Website, Languages spoken by store staff
-and Localised copy are not in the menu; copy that already uses `${BrandName}`, `${Website}`, `${LanguagesSpoken}` or
-`${LocalisedCopy}` still shows a value set for it in Settings → Tokens (they have no store data behind them, so
-nothing shows until one is set).
+Every copy field in the editor has **+ Add token** on its label row, in the admin and the pharmacy views alike
+(`pharmacy-screen/admin/js/rich-text.js`): the rich-text fields (each scene's headline, the hours headlines, the
+seasonal beats' Main lines and the bar messages) and the plain ones (accent lines, Line 1 / Line 2, service chip
+labels and the seasonal Small line above / Line below). It opens a menu of Store name (`${StoreName}`), Suburb, Store
+code, State and Phone number that inserts the token at the caret, else at the end (`ADD_TOKENS` in
+`pharmacy-screen/js/tokens.js`). The store-data entries have no "From Personalisation Hub" sub-line. Under each copy
+field, the `${…}` tokens its copy uses are shown as chips, in order of first use and updated as you type (any token
+name; the row is hidden when there are none). Brand name, Website, Languages spoken by store staff and Localised copy
+are not in the menu; copy that already uses `${BrandName}`, `${Website}`, `${LanguagesSpoken}` or `${LocalisedCopy}`
+still shows a value set for it in Settings → Tokens (they have no store data behind them, so nothing shows until one
+is set).
 
 **In a custom template's HTML** (Admin → Edit HTML shows these as chips; `TEMPLATE_TOKENS` in
 `pharmacy-screen/js/tokens.js`):
