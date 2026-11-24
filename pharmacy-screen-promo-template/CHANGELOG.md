@@ -42,6 +42,11 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Fixed
 
+- **Fallback: the pharmacy's logo now looks exactly as it does in Morning and Afternoon.** The Fallback already
+  used the same uploaded logo, but drew it on a white tile with padding and a shadow, which washed out logos made
+  for the brand colour (white lettering) so they no longer read as the same logo. It is now drawn as it is, straight
+  on the pharmacy's brand colour, the way the other campaigns show it (`.occ-thankyou .lg img` in
+  `pharmacy-screen/js/occasions.js`).
 - **Seasonal: Currently active promotion is readable, and Activate on display reaches every screen.** In Retail
   Admin the drop-down was squashed to a sliver beside Activate on display, so what was selected could not be seen;
   it now has the row to itself and keeps one width (Activate on display goes below it on a narrow screen), in the

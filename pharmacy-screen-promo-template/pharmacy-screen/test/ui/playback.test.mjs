@@ -312,3 +312,29 @@ test('5. loop=1 loops as before', async () => {
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+test('6. the Fallback shows the pharmacy\'s logo exactly as Morning and Afternoon do: the same image, straight on the brand colour', async () => {
+  const api = { config: copy(CONFIG) };
+  const logoOf = (page, sel) => page.evaluate((q) => {
+    const img = document.querySelector(q);
+    if (!img) return null;
+    const cs = getComputedStyle(img);
+    return { src: img.getAttribute('src'), background: cs.backgroundColor, padding: cs.padding, radius: cs.borderRadius, shadow: cs.boxShadow };
+  }, sel);
+  const plain = { background: 'rgba(0, 0, 0, 0)', padding: '0px', radius: '0px', shadow: 'none' };
+  for (const promo of ['morning', 'afternoon']) {
+    const { page, ctx } = await open(`promo=${promo}&now=wed-12:00`, api);
+    const scene = await logoOf(page, '#screen .s-logo img');
+    await ctx.close();
+    const fb = await open('promo=occasions&date=2026-07-01', api);
+    const fallback = await logoOf(fb.page, '#screen .occ-thankyou .lg img');
+    assert.deepEqual(fb.errors, []);
+    await fb.ctx.close();
+    assert.ok(scene && scene.src, `${promo} shows the pharmacy logo`);
+    assert.ok(fallback, 'the Fallback shows the pharmacy logo');
+    assert.equal(fallback.src, scene.src, `the same logo as ${promo}`);
+    const { src, ...look } = fallback;
+    assert.deepEqual(look, plain, 'drawn as it is: no white tile, padding, rounding or shadow behind it');
+    assert.deepEqual((({ src: _, ...l }) => l)(scene), plain, `${promo} draws it the same way`);
+  }
+});
