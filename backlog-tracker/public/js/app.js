@@ -38,7 +38,7 @@ import { initNavShell } from "./nav-shell.js";
 import { initAidanChat } from "./aidan-chat.js";
 import { ROUTINE_SETUP_HASH, ticketOwner, ownerFireBlock, deployOwnerBlock, groomOwnerBlock } from "./owner-fire.js";
 import { renderMarkdown } from "./docs-markdown.js";
-import { promotePageFromHash, promoteHash, promoteDocsFor, PROMOTE_PAGES, teamFacingMd, brandHeaderHtml, promotePartnerFromHash, partnerHash, partnersFrom, partnersListHtml, partnerLockupHtml, promoteMarketFromHash, marketHash, marketsFrom, marketsListHtml } from "./promote-section.js";
+import { promotePageFromHash, promoteHash, promoteDocsFor, PROMOTE_PAGES, teamFacingMd, brandHeaderHtml, promotePartnerFromHash, partnerHash, partnersFrom, brandPickerOptionsHtml, partnerLockupHtml, promoteMarketFromHash, marketHash, marketsFrom } from "./promote-section.js";
 import { supportRoute, supportHash } from "./support-core.js";
 import { createDocsList } from "./docs-grid.js";
 import { classifyAudit, auditCounts, sortedLog, reviewLogEntry, AUDIT_KIND_LABELS, AUDIT_LOG_LABELS } from "./release-audit.js";
@@ -12105,18 +12105,16 @@ function renderPromotePage() {
   const g = document.getElementById("promote-guidelines");
   const r = document.getElementById("promote-requirements");
   const partners = partnersFrom(projectDocs);
-  const partnersBox = document.getElementById("promote-partners");
+  const markets = marketsFrom(projectDocs);
   const lockups = document.getElementById("promote-partner-lockups");
   const header = document.getElementById("promote-brand-header");
-  const marketsBox = document.getElementById("promote-markets");
   document.getElementById("promote-back").hidden = !promotePartnerSlug && !promoteMarketSlug;
+  renderBrandPickers(partners, markets);
   if (promoteMarketSlug) {
     // A market page: its team-facing text (agent-only detail stays for MCP).
-    const market = marketsFrom(projectDocs).find((m) => m.slug === promoteMarketSlug);
+    const market = markets.find((m) => m.slug === promoteMarketSlug);
     document.getElementById("promote-title").textContent = market ? market.name : "Market";
     header.hidden = true;
-    partnersBox.hidden = true;
-    marketsBox.hidden = true;
     lockups.hidden = true;
     g.innerHTML = market ? renderMarkdown(teamFacingMd(market.body)) : "";
     r.innerHTML = "";
@@ -12131,8 +12129,6 @@ function renderPromotePage() {
     const partner = partners.find((p) => p.slug === promotePartnerSlug);
     document.getElementById("promote-title").textContent = partner ? partner.name : "Partner";
     header.hidden = true;
-    partnersBox.hidden = true;
-    marketsBox.hidden = true;
     lockups.innerHTML = partner ? partnerLockupHtml(partner) : "";
     lockups.hidden = !partner;
     g.innerHTML = partner ? renderMarkdown(teamFacingMd(partner.body)) : "";
@@ -12144,11 +12140,6 @@ function renderPromotePage() {
     return;
   }
   lockups.hidden = true;
-  partnersBox.innerHTML = partnersListHtml(partners);
-  partnersBox.hidden = !partners.length;
-  const markets = marketsFrom(projectDocs);
-  marketsBox.innerHTML = marketsListHtml(markets);
-  marketsBox.hidden = !markets.length;
   document.getElementById("promote-empty").textContent = "The brand guidelines are copied here from the repository after each merge to main, and haven't arrived yet. Check back in a few minutes.";
   document.getElementById("promote-title").textContent = page.label;
   // Team view: look and feel only. Agent-only sections stay in the document
@@ -12160,6 +12151,25 @@ function renderPromotePage() {
   document.getElementById("promote-empty").hidden = !!docs.guidelines;
   document.getElementById("promote-requirements-wrap").hidden = true;
 }
+// Brand Guidelines › the Partners and Markets pickers at the top of the page
+// (ssPtNYI8TSv2vzVSAFPk). Each select shows the open partner or market, or
+// "PH brand guidelines" (our own, the default); a select with nothing to list
+// is hidden. Choosing an option opens that page; choosing "PH brand
+// guidelines" returns to ours.
+function renderBrandPickers(partners, markets) {
+  const box = document.getElementById("promote-pickers");
+  const ps = document.getElementById("promote-partner-select");
+  const ms = document.getElementById("promote-market-select");
+  if (document.activeElement !== ps) ps.innerHTML = brandPickerOptionsHtml(partners, promotePartnerSlug);
+  if (document.activeElement !== ms) ms.innerHTML = brandPickerOptionsHtml(markets, promoteMarketSlug);
+  ps.value = promotePartnerSlug && partners.some((p) => p.slug === promotePartnerSlug) ? promotePartnerSlug : "";
+  ms.value = promoteMarketSlug && markets.some((m) => m.slug === promoteMarketSlug) ? promoteMarketSlug : "";
+  document.getElementById("promote-partner-field").hidden = !partners.length;
+  document.getElementById("promote-market-field").hidden = !markets.length;
+  box.hidden = promotePageKey !== "brand-guidelines" || (!partners.length && !markets.length);
+}
+document.getElementById("promote-partner-select").addEventListener("change", (e) => openPromotePage("brand-guidelines", e.target.value, ""));
+document.getElementById("promote-market-select").addEventListener("change", (e) => openPromotePage("brand-guidelines", "", e.target.value));
 function openPromotePage(key = PROMOTE_PAGES[0].key, partnerSlug = "", marketSlug = "") {
   if (!pageAllowed(key === "prospects" || key === "conversion-funnel" ? key : "promote")) return;
   closeAllSubPages();

@@ -1290,20 +1290,24 @@
          every promotion and PR piece. Reads two board documents that mirror
          backlog-tracker/promote/*.md (board-docs.json); nothing is written here. -->
     <section class="faq-admin-page" id="promote-page" hidden>
-      <a class="promote-back" id="promote-back" href="#promote/brand-guidelines" hidden><span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>Brand Guidelines</a>
+      <a class="promote-back" id="promote-back" href="#promote/brand-guidelines" hidden><span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>PH brand guidelines</a>
       <div class="page-header">
         <h2 id="promote-title">Brand Guidelines</h2>
+      </div>
+      <!-- Partners (co-branding) and Markets pickers (ssPtNYI8TSv2vzVSAFPk): native
+           selects listed from the brand-partner-* / brand-market-* mirrors
+           (backlog-tracker/promote/partners|markets/*.md). "PH brand guidelines"
+           in either one returns to our own guidelines (js/promote-section.js). -->
+      <div class="brand-pickers" id="promote-pickers" role="group" aria-label="Brand guidelines to show" hidden>
+        <label class="brand-picker" id="promote-partner-field"><span class="brand-picker-label">Partners</span>
+          <select class="pc-select" id="promote-partner-select" aria-label="Partners"></select></label>
+        <label class="brand-picker" id="promote-market-field"><span class="brand-picker-label">Markets</span>
+          <select class="pc-select" id="promote-market-select" aria-label="Markets"></select></label>
       </div>
       <p class="promote-empty" id="promote-empty" hidden>The brand guidelines are copied here from the repository after each merge to main, and haven't arrived yet. Check back in a few minutes.</p>
       <div class="brand-header" id="promote-brand-header" hidden></div>
       <div class="partner-lockups" id="promote-partner-lockups" hidden></div>
       <article class="docs-md promote-doc" id="promote-guidelines" aria-label="Brand Guidelines"></article>
-      <!-- Partners (co-branding): one page per partner, listed from the
-           brand-partner-* mirrors (backlog-tracker/promote/partners/*.md). -->
-      <div class="promote-partners" id="promote-partners" role="region" aria-label="Partners" hidden></div>
-      <!-- Markets: cultural and communication guidelines, one page per market,
-           listed from the brand-market-* mirrors (backlog-tracker/promote/markets/*.md). -->
-      <div class="promote-partners promote-markets" id="promote-markets" role="region" aria-label="Markets" hidden></div>
       <details class="promote-requirements" id="promote-requirements-wrap" hidden>
         <summary>Requirements</summary>
         <article class="docs-md promote-doc" id="promote-requirements" aria-label="Brand Guidelines requirements"></article>

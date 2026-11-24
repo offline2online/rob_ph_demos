@@ -2003,7 +2003,8 @@ const scenarios = [
   },
   {
     // ZvkZpVZBXCDHb34MQegP: Brand Guidelines › Partners, one page per partner, listed from the brand-partner-* mirrors.
-    name: "Promote: Brand Guidelines lists Partners and opens the miPharmacy co-branding page",
+    // ssPtNYI8TSv2vzVSAFPk: picked from the Partners dropdown at the top of the page; no list at the bottom.
+    name: "Promote: Brand Guidelines Partners dropdown opens the miPharmacy co-branding page and returns to PH",
     seed: () => seed({ projectDocs: {
       bg: { projectId: PID, name: "6 — Brand Guidelines (Promote)", mirrorKey: "brand-guidelines", sourcePath: "backlog-tracker/promote/brand-guidelines.md",
         sourcePrefix: "", contentMd: "# Brand Guidelines\n\n## Logo usage\n\nUse the real files.", createdAt: t(T0), updatedAt: t(T0) },
@@ -2013,9 +2014,14 @@ const scenarios = [
     async run(c) {
       await c.boardReady();
       await openFromNav(c, "promote", "promote-brand-btn", "promote-page");
-      await c.waitText("#promote-partners", "miPharmacy", "the Partners subsection lists miPharmacy");
-      assert.ok((await c.text("#promote-partners")).includes("Partners") && (await c.text("#promote-partners")).includes("Pharmacy"));
-      await c.page.locator('#promote-partners a.partner-card').first().click();
+      await c.waitText("#promote-partner-select", "miPharmacy", "the Partners dropdown lists miPharmacy");
+      assert.strictEqual(await c.page.locator("#promote-partner-select").inputValue(), "", "PH brand guidelines is the default");
+      assert.ok(/partners/i.test(await c.text("#promote-pickers")) && (await c.text("#promote-partner-select")).includes("PH brand guidelines"));
+      assert.ok(await c.page.locator("#promote-market-field").isHidden(), "no Markets dropdown when there are no markets");
+      const pickTop = (await c.page.locator("#promote-pickers").boundingBox()).y;
+      assert.ok(pickTop < (await c.page.locator("#promote-guidelines").boundingBox()).y && pickTop < (await c.page.locator("#promote-brand-header").boundingBox()).y, "the dropdowns sit at the top of the page");
+      assert.strictEqual(await c.page.locator("#promote-partners, #promote-markets, a.partner-card").count(), 0, "the old lists at the bottom are gone");
+      await c.page.locator("#promote-partner-select").selectOption("mipharmacy");
       await c.waitText("#promote-title", "miPharmacy", "the partner page opens");
       assert.strictEqual(new URL(c.page.url()).hash, "#promote/brand-guidelines/partners/mipharmacy", "the partner page has its own URL");
       const body = await c.text("#promote-guidelines");
@@ -2025,16 +2031,23 @@ const scenarios = [
       assert.strictEqual(await c.page.locator("#promote-partner-lockups figure.lockup").count(), 4, "partner-led and PH-led lockups, light and dark");
       assert.strictEqual(await c.page.locator('#promote-partner-lockups img[src="img/brand/ph-logo-white.svg"]').count(), 2, "the official white PH logo on dark");
       assert.strictEqual(await c.page.locator("#promote-partner-lockups .lockup-missing").count(), 4, "the partner logo slot waits for its Brand assets file");
-      assert.ok(await c.page.locator("#promote-brand-header").isHidden() && await c.page.locator("#promote-partners").isHidden(), "the guidelines header and list are not on a partner page");
-      await c.page.locator("#promote-back").click();
-      await c.waitText("#promote-title", "Brand Guidelines", "back to the guidelines");
+      assert.ok(await c.page.locator("#promote-brand-header").isHidden(), "the guidelines header is not on a partner page");
+      assert.ok(await c.page.locator("#promote-pickers").isVisible() && await c.page.locator("#promote-partner-select").inputValue() === "mipharmacy", "the dropdown stays at the top, showing the partner");
+      await c.page.locator("#promote-partner-select").selectOption("");
+      await c.waitText("#promote-title", "Brand Guidelines", "PH brand guidelines from the dropdown");
       assert.strictEqual(new URL(c.page.url()).hash, "#promote/brand-guidelines");
       assert.ok(await c.page.locator("#promote-partner-lockups").isHidden() && await c.page.locator("#promote-back").isHidden());
+      await c.page.locator("#promote-partner-select").selectOption("mipharmacy");
+      await c.waitText("#promote-title", "miPharmacy", "the partner page opens again");
+      await c.page.locator("#promote-back").click();
+      await c.waitText("#promote-title", "Brand Guidelines", "back link to the guidelines");
+      assert.strictEqual(await c.page.locator("#promote-partner-select").inputValue(), "", "the dropdown is back on PH");
     },
   },
   {
     // mErc7MPAkrKjF9fWgqXb: Brand Guidelines › Markets, one page per market, listed from the brand-market-* mirrors.
-    name: "Promote: Brand Guidelines lists Markets and opens the Thailand page with every section",
+    // ssPtNYI8TSv2vzVSAFPk: picked from the Markets dropdown at the top of the page.
+    name: "Promote: Brand Guidelines Markets dropdown opens the Thailand page with every section",
     seed: () => seed({ projectDocs: {
       bg: { projectId: PID, name: "6 — Brand Guidelines (Promote)", mirrorKey: "brand-guidelines", sourcePath: "backlog-tracker/promote/brand-guidelines.md",
         sourcePrefix: "", contentMd: "# Brand Guidelines\n\n## Logo usage\n\nUse the real files.", createdAt: t(T0), updatedAt: t(T0) },
@@ -2046,22 +2059,28 @@ const scenarios = [
     async run(c) {
       await c.boardReady();
       await openFromNav(c, "promote", "promote-brand-btn", "promote-page");
-      await c.waitText("#promote-markets", "Thailand", "the Markets subsection lists Thailand");
-      const list = await c.text("#promote-markets");
-      assert.ok(list.includes("Markets") && list.includes("United States") && list.includes("Southeast Asia"));
-      assert.ok(list.indexOf("Thailand") < list.indexOf("United States"), "sorted by name");
-      await c.page.locator('#promote-markets a.partner-card[href="#promote/brand-guidelines/markets/thailand"]').click();
+      await c.waitText("#promote-market-select", "Thailand", "the Markets dropdown lists Thailand");
+      const list = await c.text("#promote-market-select");
+      assert.ok(list.includes("PH brand guidelines") && list.includes("United States"));
+      assert.ok(list.indexOf("PH brand guidelines") < list.indexOf("Thailand") && list.indexOf("Thailand") < list.indexOf("United States"), "PH first, then sorted by name");
+      assert.ok(await c.page.locator("#promote-partner-field").isHidden(), "no Partners dropdown when there are no partners");
+      await c.page.locator("#promote-market-select").selectOption("thailand");
       await c.waitText("#promote-title", "Thailand", "the market page opens");
       assert.strictEqual(new URL(c.page.url()).hash, "#promote/brand-guidelines/markets/thailand", "the market page has its own URL");
       const body = await c.text("#promote-guidelines");
       for (const h of ["Communication style", "Cultural sensitivities", "Local conventions", "Business etiquette", "Regulatory notes"]) assert.ok(body.includes(h), `the page shows ${h}`);
       assert.ok(!body.includes("Agent market detail") && !body.includes("countries:") && !body.includes("Copy of the file"), "agent-only detail, the market block and the copy line are not shown");
-      assert.ok(await c.page.locator("#promote-brand-header").isHidden() && await c.page.locator("#promote-markets").isHidden() && await c.page.locator("#promote-partner-lockups").isHidden(), "the guidelines header, the list and lockups are not on a market page");
+      assert.ok(await c.page.locator("#promote-brand-header").isHidden() && await c.page.locator("#promote-partner-lockups").isHidden(), "the guidelines header and lockups are not on a market page");
+      assert.strictEqual(await c.page.locator("#promote-market-select").inputValue(), "thailand", "the dropdown shows the open market");
+      await c.page.locator("#promote-market-select").selectOption("united-states");
+      await c.waitText("#promote-title", "United States", "switch market from the dropdown");
+      assert.strictEqual(new URL(c.page.url()).hash, "#promote/brand-guidelines/markets/united-states");
       assert.ok((await c.page.title()).includes("Brand Guidelines — PH Agent Console"), "the tab title is Brand Guidelines");
       await c.page.locator("#promote-back").click();
       await c.waitText("#promote-title", "Brand Guidelines", "back to the guidelines");
       assert.strictEqual(new URL(c.page.url()).hash, "#promote/brand-guidelines");
-      assert.ok(await c.page.locator("#promote-markets").isVisible() && await c.page.locator("#promote-back").isHidden());
+      assert.ok(await c.page.locator("#promote-pickers").isVisible() && await c.page.locator("#promote-back").isHidden());
+      assert.strictEqual(await c.page.locator("#promote-market-select").inputValue(), "", "the dropdown is back on PH");
     },
   },
   {

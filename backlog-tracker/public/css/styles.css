@@ -2471,18 +2471,17 @@ body { overflow-x: clip; }
 .brand-type-name { font-family: "Kantumruy Pro", Roboto, sans-serif; font-size: 20px; font-weight: 600; }
 .brand-type-sample { font-family: "Kantumruy Pro", Roboto, sans-serif; font-size: 28px; color: #444; }
 @media (max-width: 640px) { .brand-umbrella { font-size: 24px; } }
-/* Brand Guidelines › Partners (co-branding): the list and a partner page's lockups, in the guidelines' own reading column (apple.css .docs-md).
+/* Brand Guidelines › Partners (co-branding): the pickers and a partner page's lockups, in the guidelines' own reading column (apple.css .docs-md).
    The lockup tiles keep literal white and black: they show the two brand surfaces, whatever the console theme. */
 .promote-back { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; color: var(--primary-text); text-decoration: none; font-weight: 500; }
 .promote-back .material-symbols-outlined { font-size: 20px; }
-.promote-partners { max-width: 70ch; margin: 8px auto 24px; }
-.partners-title { font-size: 20px; font-weight: 700; color: var(--text); margin: 0 0 12px; }
-.partner-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
-.partner-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 56px; padding: 8px 16px; border: 1px solid var(--border); border-radius: 8px; color: var(--text); text-decoration: none; background: var(--bg); }
-.partner-card:hover, .partner-card:focus-visible { border-color: var(--primary); background: var(--primary-tint); }
-.partner-card-text { display: flex; flex-direction: column; gap: 2px; }
-.partner-card-name { font-weight: 600; }
-.partner-card-meta { font-size: 13px; color: var(--text-muted); }
+/* The Partners and Markets pickers at the top of Brand Guidelines (ph-designer: labelled native selects, 6px radius, 14px Roboto). */
+.brand-pickers { display: flex; flex-wrap: wrap; gap: 12px 16px; max-width: 80ch; margin: 0 0 20px; }
+.brand-picker { display: flex; flex-direction: column; gap: 4px; min-width: 220px; }
+.brand-pickers[hidden], .brand-picker[hidden] { display: none; }
+.brand-picker-label { font-size: 12px; letter-spacing: 0.5px; text-transform: uppercase; color: var(--text-muted); }
+.brand-picker .pc-select { min-height: 44px; }
+@media (max-width: 640px) { .brand-picker { flex: 1 1 100%; } }
 .partner-lockups { max-width: 70ch; margin: 0 auto 24px; }
 .lockup-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .lockup { margin: 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }

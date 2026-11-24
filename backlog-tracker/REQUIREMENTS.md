@@ -5500,12 +5500,25 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
 ## Brand Guidelines › Partners: one co-branding page per partner (19 Nov 2026)
 
 - Brand Guidelines has a **Partners** subsection: one page per retail network
-  or other partner, listed at the foot of the Brand Guidelines page and opened
-  at `#promote/brand-guidelines/partners/<slug>` (back link to Brand
-  Guidelines; same `promote` permission). The first is **miPharmacy**.
+  or other partner, picked from the **Partners** dropdown at the top of the
+  Brand Guidelines page and opened at
+  `#promote/brand-guidelines/partners/<slug>` (same `promote` permission). The
+  first is **miPharmacy**.
+- **Partners and Markets dropdowns at the top (24 Nov 2026,
+  ssPtNYI8TSv2vzVSAFPk).** Opening Brand Guidelines still shows our own (PH)
+  guidelines. Two labelled native selects sit under the page title, on the
+  guidelines page and on every partner and market page: **Partners** and
+  **Markets**. Each starts with **PH brand guidelines** (the default, and the
+  way back), then every partner or market mirror by name
+  (`brandPickerOptionsHtml` in `public/js/promote-section.js`), so a new one
+  appears with no code change. Choosing one opens its page; the open page's
+  entry stays selected in its dropdown and the other reads PH brand
+  guidelines. A dropdown with nothing to list is hidden. The back link on a
+  partner or market page reads "PH brand guidelines". The Partners and
+  Markets lists that used to sit at the foot of the page are gone.
 - Each partner page is a repo file, `backlog-tracker/promote/partners/<slug>.md`,
   declared in `board-docs.json` with the mirror key `brand-partner-<slug>`.
-  The page lists whatever `brand-partner-*` mirrors exist
+  The Partners dropdown lists whatever `brand-partner-*` mirrors exist
   (`partnersFrom` in `public/js/promote-section.js`), so **adding a partner is
   a new file and a manifest entry, never a code change**. A superseded mirror
   is not listed.
@@ -5532,13 +5545,13 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
 ## Brand Guidelines › Markets: cultural and communication guidelines per market (19 Nov 2026)
 
 - Brand Guidelines has a **Markets** subsection, built like Partners: one page
-  per market, listed at the foot of the Brand Guidelines page (under Partners)
-  and opened at `#promote/brand-guidelines/markets/<slug>` (back link to Brand
-  Guidelines; same `promote` permission). The first are **Thailand**,
+  per market, picked from the **Markets** dropdown at the top of the Brand
+  Guidelines page and opened at `#promote/brand-guidelines/markets/<slug>`
+  (same `promote` permission). The first are **Thailand**,
   **Singapore** and the **United States**.
 - Each market page is a repo file, `backlog-tracker/promote/markets/<slug>.md`,
   declared in `board-docs.json` with the mirror key `brand-market-<slug>`. The
-  page lists whatever `brand-market-*` mirrors exist (`marketsFrom` in
+  Markets dropdown lists whatever `brand-market-*` mirrors exist (`marketsFrom` in
   `public/js/promote-section.js`), so **adding a market is a new file and a
   manifest entry, never a code change**. A superseded mirror is not listed.
 - The file starts with a `<!-- market … -->` block (`slug`, `name`,
