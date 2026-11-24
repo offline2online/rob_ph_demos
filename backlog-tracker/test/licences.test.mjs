@@ -12,14 +12,14 @@ import { normaliseLead } from "../public/js/leads-core.js";
 
 const prospect = (id, d) => normaliseProspect(id, { status: "new", ...d });
 const PROSPECTS = [
-  prospect("acme-united-kingdom", { name: "Acme Retail", country: "United Kingdom", website: "https://www.acme-retail.com", leadId: "prospect-acme-united-kingdom" }),
-  prospect("acme-germany", { name: "Acme Retail", country: "Germany", website: "acme-retail.com" }),
+  prospect("acme-united-kingdom", { name: "Acme Retail", country: "United Kingdom", website: "https://www.acme-retail.example", leadId: "prospect-acme-united-kingdom" }),
+  prospect("acme-germany", { name: "Acme Retail", country: "Germany", website: "acme-retail.example" }),
   prospect("globex-australia", { name: "Globex", country: "Australia", website: "globex.example", awsAccountId: "111122223333" }),
   prospect("initech-united-states", { name: "Initech", country: "United States", website: "initech.example" }),
-  prospect("aws", { name: "AWS", country: "United States", website: "aws.amazon.com" }),
+  prospect("aws", { name: "AWS", country: "United States", website: "aws.example" }),
 ];
 const LEADS = [
-  normaliseLead("prospect-acme-united-kingdom", { company: { name: "Acme Retail", countries: ["United Kingdom"] }, stage: "closed-won", prospectId: "acme-united-kingdom", contacts: [{ name: "Ann", email: "ann@acme-retail.com" }] }),
+  normaliseLead("prospect-acme-united-kingdom", { company: { name: "Acme Retail", countries: ["United Kingdom"] }, stage: "closed-won", prospectId: "acme-united-kingdom", contacts: [{ name: "Ann", email: "ann@acme-retail.example" }] }),
   normaliseLead("prospect-umbrella", { company: { name: "Umbrella", countries: ["France"], awsAccountId: "999988887777" }, stage: "closed-won", prospectId: "umbrella-france", contacts: [{ name: "Ula", email: "ula@umbrella.example" }] }),
   normaliseLead("prospect-hooli", { company: { name: "Hooli", countries: ["United States"] }, stage: "closed-won", contacts: [{ name: "Hal", email: "hal@hooli.example" }] }),
   normaliseLead("prospect-test", { company: { name: "Test Co" }, stage: "closed-won", test: true }),
@@ -28,8 +28,8 @@ const lic = (id, d) => normaliseLicence(id, { agreementId: id, ...d });
 const raw = (contacts) => JSON.stringify({ agreementContacts: contacts });
 
 // ── GetAgreementContacts, read defensively ──
-assert.deepEqual(normaliseAgreementContacts(raw([{ name: "Ann Smith", emailAddress: "Ann@Acme-Retail.com", companyName: "Acme Retail", country: "GB" }])),
-  [{ name: "Ann Smith", email: "ann@acme-retail.com", company: "Acme Retail", country: "GB", role: "" }]);
+assert.deepEqual(normaliseAgreementContacts(raw([{ name: "Ann Smith", emailAddress: "Ann@Acme-Retail.example", companyName: "Acme Retail", country: "GB" }])),
+  [{ name: "Ann Smith", email: "ann@acme-retail.example", company: "Acme Retail", country: "GB", role: "" }]);
 assert.deepEqual(normaliseAgreementContacts({ Contacts: [{ FirstName: "Bo", LastName: "Li", EmailAddress: "bo@x.example", CompanyName: "X", CountryCode: "AU", ContactType: "Buyer" }] }),
   [{ name: "Bo Li", email: "bo@x.example", company: "X", country: "AU", role: "Buyer" }], "PascalCase and first/last names");
 assert.deepEqual(normaliseAgreementContacts({ email: "c@y.example", company: "Y" }).map((c) => c.email), ["c@y.example"], "an answer that is one contact");
@@ -37,7 +37,7 @@ assert.deepEqual(normaliseAgreementContacts([{ email: "d@z.example" }]).map((c) 
 assert.deepEqual(normaliseAgreementContacts("not json"), []);
 assert.deepEqual(normaliseAgreementContacts(""), []);
 assert.deepEqual(normaliseAgreementContacts({ contacts: [{}, null, { role: "x" }] }), [], "empty contacts are dropped");
-assert.equal(buyerOf([{ email: "a@gmail.com" }, { email: "b@acme-retail.com" }]).email, "b@acme-retail.com", "a business address is preferred");
+assert.equal(buyerOf([{ email: "a@gmail.com" }, { email: "b@acme-retail.example" }]).email, "b@acme-retail.example", "a business address is preferred");
 assert.equal(buyerOf([]), null);
 
 // ── Email formats on a company profile ──
@@ -50,14 +50,14 @@ assert.deepEqual(companyDomainIndex(companies).get("initech"), ["initech-mail.ex
 const ctx = { prospects: PROSPECTS, leads: LEADS.filter((l) => !l.test), domainIndex: companyDomainIndex(companies) };
 
 // Name and business email domain, in the buyer's country: linked, with that record's lead.
-let m = matchLicence(lic("agmt-acme", { contactsRaw: raw([{ name: "Ann", email: "ann@acme-retail.com", companyName: "ACME retail Ltd", country: "Germany" }]) }), ctx);
+let m = matchLicence(lic("agmt-acme", { contactsRaw: raw([{ name: "Ann", email: "ann@acme-retail.example", companyName: "ACME retail Ltd", country: "Germany" }]) }), ctx);
 assert.equal(m.status, MATCH.review, "'ACME retail Ltd' is not the same company key as 'Acme Retail': name doesn't match, domain only");
-m = matchLicence(lic("agmt-acme", { contactsRaw: raw([{ name: "Ann", email: "ann@uk.acme-retail.com", companyName: "Acme Retail", country: "United Kingdom" }]) }), ctx);
+m = matchLicence(lic("agmt-acme", { contactsRaw: raw([{ name: "Ann", email: "ann@uk.acme-retail.example", companyName: "Acme Retail", country: "United Kingdom" }]) }), ctx);
 assert.equal(m.status, MATCH.linked);
 assert.equal(m.prospect.id, "acme-united-kingdom", "the buyer's country picks the country record (a subdomain counts)");
 assert.equal(m.how, "Company name and email domain");
 assert.equal(m.lead.id, "prospect-acme-united-kingdom", "the TAM record's lead");
-m = matchLicence(lic("agmt-acme-de", { contactsRaw: raw([{ email: "jo@acme-retail.com", companyName: "Acme Retail", country: "Germany" }]) }), ctx);
+m = matchLicence(lic("agmt-acme-de", { contactsRaw: raw([{ email: "jo@acme-retail.example", companyName: "Acme Retail", country: "Germany" }]) }), ctx);
 assert.equal(m.prospect.id, "acme-germany");
 assert.equal(m.lead, null, "no lead on the German record");
 
@@ -83,7 +83,7 @@ m = matchLicence(lic("agmt-none", { contactsRaw: raw([{ email: "a@nowhere.exampl
 assert.equal(m.status, MATCH.review);
 assert.equal(m.how, "No TAM company found");
 assert.deepEqual(m.suggestions, []);
-m = matchLicence(lic("agmt-aws", { contactsRaw: raw([{ email: "x@aws.amazon.com", companyName: "AWS" }]) }), ctx);
+m = matchLicence(lic("agmt-aws", { contactsRaw: raw([{ email: "x@aws.example", companyName: "AWS" }]) }), ctx);
 assert.equal(m.status, MATCH.review, "the AWS record is never a customer");
 
 // A person's link wins over everything, and a link to a record that's gone falls back.
@@ -100,13 +100,13 @@ assert.equal(onboardingOf({ status: MATCH.review }, { email: "a@b.example" }), "
 
 // ── Rows: licences, then won leads without an agreement ──
 const licences = [
-  lic("agmt-acme", { awsAccountId: "123456789012", status: "ACTIVE", contactsRaw: raw([{ name: "Ann", email: "ann@acme-retail.com", companyName: "Acme Retail", country: "United Kingdom" }]) }),
+  lic("agmt-acme", { awsAccountId: "123456789012", status: "ACTIVE", contactsRaw: raw([{ name: "Ann", email: "ann@acme-retail.example", companyName: "Acme Retail", country: "United Kingdom" }]) }),
   lic("agmt-none", { contactsRaw: raw([{ name: "Nia", email: "nia@nowhere.example", companyName: "Nowhere" }]) }),
 ];
 const rows = buildRows({ licences, prospects: PROSPECTS, leads: LEADS, companies });
 const acme = rows.find((r) => r.id === "agmt-acme");
 assert.deepEqual([acme.company, acme.contactName, acme.contactEmail, acme.awsAccountId, acme.match, acme.prospectName, acme.leadId, acme.onboarding],
-  ["Acme Retail", "Ann", "ann@acme-retail.com", "123456789012", "linked", "Acme Retail", "prospect-acme-united-kingdom", "ready"],
+  ["Acme Retail", "Ann", "ann@acme-retail.example", "123456789012", "linked", "Acme Retail", "prospect-acme-united-kingdom", "ready"],
   "the licence shows the company and contact, linked to the TAM company and lead, not by account ID only");
 const awaiting = rows.filter((r) => r.match === MATCH.awaiting).map((r) => r.leadId).sort();
 assert.deepEqual(awaiting, ["prospect-hooli", "prospect-umbrella"], "won leads with no licence are listed; one with a licence and test leads are not");

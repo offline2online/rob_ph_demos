@@ -83,7 +83,7 @@ check("editors and admins may sync; viewers and strangers may not", async () => 
 });
 
 check("sync pages through the agreements, reads each one's contacts and stores them raw", async () => {
-  const contacts = { "agmt-1": { agreementContacts: [{ name: "Ann", emailAddress: "ann@acme-retail.com", companyName: "Acme Retail", country: "GB" }] }, "agmt-2": new Error("contacts not available") };
+  const contacts = { "agmt-1": { agreementContacts: [{ name: "Ann", emailAddress: "ann@acme-retail.example", companyName: "Acme Retail", country: "GB" }] }, "agmt-2": new Error("contacts not available") };
   const { api, db, calls } = makeApi({ contacts });
   const res = await call(api, "POST", "/v1/licences/sync");
   assert.strictEqual(res.statusCode, 200, JSON.stringify(res.body));
