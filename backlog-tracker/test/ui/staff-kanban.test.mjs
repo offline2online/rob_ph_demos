@@ -519,6 +519,34 @@ T("KB-PRIO-ORDER", "columns list tickets by priority, Highest first, then rank, 
   await p.done();
 });
 
+// Ready for Testing order (IhCe2GWsVMkO0Zc4UsPT, KB-BOARD-3b): bugs first by priority, then tasks, then epics
+// at the bottom, on the plain board and in a staff swimlane; other columns stay priority then rank.
+T("KB-TESTING-ORDER", "Ready for Testing lists bugs first, then tasks, then epics, each by priority", { on: on.desktop }, async (prof) => {
+  const seed = kanbanSeed();
+  const base = Object.values(KB.kanbanTasks).find((t) => t.open && t.type === "task");
+  const extraTasks = {}, extraCards = {};
+  // Ranked so rank order alone would put the epics first and the bugs last.
+  [["epic", "highest", 1], ["epic", "low", 2], ["task", "low", 3], ["task", "highest", 4], ["bug", "low", 5], ["bug", "high", 6], ["bug", "highest", 7]].forEach(([type, priority, r], i) => {
+    const key = `PH-${2100 + i}`;
+    const t = { ...base, key, number: 2100 + i, type, title: `Testing order ${i}`, status: "ready-for-testing", open: true, rank: -1000 + r, priority, assignee: LINH, resolution: null, labels: [], epic: "", links: [], attachments: [], flagged: false, needsMoreWork: null };
+    delete t.closedAt;
+    extraTasks[key] = t; extraCards[key] = cardOfTask(t);
+  });
+  seed.docs.kanbanTasks = { ...seed.docs.kanbanTasks, ...extraTasks };
+  seed.docs.kanbanCards = { ...seed.docs.kanbanCards, ...extraCards };
+  const p = await open(prof, "#staff-kanban", { seed, height: 2000 });
+  const want = ["PH-2106", "PH-2105", "PH-2104", "PH-2103", "PH-2102", "PH-2100", "PH-2101"];
+  const ours = async (sel) => (await p.$$eval(sel, (e) => e.map((x) => x.dataset.key))).filter((k) => /^PH-21\d\d$/.test(k));
+  assert.deepEqual(await ours('.kb-col[data-status="ready-for-testing"] .kb-card'), want, "plain board: bugs (Highest, High, Low), tasks, epics");
+  // every bug in the column is above every task, and every task above every epic
+  const types = await p.evaluate(() => Object.fromEntries([...globalThis.__fbStub.col("kanbanTasks").values()].map((t) => [t.key, t.type])));
+  const all = (await p.$$eval('.kb-col[data-status="ready-for-testing"] .kb-card', (e) => e.map((x) => x.dataset.key))).map((k) => ({ bug: 0, epic: 2 }[types[k]] ?? 1));
+  assert.deepEqual(all, [...all].sort((a, b) => a - b), "the column is grouped bug, task, epic");
+  await press(p, `.kb-person-chip[data-person="${LINH}"]`);
+  assert.deepEqual(await ours(`.kb-lane-cell[data-lane="${LINH}"][data-status="ready-for-testing"] .kb-card`), want, "swimlane: same order");
+  await p.done();
+});
+
 // Needs more work (DHtgfhGz2t1gcKX8adz0, KB-BOARD-5a): a ticket in Ready for Testing that didn't pass goes
 // back to Ready for Dev and its developer with a red stamp and the reason, drawn above every other ticket.
 T("KB-NEEDS-WORK", "Needs more work sends a tested ticket back to Ready for Dev, stamped and first in the column", { on: on.desktop }, async (prof) => {
@@ -529,7 +557,8 @@ T("KB-NEEDS-WORK", "Needs more work sends a tested ticket back to Ready for Dev,
   const top = mk("PH-3001", 3001, { title: "Highest in Ready for Dev", status: "ready-for-dev", priority: "highest", rank: -5000, assignee: HUY, previousAssignee: "" });
   seed.docs.kanbanTasks = { ...seed.docs.kanbanTasks, [tested.key]: tested, [top.key]: top };
   seed.docs.kanbanCards = { ...seed.docs.kanbanCards, [tested.key]: cardOfTask(tested), [top.key]: cardOfTask(top) };
-  const p = await open(prof, "#staff-kanban", { seed, height: 2000 });
+  // The reason is dictated (syB6fGiu5wIc1UBksHGa): the prompt's mic talks into the box, like the comment box's.
+  const p = await open(prof, "#staff-kanban", { seed, height: 2000, init: speechStub("save button still greys out on the iPad") });
   const devKeys = () => p.$$eval('.kb-col[data-status="ready-for-dev"] .kb-card', (e) => e.map((x) => x.dataset.key));
   // A ticket outside Ready for Testing has no such action.
   await press(p, '.kb-card[data-key="PH-3001"] .card-title');
@@ -542,16 +571,27 @@ T("KB-NEEDS-WORK", "Needs more work sends a tested ticket back to Ready for Dev,
   await press(p, "#f-needs-work");
   await until(async () => !!(await p.$("#kb-needs-work-reason")), "the reason prompt");
   assert.equal(await p.$eval("#kb-needs-work-ok", (b) => b.disabled), true, "a reason is required");
-  await p.fill("#kb-needs-work-reason", "Save button still greys out on the iPad");
+  await press(p, "#kb-needs-work-mic");
+  await eventually(async () => assert.equal(await p.$eval("#kb-needs-work-reason", (t) => t.value), "Save button still greys out on the iPad", "the words said land in the box"));
+  assert.equal(await p.textContent("#kb-needs-work-mic"), "stop", "the mic shows it is listening");
+  await press(p, "#kb-needs-work-mic");
+  await eventually(async () => assert.equal(await p.textContent("#kb-needs-work-mic"), "mic"));
+  assert.equal(await p.$eval("#kb-needs-work-ok", (b) => b.disabled), false, "a dictated reason can be sent");
+  assert.match(await p.textContent("#kb-needs-work-count"), /^39 \/ 500/);
   await press(p, "#kb-needs-work-ok");
   await eventually(async () => assert.equal((await devKeys())[0], "PH-3000", "first in Ready for Dev, above the Highest ticket"));
   const card = '.kb-col[data-status="ready-for-dev"] .kb-card[data-key="PH-3000"]';
   assert.ok(await p.$eval(card, (c) => c.classList.contains("kb-card-needs-work")), "the card is marked");
   assert.match(await p.$eval(`${card} .kb-needs-work`, (e) => e.innerText), /Needs more work/i);
   assert.match(await p.$eval(`${card} .kb-needs-work-reason`, (e) => e.textContent), /Save button still greys out on the iPad/);
-  const banner = await p.$eval(`${card} .kb-needs-work`, (e) => { const r = e.getBoundingClientRect(), c = e.closest(".kb-card").getBoundingClientRect(); return { w: r.width, cw: c.width, bg: getComputedStyle(e).backgroundColor }; });
+  const banner = await p.$eval(`${card} .kb-needs-work`, (e) => { const r = e.getBoundingClientRect(), c = e.closest(".kb-card").getBoundingClientRect(), h = e.querySelector(".kb-needs-work-head"); return { w: r.width, cw: c.width, bg: getComputedStyle(e).backgroundColor, caps: getComputedStyle(h).textTransform, size: parseFloat(getComputedStyle(h).fontSize) }; });
   assert.ok(banner.w > banner.cw * 0.8, "the stamp runs across the card");
   assert.notEqual(banner.bg, "rgba(0, 0, 0, 0)", "the stamp is filled");
+  // A quiet alert, not a siren: a light fill, sentence case, no bigger than the card's own text.
+  const [r, g, b] = banner.bg.match(/\d+/g).map(Number);
+  assert.ok(r > 240 && g > 220 && b > 220, `the stamp's fill is light, not solid red (${banner.bg})`);
+  assert.equal(banner.caps, "none", "the heading is not shouted in capitals");
+  assert.ok(banner.size <= 12, "the heading is small");
   const stored = await p.evaluate(() => globalThis.__fbStub.col("kanbanTasks").get("PH-3000"));
   assert.equal(stored.status, "ready-for-dev");
   assert.equal(stored.assignee, HUY, "back with its developer");
@@ -747,6 +787,45 @@ T("TC-18", "modal: pinned action bar, collapsible details column remembered", { 
   await until(async () => /PH-21/.test(await p.textContent("#task-title-h")) && !(await p.$eval("#task-backdrop", (e) => e.hidden)), "PH-21 to open");
   assert.ok(await p.$eval(".kb-task-grid", (e) => e.classList.contains("kb-side-collapsed")), "the next ticket opens with the details column still closed");
   assert.ok(await p.isHidden("#kb-task-side"), "and the column is not shown");
+  await p.done();
+});
+
+T("KB-C40", "modal: the details column is frozen — the ticket scrolls under it, and every edit control on the right stays inside the modal above the Save bar (KB-MOD-8)", async (prof) => {
+  const p = await open(prof);
+  await press(p, '.kb-card[data-key="PH-20"]');
+  await p.waitForSelector('#task-backdrop:not([hidden]) #kb-task-side [data-field="status"]');
+  // Enough comments that the ticket is always longer than the modal, whatever the window.
+  await p.$eval("#f-comments", (ul) => { for (let i = 0; i < 40; i++) { const li = document.createElement("li"); li.className = "kb-test-filler"; li.style.height = "40px"; li.textContent = `filler ${i}`; ul.appendChild(li); } });
+  const frozen = prof.width > 760 && prof.height >= 520;
+  const measure = () => p.evaluate(() => {
+    const r = (el) => el.getBoundingClientRect();
+    const pn = document.querySelector(".kb-task-panel"), side = document.getElementById("kb-task-side");
+    return { panel: r(pn), head: r(pn.querySelector(".modal-header")), side: r(side), bar: r(document.querySelector(".kb-form-actions")), desc: r(document.querySelector('[data-field="description"]')), sticky: getComputedStyle(side).position, max: pn.scrollHeight - pn.clientHeight,
+      fields: [...side.querySelectorAll(".kb-field:not([hidden])")].map((f) => f.dataset.field) };
+  });
+  const start = await measure();
+  if (!frozen) {
+    // A phone stacks the details under the ticket, as before: nothing is pinned.
+    assert.notEqual(start.sticky, "sticky", "below 761 px the details column is not pinned");
+    await p.done();
+    return;
+  }
+  assert.equal(start.sticky, "sticky", "the details column is pinned beside the ticket");
+  assert.ok(start.max > 200, `the ticket is longer than the modal (${start.max} px to scroll)`);
+  for (const pos of [0, Math.round(start.max / 2), 99999]) {
+    await p.$eval(".kb-task-panel", (el, y) => { el.scrollTop = y; }, pos);
+    await p.waitForTimeout(50);
+    const m = await measure();
+    assert.ok(m.side.top >= m.head.bottom - 1, `scrolled to ${pos}: the column's top (${Math.round(m.side.top)}) is below the modal's header (${Math.round(m.head.bottom)}), not under it`);
+    assert.ok(m.side.bottom <= m.bar.top + 1, `scrolled to ${pos}: the column ends (${Math.round(m.side.bottom)}) above the Save bar (${Math.round(m.bar.top)})`);
+    if (pos) assert.ok(m.desc.top < start.desc.top - 100, "the ticket's own details scrolled up under the column");
+  }
+  // Every field in the column can be reached inside the column itself, and the page stays put.
+  for (const f of start.fields) {
+    await p.$eval(`#kb-task-side [data-field="${f}"]`, (el) => el.scrollIntoView({ block: "nearest" }));
+    const ok = await p.evaluate((k) => { const s = document.getElementById("kb-task-side").getBoundingClientRect(), b = document.querySelector(`#kb-task-side [data-field="${k}"]`).getBoundingClientRect(); return b.top >= s.top - 1 && b.bottom <= s.bottom + 1; }, f);
+    assert.ok(ok, `${f} can be shown inside the details column`);
+  }
   await p.done();
 });
 

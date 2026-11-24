@@ -139,6 +139,7 @@ or the board scrolls under a held finger, so a card lands where it was last
 shown.
 
 **KB-BOARD-3a Priority order** (24 Nov 2026). Every column lists its tickets
+(Ready for Testing grouped by type first, KB-BOARD-3b)
 from the highest priority down to the lowest: Highest, High, Medium, Low,
 Lowest (a ticket with no priority counts as Medium), and by rank (the manual
 drag order) within one priority. The same order applies on the plain board
@@ -152,6 +153,19 @@ another band). AC: on the unfiltered board and in a swimlane, a Highest ticket
 ranked last in its column is drawn first; two tickets of the same priority
 keep their drag order. `kanban-core.js` `byBoardOrder` / `dropNeighbours`,
 `kanban-core.test.mjs`, `staff-kanban.test.mjs` ("KB-PRIO-ORDER").
+
+**KB-BOARD-3b Ready for Testing by type** (24 Nov 2026). The Ready for
+Testing column groups its tickets by type before priority: **bugs at the
+top, then tasks, then epics at the bottom** (a ticket of any other type sits
+with the tasks). Within each group KB-BOARD-3a applies unchanged: Highest
+down to Lowest (none = Medium), then rank. The same order applies on the
+plain board, in each staff swimlane and with any filter on, before paging.
+A drag in Ready for Testing changes a ticket's place only among tickets of
+its own type and priority. Every other column keeps KB-BOARD-3a's order
+(type plays no part there). AC: in Ready for Testing a Low bug is drawn
+above a Highest task, and a Highest epic below a Low task.
+`kanban-core.js` `typeBand` / `byBoardOrder`, `kanban-core.test.mjs`,
+`staff-kanban.test.mjs` ("KB-TESTING-ORDER").
 
 **KB-BOARD-4 Closing targets.** While any card is dragged, the Completed /
 Withdrawn column's cards hide and two large drop targets fill the visible
@@ -183,11 +197,15 @@ labels, linked/unlinked tickets); status moves keep their own line.
 that doesn't pass testing is sent back with a **Needs more work** stamp: the
 red **Needs more work** button at the top of the open ticket (shown while it is
 in Ready for Testing, to anyone who can edit) asks what still needs doing (required, up to 500
-characters) and moves it to **Ready for Dev**, returning it to its developer as
+characters, with a count under the box; typed, or **dictated** with the mic
+inside the box, the same mic as the description and comment boxes, and
+editable before sending) and moves it to **Ready for Dev**, returning it to its developer as
 KB-BOARD-5 does. The ticket and its card carry `needsMoreWork` `{reason, by,
-at}`. While stamped, the card has a red outline and a full-width red "Needs
-more work" banner with the reason across its top, the open ticket shows the
-banner with who sent it back and when, and the ticket is drawn **above every
+at}`. While stamped, the card has a thin red left edge and a full-width
+"Needs more work" note across its top in the platform's quiet alert style
+(light red fill, small sentence-case red heading, the reason in body text;
+toned down from a solid red banner on 24 Nov 2026), the open ticket shows the
+note with who sent it back and when, and the ticket is drawn **above every
 other ticket in its column**, Highest priority included (KB-BOARD-3a applies
 among stamped tickets), in Ready for Dev and still in In Progress or Backlog if
 the developer moves it there, so a pushed-back ticket is seen and fixed
@@ -197,8 +215,9 @@ activity line ("marked Needs more work: <reason>", "cleared Needs more work").
 A plain drag back out of Ready for Testing does not stamp a ticket. Over MCP,
 `kanban_move_task` takes `needsMoreWork` (the reason) with status `backlog`,
 `ready-for-dev` or `in-progress` on a ticket in Ready for Testing. AC: send a
-Ready for Testing ticket back with a reason; it is first in Ready for Dev,
-above a Highest ticket, with the red banner and reason, assigned to its
+Ready for Testing ticket back with a reason (dictated or typed); it is first
+in Ready for Dev, above a Highest ticket, with the light "Needs more work" note
+and reason, assigned to its
 developer; move it to In Progress and it is still stamped and first; move it to
 Ready for Testing and the stamp is gone. `kanban-core.js` `statusChange` /
 `byBoardOrder`, `kanban-core.test.mjs`, `kanban-mcp.test.js`,
@@ -635,9 +654,21 @@ Shared with the console's other mics: `backlog-tracker/public/js/dictation-resul
 `backlog-tracker/test/dictation-results.test.mjs`.
 
 **KB-MOD-5 Layout.** Delete / Cancel / primary button are pinned to the bottom
-of the modal. The details column runs the full height of the modal and folds away to the right (the button at the top of the column or the
+of the modal. The details column runs down the right of the modal (pinned while the ticket scrolls, KB-MOD-8) and folds away to the right (the button at the top of the column or the
 "Details" tab) so the description gets the full width; the choice is
 remembered and the column reopens if a required field in it is empty.
+
+**KB-MOD-8 The details column stays put (24 Nov 2026).** Wherever the details
+column sits beside the ticket (wider than 760 px, in a window at least 520 px
+tall), it is frozen in the modal: scrolling moves only the ticket itself (title,
+description, criteria, links, attachments, comments, "N more fields" and the
+Created line), and every control down the right (Priority, Type, Parent, people,
+Release, estimate and time, Sprint, Project, Due date, Labels, Status) stays on
+screen, pinned under the modal's header. The column is never taller than the modal
+can show above the pinned Save bar; a column longer than that scrolls on its own,
+inside the modal, without moving the ticket. On a phone the details still stack
+under the ticket as before. Tested by KB-C40 in
+`backlog-tracker/test/ui/staff-kanban.test.mjs`.
 
 **KB-MOD-6 Validation.** Required fields (per settings) are marked and
 checked on save; estimate and time logged accept `1d 4h`, `6h`, `30m`.

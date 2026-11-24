@@ -220,7 +220,11 @@ export const prioRank = (t) => { const i = PRIORITIES.findIndex((p) => p.key ===
 // KB-BOARD-5a: a ticket sent back from testing ("Needs more work") is drawn
 // above every other ticket in its column, then priority and rank as usual.
 export const needsWork = (t) => !!(t && t.needsMoreWork && typeof t.needsMoreWork === "object");
-export const boardBand = (t) => (needsWork(t) ? 0 : 10) + prioRank(t);
+// KB-BOARD-3b: Ready for Testing groups its tickets by type before priority:
+// bugs first, then tasks (and any other type), then epics at the bottom.
+export const TESTING_TYPE_ORDER = { bug: 0, task: 1, epic: 2 };
+export const typeBand = (t) => (t && t.status === "ready-for-testing" ? (Object.prototype.hasOwnProperty.call(TESTING_TYPE_ORDER, t.type) ? TESTING_TYPE_ORDER[t.type] : 1) : 0);
+export const boardBand = (t) => (needsWork(t) ? 0 : 100) + typeBand(t) * 10 + prioRank(t);
 export const byBoardOrder = (a, b) => boardBand(a) - boardBand(b) || (Number(a.rank) || 0) - (Number(b.rank) || 0);
 // A drop at position idx of a column in board order (the dragged ticket left
 // out) takes its rank from the nearest tickets of its own priority on each
