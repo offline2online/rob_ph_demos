@@ -8,7 +8,7 @@ import CONFIG from '../config.js';
 import { signIn, showBlocked, hideGate } from './auth.js';
 import { createClient } from './api.js';
 import { createSaveQueue } from './save-queue.js';
-import { rt, bindRichText } from './rich-text.js';
+import { rt, pt, bindRichText, bindPlainText } from './rich-text.js';
 import { openPicker, closePicker } from './icon-picker.js';
 import * as M from './model.js';
 import { storeModel, resolvePromotion, sequence, sceneName, renderScene, renderMessage, DEFAULT_HTML, footerConfig, boost, tileTop, occasionOf, occasionFieldName, beatSeconds, seasonDates, seasonDatesOf, fmtMonthDay, scheduledOccasion, activationUntil, activationOn, FALLBACK_OCCASION } from '../../js/render.js';
@@ -335,7 +335,7 @@ function renderDp() {
     return;
   }
   if (isOcc()) { renderOccasion(B, d); hideTimings(B); decorateSections(B); return; }
-  const f = (id, lab, val) => `<label class="f"><span>${lab}</span><input id="${id}" value="${esc(val)}"></label>`;
+  const f = pt; // every plain copy field has + Add token and its tokens used (rich-text.js)
   const F = footerConfig(d);
   B.innerHTML = `<span class="pill" id="loopLen" style="justify-self:start"></span><div><div class="slot"><div class="slot-h">Top: Greeting<label class="dur" style="margin-left:auto" title="How long this shows on screen"><span class="ms">timer</span><input type="number" id="ddur" min="1" max="60" step="0.5" value="${+d.introDur || 3}" aria-label="Seconds on screen">s</label></div><div class="stack">${rt('dg', 'Headline', d.greeting)}${f('dit', 'Line 1', d.introTitle)}${f('dis', 'Line 2', d.introSub)}</div></div></div>
    <div id="slotsSec" style="display:grid;gap:12px"><div id="slotList" style="display:grid;gap:12px">${d.slots.map((x, i) => `<div class="slot" data-i="${i}"><div class="slot-h"><span class="ms drag" title="Drag to reorder" aria-label="Drag to reorder">drag_indicator</span><span class="ic" style="background:${esc(s.colours.primary)}"><span class="ms">${esc(x.icon)}</span></span>Promotion ${i + 1}<span class="hint" style="font-weight:400">· ${esc(x.label)}</span>
@@ -408,6 +408,7 @@ function renderDp() {
   bindRt('ftOpen', (v) => fset('open', v)); bindRt('ftClosing', (v) => fset('closing', v)); bindRt('ftBefore', (v) => fset('before', v)); bindRt('ftClosed', (v) => fset('closed', v));
   $('ftShow').onchange = (e) => { fset('show', e.target.checked); changed(); };
   bindRt('cl1', (v) => { d.close.title = v; }); on('cl2', (v) => { d.close.sub = v; }); on('cl3', (v) => { d.close.line1 = v; }); on('cl4', (v) => { d.close.line2 = v; });
+  ['dit', 'dis', 'cl2', 'cl3', 'cl4', ...d.slots.flatMap((x, i) => ['sub', 'label', 'line1', 'line2'].map((k) => `s${i}${k}`))].forEach(bindPlainText);
   hideTimings(B); decorateSections(B); renderBarTabs();
 }
 
@@ -642,7 +643,7 @@ function drawSchedule(prefix, s, onChange) {
 function renderOccasion(B, d) {
   const occ = occasionOf(seasonOf());
   const o = d.occasions[occ.id];
-  const f = (id, lab, val) => `<label class="f"><span>${lab}</span><input id="${id}" value="${esc(val)}"></label>`;
+  const f = pt; // every plain copy field has + Add token and its tokens used (rich-text.js)
   const field = (layout, x, i, key) => (key === 'label' ? f(`o${i}label`, occasionFieldName(layout, 'label'), x.label) : rt(`o${i}text`, occasionFieldName(layout, 'text'), x.text));
   if (occ.fallback) return renderFallback(B, occ, o, field);
   const year = new Date().getFullYear(), r = seasonDates(occ.id, o, year), movable = occ.season && occ.season.easter && !seasonDatesOf(o).from;
@@ -675,7 +676,7 @@ function renderOccasion(B, d) {
   occ.beats.forEach((layout, i) => {
     const x = o.beats[i];
     bindRt(`o${i}text`, (v) => { x.text = v; });
-    if (layout.label) $(`o${i}label`).oninput = (e) => { x.label = e.target.value; changed(); };
+    if (layout.label) { $(`o${i}label`).oninput = (e) => { x.label = e.target.value; changed(); }; bindPlainText(`o${i}label`); }
     $(`o${i}dur`).oninput = (e) => {
       const v = M.clampDur(e.target.value);
       if (v === undefined) delete x.dur; else x.dur = v;

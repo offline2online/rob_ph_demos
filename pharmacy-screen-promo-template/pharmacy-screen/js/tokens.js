@@ -6,7 +6,7 @@
 //   ${StoreName} the pharmacy's name (Seasonal copy: "from the whole ${StoreName} team").
 //   ${CloseTime} ${OpenTime}   the current session's times, e.g. "7PM" (the "Open today" bar).
 //   ${Phone} ${State} ${StoreCode}   store_info.address_info.phone_number / .state and store_location.store_code.
-// The editor's "+ Add token" menu on every headline field lists the tokens copy can use (ADD_TOKENS).
+// The editor's "+ Add token" menu on every copy field lists the tokens copy can use (ADD_TOKENS).
 // Templates use the same format for their slots (${Headline}, ${Content}, ... see TEMPLATE_TOKENS).
 //
 // A pharmacy can set a token's value by hand (Admin → Settings → Tokens; pharmacy.tokens, a map of token name ->
@@ -102,7 +102,7 @@ export const TEMPLATE_TOKENS = {
 /** Tokens filled from the store's data (the Location API, the pharmacy's name, today's hours). */
 export const DATA_TOKENS = ['Suburb', 'StoreName', 'Phone', 'State', 'StoreCode', 'CloseTime', 'OpenTime'];
 
-/** The tokens the editor's "+ Add token" menu offers above every headline field, in the order shown: the store's
+/** The tokens the editor's "+ Add token" menu offers above every copy field, in the order shown: the store's
  *  data only. `source` is an optional sub-line under the label; the store's data has none (every user's data is from
  *  Personalisation Hub, so saying so tells them nothing). Brand name, Website, Languages spoken and Localised copy
  *  are not offered: a value set for them in Settings → Tokens still fills ${BrandName} / ${Website} /

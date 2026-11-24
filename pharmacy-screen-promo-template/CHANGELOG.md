@@ -30,6 +30,13 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Changed
 
+- **+ Add token on every copy field, and the tokens each field uses shown under it.** Every field that takes copy,
+  in the admin view and the pharmacy view, now has **+ Add token** on its label row, not just the headlines: the
+  accent lines, Line 1 / Line 2 (greeting, each promotion, walk-in close), the service chip labels and the seasonal
+  Small line above / Line below. The menu is the same (Store name, Suburb, Store code, State, Phone number) and
+  inserts the token at the cursor. Under each copy field, its `${…}` tokens are shown as chips, updated as you type,
+  including a token the menu does not offer (one set by hand in Settings → Tokens, e.g. `${Website}`). Editor only;
+  the screen already filled tokens in every one of these fields.
 - **+ Add token: Languages spoken and Localised copy removed.** The menu above every headline field now lists the
   store's data only: Store name, Suburb, Store code, State and Phone number. Copy that already uses
   `${LanguagesSpoken}` or `${LocalisedCopy}` still shows a value set for it in Settings → Tokens.
