@@ -485,7 +485,7 @@ only: members read all four, no client writes any of them.
 
 - `searchIndex/{source:id}`: one entry per source record. `source`
   (`ticket`, `kanban`, `project`, `concept`, `critique`, `faq`, `lead`,
-  `prospect`, `support`, `document`, `skill`), `recordId`, `title`,
+  `prospect`, `support`, `document`, `documentation`, `skill`), `recordId`, `title`,
   `projectId`, `projectIds` (an interface's projects), `conceptId`, `status`,
   `type`, `owner`, `open`, `archived`, `updatedAt` and `createdAt`
   (milliseconds), `url` (the deep link), `access` (the read tool that guards
@@ -4168,9 +4168,11 @@ Required properties, each covered by `test/mcp-server.test.js`:
 `list_project_documents`, `get_project_document` (documents listed without text,
 searched, and read a page or section at a time — see MCP.md),
 `list_doc_revisions`, `get_doc_revision`, `search_faq`, `get_faq_article`,
-`list_pending_faq_revisions`, `get_faq_revision`, `list_skills`, `get_skill`,
-`list_skill_misses`, `get_routine_setup_instructions`, `list_concepts`,
-`get_concept`.
+`list_pending_faq_revisions`, `get_faq_revision`, `list_documentation`,
+`get_documentation` (the documentation library, Support › Documentation —
+see "Documentation (19 Nov 2026)" below and MCP.md), `list_skills`,
+`get_skill`, `list_skill_misses`, `get_routine_setup_instructions`,
+`list_concepts`, `get_concept`.
 Write (editor/admin only) — tickets: `create_backlog_item` (always into
 `backlog`), `update_backlog_item` (title, desc, type, category, model only),
 `archive_backlog_items` / `delete_backlog_items` (Backlog tickets only, by id,
@@ -6586,7 +6588,8 @@ extends Code Mode and the per-source searches; it replaces none of them.
   README, Requirements, documents, discussion) and their critiques; help
   centre articles; leads; prospects (TAM); Support threads; project
   documents (Requirements, README, mirrors, board documents, interface
-  contracts); and skills.
+  contracts); the documentation library (Support › Documentation, the
+  pages migrated from Confluence; source `documentation`); and skills.
 - **CTX-4** Ranking is hybrid: BM25 over the text (a title word counting
   three times) plus a vector similarity, combined 65 to 35, then a recency
   boost of at most 30% that fades over about 45 days. Every record has a
