@@ -482,6 +482,12 @@ async function main() {
   await check("A prospect's priority is high, medium or low", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { priority: "urgent" }));
   await check("A prospect's insights are capped at 2000 characters", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { insights: "x".repeat(2001) }));
   await check("A prospect holds at most 30 contacts", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { contacts: Array.from({ length: 31 }, () => ({ name: "A", role: "B", lastContact: "" })) }));
+  await check("An editor can import AWS Account Mapping results onto a prospect", "allow", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { awsMapping: { matched: true, awsAccountId: "123456789012", propensity: "high", propensityRaw: "92", signals: ["Cloud migration"], greenfieldEligible: true, salesMotionEligible: null, lastSyncedAt: new Date(), source: "csv-import" } }));
+  await check("AWS Account Mapping's propensity is high, medium, low or blank", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { awsMapping: { propensity: "urgent" } }));
+  await check("AWS Account Mapping must be a map", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { awsMapping: "high" }));
+  await check("An editor can save a joint planning draft on a prospect", "allow", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { jointPlanning: { status: "draft", text: "Subject: Joint account planning request", draftedByEmail: "editor@ph.example", draftedAt: new Date() } }));
+  await check("A joint planning draft is draft or submitted", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { jointPlanning: { status: "sent", text: "x" } }));
+  await check("A joint planning draft is capped at 4000 characters", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { jointPlanning: { status: "draft", text: "x".repeat(4001) } }));
   await check("A prospect's verified flag is a boolean", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { linkedinVerified: "yes" }));
   await check("A new prospect must name its country", "deny", () => { const { country, ...rest } = PROSPECT; return setDoc(doc(as(MEMBER), "prospects/p5"), rest); });
   await check("A document without a country still updates (older records)", "allow", async () => { const { country, ...rest } = PROSPECT; await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), "prospects/old1"), rest)); return updateDoc(doc(as(MEMBER), "prospects/old1"), { status: "researching" }); });

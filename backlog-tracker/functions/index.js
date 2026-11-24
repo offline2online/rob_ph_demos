@@ -2899,9 +2899,20 @@ exports.aceToGa4 = onRequest({ cors: false, secrets: [GA4_MP_API_SECRET, BOARD_A
   // 320 s curl limit.
   if (req.method === "POST" && keyMatches(req.get("x-board-key"), BOARD_API_KEY.value())) {
     try { await getFunnelIngestJob().runIfDue(); } catch (err) { logger.error("funnelIngest (due run) failed", { error: String((err && err.message) || err) }); }
+    // Prospects (TAM): the daily AWS Partner Account Mapping re-sync check
+    // (account-mapping.js). It counts the records due a re-sync onto
+    // consoleConfig/accountMapping; it never calls AWS and never fails the ACE job.
+    try { await getAccountMappingCheck().runIfDue(); } catch (err) { logger.error("accountMapping check failed", { error: String((err && err.message) || err) }); }
   }
   return aceGa4Job.handle(req, res);
 });
+
+const { createAccountMappingCheck } = require("./account-mapping");
+let accountMappingCheck = null;
+function getAccountMappingCheck() {
+  if (!accountMappingCheck) accountMappingCheck = createAccountMappingCheck({ db: getFirestore(), logger });
+  return accountMappingCheck;
+}
 
 // Promote › Conversion Funnel: the daily GA4 / Google Ads / leads / ACE ingest
 // that fills funnelDaily (funnel-ingest.js). Reads GA4 with this function's own

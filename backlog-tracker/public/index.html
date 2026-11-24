@@ -1437,6 +1437,7 @@
       <div class="um-count" id="prospects-count" role="status" aria-live="polite"></div>
       <div class="um-toolbar" id="prospects-tools" role="group" aria-label="Prospects tools">
         <div class="prospects-actions">
+          <button type="button" class="btn-ghost" id="prospects-awsmap-btn" aria-haspopup="dialog" title="Sync the TAM with AWS Partner Account Mapping: export the upload file, import AWS's results">AWS Account Mapping</button>
           <button type="button" class="btn-ghost" id="prospects-saved-btn" aria-haspopup="menu" aria-expanded="false" title="Save, apply or delete filters (kept in this browser)">Saved filters</button>
           <button type="button" class="btn-ghost" id="prospects-columns-btn" aria-haspopup="menu" aria-expanded="false" title="Choose which columns to show">Columns</button>
           <button type="button" class="btn-ghost" id="prospects-export" title="Download the rows that match the current filters as a CSV file">Export CSV</button>
@@ -1513,6 +1514,27 @@
           <button type="button" class="btn-primary" id="prospect-drawer-edit" data-editor-only>Edit</button>
           <button type="button" class="btn-primary" id="prospect-drawer-save" data-editor-only hidden>Save</button>
           <button type="button" class="btn-ghost" id="prospect-drawer-cancel" hidden>Cancel</button>
+        </div>
+      </aside>
+    </div>
+
+    <!-- Prospects (TAM) › AWS Account Mapping (js/prospects-page.js; rules in prospects-core.js →
+         "AWS Partner Account Mapping"): the upload file for Partner Central's Account Mapping and the
+         import of its results (match, propensity, signals, programme eligibility) onto each record. -->
+    <div class="modal-backdrop lead-drawer-backdrop" id="prospect-awsmap-backdrop" hidden>
+      <aside class="modal-panel lead-drawer prospect-drawer" id="prospect-awsmap" role="dialog" aria-modal="true" aria-labelledby="prospect-awsmap-title">
+        <div class="modal-header">
+          <div class="lead-sum-head"><h2 id="prospect-awsmap-title">AWS Account Mapping <span class="material-symbols-outlined pd-info" tabindex="0" role="img" aria-label="About AWS Account Mapping" title="Export the upload file and upload it to Account Mapping in AWS Partner Central. Then export AWS's results as CSV and import them here: each company gets its AWS match, propensity to buy, signals and partner programme eligibility, with today as its last-synced date. A company is due a re-sync 30 days after its last import; the console checks this daily. The upload file holds the selected rows, else the companies due a re-sync, else every company.">info</span></h2><p class="field-hint" id="prospect-awsmap-sub"></p></div>
+          <button type="button" class="modal-close" id="prospect-awsmap-close" aria-label="Close">&times;</button>
+        </div>
+        <div id="prospect-awsmap-body" class="lead-sum-body"></div>
+        <p class="prospect-awsmap-result" id="prospect-awsmap-result" role="status" aria-live="polite" hidden></p>
+        <div class="lead-sum-actions">
+          <button type="button" class="btn-primary" id="prospect-awsmap-export">Export upload file</button>
+          <button type="button" class="btn-ghost" id="prospect-awsmap-import" data-editor-only>Import results</button>
+          <input type="file" id="prospect-awsmap-file" class="prospect-awsmap-file" accept=".csv,text/csv" tabindex="-1" aria-hidden="true">
+          <button type="button" class="btn-ghost" id="prospect-awsmap-show">Rank by propensity</button>
+          <button type="button" class="btn-ghost" id="prospect-awsmap-greenfield">Greenfield eligible</button>
         </div>
       </aside>
     </div>

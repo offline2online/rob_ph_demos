@@ -14,6 +14,12 @@
 // blanks, and arrive through the prospects snapshot. A new record is enriched
 // by itself when it is created.
 //
+// The Profile tab also shows AWS Partner Account Mapping's match and signals
+// for this country record (awsMapping, imported on the Prospects page), and a
+// high-potential shared account (isHighPotential) offers "Request joint
+// planning with AWS": it drafts the request (jointPlanning on the record),
+// which a person copies into Partner Central and submits; nothing here sends it.
+//
 // Every control is a <button> or link and acts on click (the iPad rule); the
 // forms are plain <form>s that submit with a button.
 import { doc, getDoc, setDoc, updateDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
@@ -23,7 +29,7 @@ import {
   cleanPerson, cleanAwsMember, cleanDocument, cleanProfile, cleanAce, detailForSave, mailto, initials, isEmail, safeHttpUrl,
   companyDocId, COMPANY_COLLECTION, normaliseDetail, normaliseAwsAccountId,
 } from "./prospect-detail-core.js";
-import { sizeBandLabel, statusLabel } from "./prospects-core.js";
+import { sizeBandLabel, statusLabel, propensityLabel, isHighPotential, isMappingStale, jointPlanningDraft, MAPPING_STALE_DAYS, MAPPING_LIMITS } from "./prospects-core.js";
 import { enrichmentHTML, enrichmentRunning, enrichmentSkipped, enrichButtonLabel, enrichmentStatus } from "./enrichment-view.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -91,10 +97,58 @@ export function mountProspectDetail({ db, root, canEdit, me, getRow, getCompanyR
         ${field("Last researched", txt(fmtDate(p.lastResearchedAt)))}
         ${field("Status", esc(statusLabel(r.status)))}
       </dl></div>
+      ${mappingHTML(r)}
       <div class="pd-card" id="pd-research"><div class="pd-card-head"><h3>Company research</h3></div>
         ${enrichmentHTML(r.enrichment) || '<p class="pd-none">Not enriched yet. Enrich researches the company on the web.</p>'}
       </div>`;
   }
+  // ── AWS Partner Account Mapping (prospects-core.js) ───────────────────────
+  function mappingHTML(r) {
+    const m = r.awsMapping;
+    const field = (label, html) => `<div class="pd-field"><dt>${esc(label)}</dt><dd>${html}</dd></div>`;
+    const none = (t) => `<span class="pd-none">${esc(t)}</span>`;
+    const yn = (v) => (v === true ? "Eligible" : v === false ? "Not eligible" : "Not stated");
+    const head = `<div class="pd-card-head"><h3>AWS Account Mapping <span class="material-symbols-outlined pd-info" tabindex="0" role="img" aria-label="About AWS Account Mapping" title="AWS matches this company to an AWS account and adds its propensity to buy and partner programme eligibility. Imported on the Prospects page (AWS Account Mapping › Import results). Due a re-sync after ${MAPPING_STALE_DAYS} days.">info</span></h3></div>`;
+    if (!m) return `<div class="pd-card" id="pd-mapping">${head}<p class="pd-none">Not synced with AWS Account Mapping yet.</p></div>`;
+    const hp = isHighPotential(r);
+    const jp = r.jointPlanning;
+    const stale = isMappingStale(r, Date.now());
+    const synced = m.lastSyncedAtMs ? new Date(m.lastSyncedAtMs).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "";
+    let joint = "";
+    if (jp) {
+      joint = `<div class="pd-joint" id="pd-joint">
+        <p class="pd-joint-status">${icon(jp.status === "submitted" ? "check_circle" : "edit")}${jp.status === "submitted" ? "Joint planning request marked submitted" : "Joint planning request drafted. Submit it from Partner Central."}</p>
+        <pre class="pd-joint-text">${esc(jp.text)}</pre>
+        <div class="pd-form-actions"><button type="button" class="btn-ghost" data-act="joint-copy">${icon("content_copy")}Copy</button>${canEdit() ? `<button type="button" class="btn-ghost" data-act="joint-edit">${icon("edit")}Edit draft</button>${jp.status === "submitted" ? "" : `<button type="button" class="btn-ghost" data-act="joint-submitted">${icon("check_circle")}Mark submitted</button>`}` : ""}</div>
+      </div>`;
+    } else if (hp && canEdit()) joint = `<div class="pd-form-actions"><button type="button" class="btn-primary" data-act="joint-edit">${icon("handshake")}Request joint planning with AWS</button></div>`;
+    return `<div class="pd-card" id="pd-mapping">${head}
+      ${stale ? `<p class="pd-mapping-due" role="status">${icon("schedule")}Due a re-sync: last synced more than ${MAPPING_STALE_DAYS} days ago.</p>` : ""}
+      ${hp ? `<div class="pd-chips"><span class="pd-chip pd-chip-hp">${icon("star")}High-potential shared account</span></div>` : ""}
+      <dl class="pd-fields">
+        ${field("Matched AWS account", m.matched === true ? `Yes${m.awsAccountId ? ` · <code>${esc(m.awsAccountId)}</code>` : ""}` : m.matched === false ? "No" : none("Not stated"))}
+        ${field("Propensity to buy", m.propensity ? `<span class="pd-prop pd-prop-${esc(m.propensity)}">${esc(propensityLabel(m.propensity))}</span>${m.propensityRaw && m.propensityRaw.toLowerCase() !== m.propensity ? ` <span class="pd-none">(${esc(m.propensityRaw)})</span>` : ""}` : none("Not stated"))}
+        ${field("Signals", list(m.signals, "None sent"))}
+        ${field("Partner Greenfield Program", esc(yn(m.greenfieldEligible)))}
+        ${field("Partner-led Sales Motion", esc(yn(m.salesMotionEligible)))}
+        ${field("Last synced", synced ? esc(synced) : none("Never"))}
+      </dl>
+      ${joint}
+    </div>`;
+  }
+  function jointForm(r) {
+    const text = r.jointPlanning ? r.jointPlanning.text : jointPlanningDraft(r);
+    return `<form class="pd-form" data-form="joint" novalidate>
+      <h3>Request joint planning with AWS</h3>
+      <p class="pd-none">A draft only: copy it into Partner Central and submit it there.</p>
+      <label class="pd-label">Request<textarea class="pd-input pd-joint-input" name="text" rows="14" maxlength="${MAPPING_LIMITS.draft}">${esc(text)}</textarea></label>
+      <p class="pd-form-error" role="alert" hidden></p><div class="pd-form-actions">
+        <button type="submit" class="btn-primary">Save draft</button>
+        <button type="button" class="btn-ghost" data-act="joint-copy">${icon("content_copy")}Copy</button>
+        <button type="button" class="btn-ghost" data-act="cancel">Cancel</button>
+      </div></form>`;
+  }
+
   function profileForm(r, d) {
     const p = d.profile, ace = d.aceOpportunity || {};
     const inp = (name, label, v, extra = "") => `<label class="pd-label">${esc(label)}<input class="pd-input" name="${name}" value="${esc(v)}" ${extra}></label>`;
@@ -271,7 +325,7 @@ export function mountProspectDetail({ db, root, canEdit, me, getRow, getCompanyR
     const logo = p.logoUrl || safeHttpUrl(r.enrichment && r.enrichment.logos && r.enrichment.logos.light) || safeHttpUrl(r.enrichment && r.enrichment.logoUrl);
     let body;
     if (editing && canEdit()) {
-      body = editing.kind === "profile" ? profileForm(r, d) : editing.kind === "person" ? personForm(d, editing.id) : editing.kind === "aws" ? awsForm(d, editing.id) : docForm(d, editing.id, editing.base);
+      body = editing.kind === "joint" ? jointForm(r) : editing.kind === "profile" ? profileForm(r, d) : editing.kind === "person" ? personForm(d, editing.id) : editing.kind === "aws" ? awsForm(d, editing.id) : docForm(d, editing.id, editing.base);
     } else body = tab === "profile" ? profileHTML(r, d) : tab === "contacts" ? contactsHTML() : tab === "org" ? orgHTML(d) : tab === "aws" ? awsHTML(d) : docsHTML(d);
     root.hidden = false;
     root.innerHTML = `<div class="pd-toprow"><button type="button" class="btn-ghost pd-back" data-act="back">${icon("arrow_back")}All prospects</button>${onAllFields ? `<button type="button" class="btn-ghost pd-edit" data-act="allfields">${icon("list_alt")}All fields</button>` : ""}${canEdit() && apiHeaders ? `<button type="button" class="btn-ghost pd-edit" data-act="enrich"${enrichmentRunning(r.enrichment) ? " disabled" : ""}>${icon("auto_awesome")}${esc(enrichButtonLabel(r.enrichment))}</button>` : ""}</div>
@@ -302,8 +356,28 @@ export function mountProspectDetail({ db, root, canEdit, me, getRow, getCompanyR
   const uid = (prefix) => `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
   const urlOk = (form, name, label) => { const v = val(form, name).trim(); if (v && !safeHttpUrl(v)) { showError(form, `${label} isn't a valid web address.`); return false; } return true; };
 
+  // The joint-planning draft lives on this country record (prospects/{id}.jointPlanning).
+  async function saveJoint(jp, okMsg) {
+    try {
+      await updateDoc(doc(db, "prospects", id), { jointPlanning: jp, updatedAt: serverTimestamp(), updatedByEmail: me() });
+      editing = null; say(okMsg);
+    } catch (e) { say(`Couldn't save: ${e && e.message ? e.message : e}`, true); }
+    render();
+  }
+  async function copyJoint(b) {
+    const form = b.closest("form");
+    const r = row();
+    const text = form && form.elements.text ? form.elements.text.value : (r && r.jointPlanning ? r.jointPlanning.text : "");
+    try { await navigator.clipboard.writeText(text); say("Joint planning request copied."); } catch { say("Couldn't copy: select the text and copy it instead.", true); }
+  }
+
   function submit(form) {
     const d = detail(), kind = form.dataset.form, fid = form.dataset.id;
+    if (kind === "joint") {
+      const text = val(form, "text").trim().slice(0, MAPPING_LIMITS.draft);
+      if (!text) return showError(form, "Write the request first.");
+      return saveJoint({ status: "draft", text, draftedByEmail: me(), draftedAt: serverTimestamp() }, "Joint planning request drafted. Submit it from Partner Central.");
+    }
     if (kind === "profile") {
       if (!urlOk(form, "logoUrl", "The logo address")) return;
       const sellerEmail = val(form, "aceSellerEmail").trim();
@@ -384,6 +458,13 @@ export function mountProspectDetail({ db, root, canEdit, me, getRow, getCompanyR
     if (act === "contact-open" && onOpenContact) { onOpenContact(b.dataset.id, b); return; }
     if (act === "toggle") { if (collapsed.has(b.dataset.id)) collapsed.delete(b.dataset.id); else collapsed.add(b.dataset.id); render(); const t = root.querySelector(`[data-act="toggle"][data-id="${CSS.escape(b.dataset.id)}"]`); if (t) t.focus(); return; }
     if (act === "cancel") { editing = null; render(); return; }
+    if (act === "joint-copy") { copyJoint(b); return; }
+    if (act === "joint-edit" && canEdit()) { tab = "profile"; editing = { kind: "joint", id: "" }; render(); const f = root.querySelector("form textarea"); if (f) f.focus(); return; }
+    if (act === "joint-submitted" && canEdit()) {
+      const r = row();
+      if (r && r.jointPlanning) saveJoint({ status: "submitted", text: r.jointPlanning.text, draftedByEmail: r.jointPlanning.draftedByEmail || me(), draftedAt: r.jointPlanning.draftedAtMs ? new Date(r.jointPlanning.draftedAtMs) : serverTimestamp(), submittedAt: serverTimestamp() }, "Marked submitted.");
+      return;
+    }
     if (act === "edit" && canEdit()) { editing = { kind: b.dataset.kind, id: b.dataset.id || "" }; render(); const f = root.querySelector("form input, form textarea"); if (f) f.focus(); return; }
     if (act === "newversion" && canEdit()) {
       const d = detail(), x = d.documents.find((o) => o.id === b.dataset.id);

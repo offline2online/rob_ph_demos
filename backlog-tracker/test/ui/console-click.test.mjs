@@ -2840,6 +2840,72 @@ const scenarios = [
     },
   },
   {
+    name: "Promote: Prospects (TAM) - AWS Account Mapping: upload file, import results, propensity rank and a joint planning draft",
+    seed: () => seed({ prospects: {
+      pa: { name: "Alpha Grocer", country: "United Kingdom", priority: "medium", storeCount: 400, status: "new", leadId: "", markets: [], vendors: [], campaigns: [], createdAt: t(T0), updatedAt: t(T0),
+        awsMapping: { matched: true, awsAccountId: "123456789012", propensity: "high", propensityRaw: "High", signals: ["Cloud migration"], greenfieldEligible: true, salesMotionEligible: false, lastSyncedAt: t(Date.now() - 2 * 864e5), source: "csv-import" } },
+      pb: { name: "Beta Pharmacy", country: "Germany", website: "https://beta.example", priority: "high", status: "new", leadId: "", markets: [], vendors: [], campaigns: [], createdAt: t(T0), updatedAt: t(T0) },
+      pc: { name: "Gamma Fashion", country: "France", status: "new", leadId: "", markets: [], vendors: [], campaigns: [], createdAt: t(T0), updatedAt: t(T0) },
+    }, prospectCompanies: {} }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-prospects-btn", "prospects-page");
+      // In display order (AG Grid keeps row elements in insertion order and positions them by row-index).
+      const rowIds = () => c.page.evaluate(() => [...document.querySelectorAll("#prospects-grid .ag-center-cols-container .ag-row")].sort((a, b) => Number(a.getAttribute("row-index")) - Number(b.getAttribute("row-index"))).map((r) => r.getAttribute("row-id")).join());
+      await until(async () => (await rowIds()).split(",").sort().join() === "pa,pb,pc", "the grid to show the three prospects", 8000);
+      const cell = (id, col) => c.text(`#prospects-grid .ag-row[row-id="${id}"] [col-id="${col}"]`);
+      // The panel: two companies are due a re-sync, and the upload file is those two.
+      assert.strictEqual(await c.page.getAttribute("#prospects-awsmap-btn", "type"), "button", "a real button (iPad taps)");
+      await c.page.click("#prospects-awsmap-btn");
+      await c.visible("#prospect-awsmap", "the AWS Account Mapping panel");
+      assert.match(await c.text("#prospect-awsmap-sub"), /1 of 3 companies synced · last import/);
+      assert.match(await c.text("#prospect-awsmap-body"), /2 companies are due a re-sync/);
+      assert.strictEqual((await c.text("#prospect-awsmap-export")).trim(), "Export upload file (2 due)");
+      const [dl] = await Promise.all([c.page.waitForEvent("download"), c.page.click("#prospect-awsmap-export")]);
+      const csv = fs.readFileSync(await dl.path(), "utf8").trim().split("\r\n");
+      assert.strictEqual(csv[0], "Record ID,Company name,Website,Domain,Country,AWS account ID");
+      assert.deepStrictEqual(csv.slice(1).sort(), ["pb,Beta Pharmacy,https://beta.example,beta.example,Germany,", "pc,Gamma Fashion,,,France,"]);
+      // AWS's results come back: Beta by its record id, Gamma by name in its country; one row matches nothing.
+      await c.page.setInputFiles("#prospect-awsmap-file", { name: "results.csv", mimeType: "text/csv", buffer: Buffer.from(
+        "Record ID,Company name,Country,Matched AWS account ID,Match status,Propensity score,Partner Greenfield Program eligibility,Partner-led sales motion eligibility,Territory\r\n"
+        + "pb,Beta Pharmacy,Germany,210987654321,Matched,95,Eligible,Eligible,DACH\r\n"
+        + ",Gamma Fashion,France,,Matched,45,No,No,FR\r\n"
+        + ",Nobody Ltd,Spain,,No match,,,,ES\r\n") });
+      await until(async () => /Updated 2 companies from AWS Account Mapping\. 1 row matched no company: line 4 \(Nobody Ltd\)\. Columns not read: Territory\./.test(await c.text("#prospect-awsmap-result")), "the import to report what it did", 5000);
+      const beta = await c.page.evaluate(() => globalThis.__fbStub.col("prospects").get("pb"));
+      assert.strictEqual(beta.awsMapping.propensity, "high"); assert.strictEqual(beta.awsMapping.greenfieldEligible, true); assert.strictEqual(beta.awsMapping.matched, true);
+      assert.ok(beta.awsMapping.lastSyncedAt, "the last-synced date is stamped");
+      assert.strictEqual(beta.awsAccountId, "210987654321", "AWS's account ID fills a blank one");
+      assert.strictEqual((await c.page.evaluate(() => globalThis.__fbStub.col("prospects").get("pc"))).awsMapping.propensity, "medium");
+      // Rank by propensity: shows the AWS columns, Beta (High, high priority) first, Alpha (High, medium) second, Gamma (Medium) third.
+      await c.page.click("#prospect-awsmap-show");
+      await until(async () => (await rowIds()) === "pb,pa,pc", "the grid sorted by awareness rank", 5000);
+      assert.ok(await c.page.evaluate(() => document.getElementById("prospect-awsmap-backdrop").hidden), "the panel closes");
+      assert.strictEqual((await c.text('#prospects-grid .ag-row[row-id="pa"] [col-id="awsPropensity"] .prospect-prop')).trim(), "High", "Alpha's AWS propensity shows as a pill");
+      assert.strictEqual(await c.page.locator('#prospects-grid .ag-row[row-id="pa"] [col-id="awsPropensity"] .prospect-hp').count(), 1, "with the high-potential star");
+      assert.deepStrictEqual([(await cell("pb", "awarenessRank")).trim(), (await cell("pa", "awarenessRank")).trim(), (await cell("pc", "awarenessRank")).trim()], ["1", "2", "3"]);
+      // Greenfield eligible: the filter keeps Alpha and Beta.
+      await c.page.click("#prospects-awsmap-btn");
+      await c.page.click("#prospect-awsmap-greenfield");
+      await until(async () => (await rowIds()) === "pb,pa", "the Greenfield filter", 5000);
+      assert.strictEqual((await cell("pa", "awsGreenfield")).trim(), "Yes");
+      // The profile shows the mapping; a high-potential shared account drafts a joint planning request.
+      await c.page.click('#prospects-grid .ag-row[row-id="pa"] [col-id="name"] button.prospect-name-btn');
+      await c.visible("#pd-mapping", "the AWS Account Mapping card on the profile");
+      const card = await c.text("#pd-mapping");
+      for (const want of ["High-potential shared account", "123456789012", "High", "Cloud migration", "Eligible", "Not eligible"]) assert.ok(card.includes(want), want);
+      await c.page.click('#pd-mapping [data-act="joint-edit"]');
+      await c.visible('#prospect-detail form[data-form="joint"]', "the draft form");
+      assert.match(await c.page.inputValue('#prospect-detail form[data-form="joint"] textarea'), /^Subject: Joint account planning request: Alpha Grocer \(United Kingdom\)/);
+      await c.page.click('#prospect-detail form[data-form="joint"] button[type="submit"]');
+      await until(async () => ((await c.page.evaluate(() => globalThis.__fbStub.col("prospects").get("pa").jointPlanning)) || {}).status === "draft", "the draft to be saved on the record", 5000);
+      await c.visible("#pd-joint", "the saved draft shows");
+      assert.match(await c.text("#pd-joint"), /Submit it from Partner Central/);
+      await c.page.click('#pd-joint [data-act="joint-submitted"]');
+      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("prospects").get("pa").jointPlanning.status)) === "submitted", "Mark submitted", 5000);
+    },
+  },
+  {
     name: "Promote: Prospects (TAM) - sits below Leads, filters, status edit, saved filter, convert to lead without duplicating",
     seed: () => seed({ prospects: {
       pa: { name: "Alpha Grocer", country: "United Kingdom", priority: "high", website: "https://alpha.example", industry: "Grocery", hqCountry: "United Kingdom", markets: ["United Kingdom", "Ireland"], awsRegion: "eu-west-2", storeCount: 400, storePresence: "400+ stores", sizeBand: "large", ownership: "Listed", insights: "Strong digital signage appetite.", decisionMakers: "Head of Retail Media", linkedinUrl: "https://www.linkedin.com/company/alpha-grocer/", linkedinOrgId: "1234", linkedinVerified: true, contacts: [{ name: "Jo Bloggs", role: "CMO", lastContact: "May 2026" }], vendors: ["Acme Signage"], campaigns: ["Spring"], status: "new", leadId: "", createdAt: t(T0), updatedAt: t(T0)  },
@@ -2924,7 +2990,7 @@ const scenarios = [
       // The default columns, in order; the ticket's hidden ones are offered in Columns.
       const headers = await c.page.evaluate(() => [...document.querySelectorAll("#prospects-grid .ag-header-row-column .ag-header-cell[col-id]")].map((h) => h.getAttribute("col-id")).filter((i) => i !== "select"));
       assert.deepStrictEqual(headers, ["name", "country", "industry", "priority", "storeCount", "linkedin", "status", "actions"], "default columns");
-      for (const id of ["subIndustry", "hqCountry", "awsRegion", "sizeBand", "storePresence", "ownership", "insights", "decisionMakers", "contacts", "source", "vendors", "campaigns"]) assert.strictEqual(await c.page.locator(`#prospects-grid .ag-header-cell[col-id="${id}"]`).count(), 0, `${id} is hidden by default`);
+      for (const id of ["subIndustry", "hqCountry", "awsRegion", "sizeBand", "storePresence", "ownership", "insights", "decisionMakers", "contacts", "source", "vendors", "campaigns", "awsPropensity", "awsGreenfield", "awarenessRank", "awsMatch", "awsSalesMotion", "awsSyncedMs"]) assert.strictEqual(await c.page.locator(`#prospects-grid .ag-header-cell[col-id="${id}"]`).count(), 0, `${id} is hidden by default`);
       // No search box: all filtering is in the column filters.
       assert.strictEqual(await c.page.locator("#prospects-q").count(), 0, "no separate search box");
       // The company is a button that opens the drawer; LinkedIn is an icon link only where there is a page.

@@ -2699,6 +2699,33 @@ body { overflow-x: clip; }
 .pd-label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; }
 .pd-input { font: inherit; font-weight: 400; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; min-height: 40px; background: #fff; }
 .pd-fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; }
+/* Prospects (TAM) › AWS Partner Account Mapping (prospect-detail.js mappingHTML, prospects-page.js) */
+.pd-info { font-size: 15px; color: var(--text-muted); vertical-align: middle; cursor: help; }
+.pd-mapping-due { display: flex; align-items: center; gap: 6px; margin: 0 0 12px; padding: 8px 12px; font-size: 13px; color: var(--warning); background: rgba(201, 138, 10, .1); border: 1px solid var(--warning); border-radius: 6px; }
+.pd-mapping-due .material-symbols-outlined, .pd-chip-hp .material-symbols-outlined, .pd-joint-status .material-symbols-outlined { font-size: 16px; }
+#pd-mapping .pd-chips { margin-bottom: 12px; }
+.pd-chip-hp { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; background: var(--primary-tint); border-color: var(--primary); color: var(--primary-text); }
+.pd-prop, .prospect-prop { display: inline-block; font-size: 12px; font-weight: 600; line-height: 18px; padding: 1px 8px; border-radius: 9999px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); }
+.pd-prop-high, .prospect-prop-high { background: rgba(82, 196, 26, .14); border-color: #3f8f17; color: #1f5a08; }
+.pd-prop-medium, .prospect-prop-medium { background: rgba(201, 138, 10, .12); border-color: var(--warning); color: #6b4800; }
+.pd-joint { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.pd-joint-status { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; font-weight: 600; }
+.pd-joint-text { margin: 0; padding: 10px 12px; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 14px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; max-height: 320px; overflow-y: auto; }
+.pd-joint-input { font-size: 14px; }
+.pd-form-actions .material-symbols-outlined { font-size: 18px; vertical-align: middle; }
+.prospect-prop-cell { display: inline-flex; align-items: center; gap: 6px; }
+.prospect-hp { display: inline-flex; align-items: center; color: var(--primary-text); }
+.prospect-hp .material-symbols-outlined { font-size: 16px; }
+.prospect-awsmap-kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin: 0 0 12px; }
+.prospect-awsmap-kpi { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+.prospect-awsmap-kpi dt { font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .03em; }
+.prospect-awsmap-kpi dd { margin: 4px 0 0; font-size: 20px; font-weight: 700; }
+.prospect-awsmap-alert { display: flex; align-items: flex-start; gap: 6px; margin: 0 0 12px; padding: 8px 12px; font-size: 13px; border-radius: 6px; color: var(--warning); background: rgba(201, 138, 10, .1); border: 1px solid var(--warning); }
+.prospect-awsmap-alert.is-ok { color: #1f5a08; background: rgba(82, 196, 26, .1); border-color: #3f8f17; }
+.prospect-awsmap-alert .material-symbols-outlined { font-size: 16px; }
+.prospect-awsmap-result { margin: 0 0 12px; font-size: 13px; overflow-wrap: anywhere; }
+.prospect-awsmap-result.is-error { color: #b3261e; }
+.prospect-awsmap-file { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .pd-check { display: flex; align-items: center; gap: 8px; font-size: 14px; min-height: 32px; }
 .pd-form-error { margin: 0; color: var(--danger, #c62828); font-size: 14px; }
 .pd-form-actions { display: flex; flex-wrap: wrap; gap: 8px; }

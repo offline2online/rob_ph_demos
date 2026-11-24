@@ -20,6 +20,17 @@ function view(id, data) {
     hqCountry: p.hqCountry || null, markets: p.markets, awsRegion: p.awsRegion || null, storeCount: p.storeCount,
     sizeBand: p.sizeBand, vendors: p.vendors, campaigns: p.campaigns, status: p.status, statusLabel: core.statusLabel(p.status),
     leadId: p.leadId || null, source: p.source || null, notes: p.notes || null,
+    awsMapping: awsMappingView(p), highPotential: core.isHighPotential(p),
+  };
+}
+// AWS Partner Account Mapping's match and signals (prospects-core.js), null until an import.
+function awsMappingView(p) {
+  const m = p.awsMapping;
+  if (!m) return null;
+  return {
+    matched: m.matched, awsAccountId: m.awsAccountId || null, propensity: m.propensity || null, propensityRaw: m.propensityRaw || null, signals: m.signals,
+    greenfieldEligible: m.greenfieldEligible, salesMotionEligible: m.salesMotionEligible,
+    lastSyncedAt: m.lastSyncedAtMs ? new Date(m.lastSyncedAtMs).toISOString() : null,
   };
 }
 
@@ -49,7 +60,7 @@ function prospectsTools(h) {
   return [
     {
       name: "list_prospects",
-      description: "The Prospects (TAM) database (Promote › Prospects): every target company, one record per company per country, with country, priority, industry, HQ country, markets, LinkedIn page, contacts, insights, AWS region, store count, size band, vendors, campaigns, status and the lead it became. Every filter is optional and they combine.",
+      description: "The Prospects (TAM) database (Promote › Prospects): every target company, one record per company per country, with country, priority, industry, HQ country, markets, LinkedIn page, contacts, insights, AWS region, store count, size band, vendors, campaigns, status, the lead it became, and AWS Partner Account Mapping's match, propensity, signals and programme eligibility (awsMapping, highPotential) with awarenessRank, the order stage-1 awareness spend follows. Every filter is optional and they combine.",
       scope: "board.read",
       inputSchema: {
         type: "object",
@@ -60,6 +71,9 @@ function prospectsTools(h) {
           awsRegion: { type: "string" }, campaign: { type: "string" },
           sizeBand: { type: "string", enum: core.SIZE_BAND_KEYS }, status: { type: "string", enum: core.STATUS_KEYS },
           minStores: { type: "number" }, maxStores: { type: "number" },
+          propensity: { type: "string", enum: [...core.PROPENSITY_KEYS, core.NOT_SYNCED], description: "AWS Partner Account Mapping's propensity to buy, or not-synced for records with no import yet." },
+          greenfield: { type: "string", enum: core.ELIGIBILITY_OPTIONS.map((o) => o.key), description: "Partner Greenfield Program eligibility from Account Mapping." },
+          sort: { type: "string", enum: ["name", "awareness"], description: "awareness: the stage-1 awareness targeting order (AWS propensity, then priority, then store count); each record carries awarenessRank (1 gets spend first; null when it has no propensity). Default name." },
           limit: { type: "number", description: "At most this many (default 200, max 1000)." },
         },
         additionalProperties: false,
@@ -73,7 +87,9 @@ function prospectsTools(h) {
         const rows = snap.docs.map((d) => core.normaliseProspect(d.id, d.data()));
         const keep = new Set(core.filterProspects(rows, f).map((p) => p.id));
         const limit = Math.min(Math.max(Number(a.limit) || 200, 1), 1000);
-        const out = all.filter((v) => keep.has(v.id)).sort((x, y) => x.company.localeCompare(y.company));
+        const ranks = core.awarenessRanks(rows);
+        const out = all.filter((v) => keep.has(v.id)).map((v) => ({ ...v, awarenessRank: ranks.get(v.id) || null }))
+          .sort(a.sort === "awareness" ? (x, y) => (x.awarenessRank || Infinity) - (y.awarenessRank || Infinity) || x.company.localeCompare(y.company) : (x, y) => x.company.localeCompare(y.company));
         return textResult({ total: all.length, count: out.length, prospects: out.slice(0, limit) });
       },
     },
