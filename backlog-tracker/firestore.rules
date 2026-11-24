@@ -1515,7 +1515,15 @@ service cloud.firestore {
         && (!("watchers" in d) || (d.watchers is list && d.watchers.size() <= 100))
         && isKanbanCriteria(d.get("acceptanceCriteria", []))
         && d.searchTokens is list && d.searchTokens.size() <= 600
+        && isKanbanNeedsWork(d.get("needsMoreWork", null))
         && d.updatedBy == callerEmail();
+    }
+    // Needs more work (KB-BOARD-5a): the stamp a ticket sent back from testing carries.
+    function isKanbanNeedsWork(v) {
+      return v == null || (v is map && v.keys().hasOnly(["reason", "by", "at"])
+        && v.get("reason", "") is string && v.get("reason", "").size() <= 500
+        && v.get("by", "") is string && v.get("by", "").size() <= 200
+        && v.get("at", "") is string && v.get("at", "").size() <= 40);
     }
     match /kanbanTasks/{key} {
       allow read: if isBoardReader();
@@ -1566,7 +1574,7 @@ service cloud.firestore {
     function isKanbanCard(d) {
       return d.keys().hasOnly(["key", "type", "title", "status", "resolution", "open", "closedAt", "rank", "assignee", "previousAssignee",
           "release", "sprint", "project", "priority", "flagged", "estimate", "logged", "due", "labels", "epic", "commentCount", "attachmentCount", "acTotal", "acDone",
-          "agentTotal", "agentDone", "updatedAt", "updatedBy"])
+          "agentTotal", "agentDone", "needsMoreWork", "updatedAt", "updatedBy"])
         && d.key is string && isNonEmptyBoundedString(d.title, 200)
         && d.type in ["task", "bug", "epic"]
         && d.status in ["backlog", "ready-for-dev", "in-progress", "ready-for-testing", "approved", "done"]
@@ -1578,6 +1586,7 @@ service cloud.firestore {
         && d.get("acTotal", 0) is int && d.get("acDone", 0) is int && d.get("acDone", 0) <= d.get("acTotal", 0) && d.get("acTotal", 0) <= 50
         && d.get("agentTotal", 0) is int && d.get("agentDone", 0) is int && d.get("agentDone", 0) <= d.get("agentTotal", 0) && d.get("agentTotal", 0) <= 50
         && d.get("project", "") is string && d.get("project", "").size() <= 100
+        && isKanbanNeedsWork(d.get("needsMoreWork", null))
         && d.updatedBy == callerEmail();
     }
     // Send to Agent (KB-AGENT-1): a ticket's agent tickets and their counts are

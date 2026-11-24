@@ -17,7 +17,7 @@ import {
   canonicalEmail, isAliasEmail, newCriterionId, AC_MAX_ITEMS, AC_MAX_TEXT, editActivity, ticketHash, ticketFromSub,
   MAX_LEVELS, LEVEL_NAMES, levelName, ancestorsOf, levelOf, heightOf, parentProblem, rollup, parentsToAdvance,
   AGENT_MAX_TICKETS, AGENT_STATUS_LABEL, agentBuilt, agentRollup, canSendToAgent, cleanAgentSplit,
-  ticketHistory, fmtAge, matchSpokenNames,
+  ticketHistory, fmtAge, matchSpokenNames, needsWork, normNeedsWork, NEEDS_WORK_BACK,
 } from "./kanban-core.js";
 
 export function mountStaffKanban(ctx) {
@@ -303,9 +303,10 @@ export function mountStaffKanban(ctx) {
   // ── Status changes (the one place the testing hand-off happens) ─────────
   // Returns { patch, note, activity } for the store, or null when nothing changes.
   function setStatus(task, status, opts = {}) {
-    const ch = statusChange(task, status, { resolution: opts.resolution, tester: opts.tester, firstName: fullName });
+    const ch = statusChange(task, status, { resolution: opts.resolution, tester: opts.tester, firstName: fullName, needsMoreWork: opts.needsMoreWork });
     if (!ch) return null;
-    if (!opts.silent) toast(`<b>${esc(task.key)}</b> ${status === "done" ? (ch.resolution === "withdrawn" ? "withdrawn" : "completed") : "moved to " + esc(STATUS_LABEL[status])}${ch.note ? ` · ${esc(ch.note)}` : ""}`);
+    const sentBack = ch.patch.needsMoreWork && opts.needsMoreWork;
+    if (!opts.silent) toast(`<b>${esc(task.key)}</b> ${sentBack ? "needs more work · sent back to " + esc(STATUS_LABEL[status]) : status === "done" ? (ch.resolution === "withdrawn" ? "withdrawn" : "completed") : "moved to " + esc(STATUS_LABEL[status])}${ch.note ? ` · ${esc(ch.note)}` : ""}`);
     return ch;
   }
 
@@ -344,15 +345,18 @@ export function mountStaffKanban(ctx) {
     }
     moveTaskTo(key, status, beforeKey, lane, resolution, "");
   }
-  function moveTaskTo(key, status, beforeKey, lane, resolution, tester) {
+  function moveTaskTo(key, status, beforeKey, lane, resolution, tester, extra = {}) {
     const task = taskByKey(key);
     if (!task || !canWrite()) return;
-    // The column as drawn (priority, then rank); the rank comes from the
-    // nearest tickets of the same priority either side of the drop (KB-BOARD-3).
+    // The column as drawn (Needs more work first, then priority, then rank); the
+    // rank comes from the nearest tickets of the same band either side of the
+    // drop (KB-BOARD-3, KB-BOARD-5a), judged as the ticket will be after the move.
     const list = state.tasks.filter((t) => t.status === status && t !== task).sort(byBoardOrder);
     let idx = beforeKey ? list.findIndex((t) => t.key === beforeKey) : -1;
     if (idx < 0) idx = list.length;
-    const { prev, next } = dropNeighbours(list, idx, task);
+    const stampAfter = extra.needsMoreWork && task.status === "ready-for-testing" && NEEDS_WORK_BACK.includes(status) ? normNeedsWork(extra.needsMoreWork)
+      : NEEDS_WORK_BACK.includes(status) ? task.needsMoreWork || null : null;
+    const { prev, next } = dropNeighbours(list, idx, { ...task, needsMoreWork: stampAfter });
     const patch = { rank: rankBetween(prev ? prev.rank : null, next ? next.rank : null) };
     const activity = [];
     const toAssignee = lane === undefined ? task.assignee : lane === "none" ? "" : lane;
@@ -363,14 +367,51 @@ export function mountStaffKanban(ctx) {
       patch.assignee = toAssignee; patch.previousAssignee = "";
       base = { ...task, assignee: toAssignee, previousAssignee: "" };
     }
-    const ch = setStatus(base, status, { silent: reassigned, resolution, tester });
-    if (ch) { Object.assign(patch, ch.patch); activity.push(ch.activity); }
+    const ch = setStatus(base, status, { silent: reassigned, resolution, tester, needsMoreWork: extra.needsMoreWork });
+    if (ch) { Object.assign(patch, ch.patch); activity.push(ch.activity); if (ch.stampLine) activity.push(ch.stampLine); }
     if (reassigned) {
       const moved = task.status !== status ? ` · moved to ${esc(statusLabel(status, resolution))}` : "";
       toast(`<b>${esc(task.key)}</b> assigned to ${esc(fullName(toAssignee))}${moved}${ch && ch.note ? `, ${esc(ch.note)}` : ""}`);
     }
     store.updateTask(key, patch, activity).then(() => { if (ch) return advanceParents(key); }).catch(fail);
     renderKanbanBoard();
+  }
+
+  // Needs more work (KB-BOARD-5a): a ticket in Ready for Testing that didn't
+  // pass goes back to Ready for Dev (and its developer), stamped with what still
+  // needs doing, and sits at the top of whichever column it is in until it
+  // reaches Ready for Testing again.
+  function askNeedsWork(task) {
+    return new Promise((resolve) => {
+      const wrap = document.createElement("div");
+      wrap.className = "modal-backdrop"; wrap.id = "kb-needs-work-backdrop";
+      wrap.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="kb-needs-work-h" style="max-width:460px"><div class="modal-body"><h3 id="kb-needs-work-h">${esc(task.key)} needs more work</h3><p class="kb-none">It goes back to Ready for Dev${task.previousAssignee ? ` and to ${esc(fullName(task.previousAssignee))}` : ""}, stamped Needs more work at the top of the column.</p><label class="field-label" for="kb-needs-work-reason">What still needs doing?</label><textarea id="kb-needs-work-reason" class="kb-input" rows="3" maxlength="500" placeholder="What didn't pass testing"></textarea></div><div class="modal-footer"><button type="button" class="btn-ghost" id="kb-needs-work-cancel">Cancel</button><button type="button" class="btn-primary kb-needs-work-ok" id="kb-needs-work-ok" disabled>Send back to Ready for Dev</button></div></div>`;
+      document.body.appendChild(wrap);
+      const txt = wrap.querySelector("#kb-needs-work-reason"), ok = wrap.querySelector("#kb-needs-work-ok");
+      const done = (v) => { wrap.remove(); resolve(v); };
+      txt.addEventListener("input", () => { ok.disabled = !txt.value.trim(); });
+      ok.addEventListener("click", () => txt.value.trim() && done(txt.value.trim()));
+      wrap.querySelector("#kb-needs-work-cancel").addEventListener("click", () => done(null));
+      wrap.addEventListener("click", (e) => { if (e.target === wrap) done(null); });
+      wrap.addEventListener("keydown", (e) => { if (e.key === "Escape") done(null); });
+      txt.focus();
+    });
+  }
+  function sendBackNeedsWork(key) {
+    const task = taskByKey(key);
+    if (!task || !canWrite() || task.status !== "ready-for-testing") return;
+    askNeedsWork(task).then((reason) => {
+      if (!reason) return;
+      const t = taskByKey(key);
+      if (!t || t.status !== "ready-for-testing") return;
+      moveTaskTo(key, "ready-for-dev", null, undefined, undefined, "", { needsMoreWork: { reason, by: me, at: new Date().toISOString() } });
+    });
+  }
+  function needsWorkHTML(t, cls) {
+    const n = t.needsMoreWork || {};
+    const who = n.by ? fullName(n.by) : "";
+    const when = n.at ? fmtDate(n.at.slice(0, 10)) : "";
+    return `<div class="kb-needs-work ${cls}" role="note" title="${esc(["Didn't pass testing", who && "sent back by " + who, when].filter(Boolean).join(" · "))}"><p class="kb-needs-work-head"><span class="material-symbols-outlined" aria-hidden="true">undo</span>Needs more work</p>${n.reason ? `<p class="kb-needs-work-reason">${esc(n.reason)}</p>` : ""}${cls === "kb-needs-work-modal" && (who || when) ? `<p class="kb-needs-work-by">Sent back${who ? " by " + esc(who) : ""}${when ? " · " + esc(when) : ""}</p>` : ""}</div>`;
   }
 
   // Parent automation (KB-TASK-14): when a ticket's status changes, each
@@ -1114,7 +1155,9 @@ export function mountStaffKanban(ctx) {
     const kidsDone = kids ? kids.done : 0;
     const flagBtn = `<button type="button" class="kb-flag-btn${t.flagged ? " on" : ""}" data-flag="${esc(t.key)}" aria-pressed="${!!t.flagged}" title="${t.flagged ? "Remove flag" : "Flag"}" aria-label="${t.flagged ? "Remove flag" : "Flag"} ${esc(t.key)}"><span class="material-symbols-outlined" aria-hidden="true">flag</span></button>`;
     const linkBtn = `<button type="button" class="kb-link-btn" data-copy-link="${esc(t.key)}" title="Copy link" aria-label="Copy a link to ${esc(t.key)}"><span class="material-symbols-outlined" aria-hidden="true">link</span></button>`;
-    return `<article class="card kb-card${res(t) === "withdrawn" ? " kb-card-withdrawn" : ""}${t.flagged ? " kb-flagged" : ""}${t.type === "epic" ? " kb-card-epic" : ""}" data-key="${esc(t.key)}" tabindex="0" aria-label="${esc(t.key + " " + t.title + (t.flagged ? ", flagged" : ""))}">
+    const nmw = needsWork(t);
+    return `<article class="card kb-card${res(t) === "withdrawn" ? " kb-card-withdrawn" : ""}${t.flagged ? " kb-flagged" : ""}${nmw ? " kb-card-needs-work" : ""}${t.type === "epic" ? " kb-card-epic" : ""}" data-key="${esc(t.key)}" tabindex="0" aria-label="${esc(t.key + " " + t.title + (nmw ? ", needs more work" : "") + (t.flagged ? ", flagged" : ""))}">
+      ${nmw ? needsWorkHTML(t, "kb-needs-work-card") : ""}
       <div class="kb-card-top">
         <span class="kb-type kb-type-${ty.key}" title="${ty.label}"><span class="material-symbols-outlined" aria-hidden="true">${ty.icon}</span></span>
         <span class="kb-key">${esc(t.key)}</span>
@@ -2138,6 +2181,8 @@ export function mountStaffKanban(ctx) {
     const hidden = OPTIONAL_FIELDS.map((f) => f.key).filter((k) => k !== "flag" && !fieldOn(k) && !(draftIsNew && k === "comments"));
     // On an existing ticket, hidden fields stay editable below; a new task shows only the configured form.
     form.innerHTML = `
+      ${!draftIsNew && needsWork(draft) ? needsWorkHTML(draft, "kb-needs-work-modal") : ""}
+      ${!draftIsNew && draft.status === "ready-for-testing" && canWrite() ? `<div class="kb-needs-work-bar"><button type="button" class="kb-needs-work-btn" id="f-needs-work"><span class="material-symbols-outlined" aria-hidden="true">undo</span>Needs more work</button></div>` : ""}
       <div class="kb-task-grid${sideCollapsed ? " kb-side-collapsed" : ""}">
         <div class="kb-task-main">${main.filter(visible).map(fieldHTML).join("")}</div>
         ${sideHTML(side.filter(visible))}
@@ -2256,6 +2301,8 @@ export function mountStaffKanban(ctx) {
     bindChildren(form);
     bindCriteria(form);
     $("#f-cancel").addEventListener("click", closeTask);
+    const nwb = $("#f-needs-work");
+    if (nwb) nwb.addEventListener("click", () => { const k = draft && draft.key; if (!k) return; closeTask(); sendBackNeedsWork(k); });
     const del = $("#f-delete");
     if (del) del.addEventListener("click", async () => {
       const key = draft.key;

@@ -185,6 +185,16 @@ async function main() {
   await check("A ticket's project must be a string", "deny", () => updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7"), { project: ["x"], updatedBy: SAM }));
   await check("A ticket's project is at most 100 characters", "deny", () => updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7"), { project: "p".repeat(101), updatedBy: SAM }));
   await check("A ticket can name a project", "allow", () => updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7"), { project: "New5VKTF2QBqT3T4YEla", updatedBy: SAM }));
+  // ── Needs more work (KB-BOARD-5a): the stamp of a ticket sent back from testing ──
+  const nmw = { reason: "Save still fails", by: SAM, at: "2026-11-24T03:30:00.000Z" };
+  await check("A ticket is stamped Needs more work, and its card with it", "allow", async () => {
+    await updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7"), { status: "ready-for-dev", needsMoreWork: nmw, updatedBy: SAM });
+    return setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(8, { status: "ready-for-dev", needsMoreWork: nmw }));
+  });
+  await check("The stamp is cleared", "allow", () => updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7"), { needsMoreWork: null, updatedBy: SAM }));
+  await check("A card's stamp carries no other keys", "deny", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(8, { needsMoreWork: Object.assign({ html: "x" }, nmw) })));
+  await check("A ticket's stamp reason is at most 500 characters", "deny", () => updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7"), { needsMoreWork: Object.assign({}, nmw, { reason: "r".repeat(501) }), updatedBy: SAM }));
+  await check("A ticket's stamp is a map", "deny", () => updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7"), { needsMoreWork: "yes", updatedBy: SAM }));
   // ── Send to Agent (KB-AGENT-1): agent links and counts are the server's ──
   const withAgents = () => env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
