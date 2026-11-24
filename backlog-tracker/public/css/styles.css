@@ -3261,6 +3261,11 @@ a.dash-go:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px
 .dash-list-rows > li { padding: 8px 0; }
 /* Conversion Funnel: a source failed on the last ingest (funnel-page.js). */
 #funnel-status.funnel-status-flag { color: var(--danger); font-weight: 500; }
+/* GA4 access problem: the values and the link the fix needs (funnel-page.js renderAccess). */
+.funnel-access { display: flex; flex-wrap: wrap; gap: 8px; margin: -4px 0 12px; }
+.funnel-access[hidden] { display: none; }
+.funnel-access-btn { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
+.funnel-access-btn .material-symbols-outlined { font-size: 16px; }
 /* Tile content (cMyA3FMlUUrSjGtPkLZC): Staff Kanban's columns, the Leads
    pipeline and the mini funnel, a row of small cells under the headline.
    The biggest drop-off in the funnel is amber. */

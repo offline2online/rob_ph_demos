@@ -1359,11 +1359,12 @@
          (js/funnel-page.js, rules in js/funnel-core.js). Help lives in the info tooltips. -->
     <section class="faq-admin-page" id="funnel-page" hidden>
       <div class="page-header">
-        <h2>Conversion Funnel <span class="material-symbols-outlined prospects-info" id="funnel-info" tabindex="0" role="img" aria-label="About the Conversion Funnel" title="Ad impression to deployed opportunity. Impressions and clicks come from Google Ads, visits, demo requests and downloads from GA4 (daily BigQuery export in ph-analytics), the ACE stages from the console's opportunities joined to Leads and Prospects (TAM) by company. Every filter combines with the others and the funnel recalculates as you change them. Times and days are your local time.">info</span></h2>
+        <h2>Conversion Funnel <span class="material-symbols-outlined prospects-info" id="funnel-info" tabindex="0" role="img" aria-label="About the Conversion Funnel" title="Ad impression to deployed opportunity. Impressions and clicks come from Google Ads, visits, demo requests and downloads from GA4 (read daily through the Google Analytics Data API), the ACE stages from the console's opportunities joined to Leads and Prospects (TAM) by company. Every filter combines with the others and the funnel recalculates as you change them. Times and days are your local time.">info</span></h2>
       </div>
       <div class="um-count" id="funnel-count" role="status" aria-live="polite"></div>
       <div class="funnel-filters" id="funnel-filters" role="group" aria-label="Funnel filters"></div>
       <p class="field-hint" id="funnel-status" role="status" aria-live="polite" hidden></p>
+      <div class="funnel-access" id="funnel-access" role="group" aria-label="Fix GA4 access" hidden></div>
       <p class="promote-empty" id="funnel-empty" hidden><span id="funnel-empty-text">No funnel data yet.</span></p>
       <ol class="funnel-stages" id="funnel-stages" aria-label="Funnel stages" hidden></ol>
     </section>

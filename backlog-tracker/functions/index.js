@@ -2931,6 +2931,18 @@ function getFunnelIngestJob() {
     funnelIngestJob = createFunnelIngestJob({
       db: getFirestore(),
       ga4AccessToken: async () => { const client = await auth.getClient(); const t = await client.getAccessToken(); return (t && t.token) || t; },
+      // The account GA4 is read as, recorded on consoleConfig/funnelIngest.ga4Access so the
+      // Conversion Funnel can name who needs Viewer on the property. Read, never inferred:
+      // the credentials first, then the metadata server's default account; "" if neither answers.
+      serviceAccountEmail: async () => {
+        try { const c = await auth.getCredentials(); if (c && c.client_email) return c.client_email; } catch { /* fall through */ }
+        try {
+          const r = await fetch("http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/email", { headers: { "Metadata-Flavor": "Google" } });
+          if (r.ok) return (await r.text()).trim();
+        } catch { /* not on Google Cloud */ }
+        return "";
+      },
+      gcpProject: process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || "",
       partnerCentral: getPartnerCentralApi(),
       // The Partner Central S3 data export (pc-export.js), read with the same
       // keyless role credentials; dormant until consoleConfig/funnelIngest.pcExportBucket is set.

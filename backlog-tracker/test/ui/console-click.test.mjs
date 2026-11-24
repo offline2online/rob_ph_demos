@@ -3648,6 +3648,39 @@ const scenarios = [
     },
   },
   {
+    // GA4 refused the console's service account (403, no access to the property): the page
+    // names the account and the property, and gives one-click copies and the access link.
+    name: "Conversion Funnel: GA4 refusing access names the service account, with copy buttons and the GA4 access link",
+    seed: () => {
+      const s = seed({});
+      const denied = "GA4 answered 403: User does not have sufficient permissions for this property.";
+      s.docs.consoleConfig = { funnelIngest: {
+        lastRunAt: new Date().toISOString(), ok: false, failed: ["ga4-total", "google-ads"],
+        sources: { "ga4-total": { ok: false, error: denied, lastSuccessAt: null }, "google-ads": { ok: false, error: denied, lastSuccessAt: null }, leads: { ok: true, lastSuccessAt: new Date().toISOString() } },
+        ga4Access: { ok: false, problem: "no-access", serviceAccount: "123-compute@developer.gserviceaccount.com", propertyId: "473743482", project: "backlog-tracker-e4ed2" },
+      } };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-funnel-btn", "funnel-page");
+      await c.visible("#funnel-access", "the fix's values and link show under the failure");
+      const status = await c.text("#funnel-status");
+      assert.ok(status.includes("123-compute@developer.gserviceaccount.com") && status.includes("473743482") && status.includes("Viewer"), `names the account, property and role: ${status}`);
+      assert.ok(!status.includes("Google Ads didn't update"), "one access line, not one per source");
+      const copies = await c.page.$$eval("#funnel-access [data-copy]", (els) => els.map((e) => e.dataset.copy));
+      assert.deepStrictEqual(copies, ["123-compute@developer.gserviceaccount.com", "473743482", "Viewer"]);
+      assert.ok(await c.page.$$eval("#funnel-access button[data-copy]", (els) => els.every((e) => e.type === "button")), "the copies are buttons (iPad taps)");
+      const link = c.page.locator("#funnel-access a");
+      assert.strictEqual(await link.getAttribute("href"), "https://analytics.google.com/analytics/web/#/p473743482/admin/suiteusermanagement/property");
+      assert.strictEqual(await link.getAttribute("target"), "_blank");
+      await c.page.evaluate(() => { window.__copied = []; navigator.clipboard.writeText = async (v) => { window.__copied.push(v); }; });
+      await c.click('#funnel-access [data-copy="473743482"]', "Copy property ID");
+      await until(async () => (await c.text('#funnel-access [data-copy="473743482"]')).includes("Copied"), "the button says it copied", 4000);
+      assert.deepStrictEqual(await c.page.evaluate(() => window.__copied), ["473743482"]);
+    },
+  },
+  {
     name: "Promote: Prospects company detail - two country records share one org chart, AWS account ID, lead card compact view",
     seed: () => seed({
       prospects: {

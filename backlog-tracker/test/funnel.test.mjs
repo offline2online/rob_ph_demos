@@ -1,5 +1,5 @@
 import assert from "node:assert";
-import { STAGES, buildFunnel, previousRange, addDays, daysBetween, joinOpportunities, dayOfInstant, normaliseWebRow, channelOf, fmtPct, fmtChange, EMPTY_FILTER, filterOptions, ingestStatusView, ingestFailureText, fmtUpdated, fmtMoney, revenueOf } from "../public/js/funnel-core.js";
+import { STAGES, buildFunnel, previousRange, addDays, daysBetween, joinOpportunities, dayOfInstant, normaliseWebRow, channelOf, fmtPct, fmtChange, EMPTY_FILTER, filterOptions, ingestStatusView, ingestFailureText, fmtUpdated, fmtMoney, revenueOf, ga4AccessProblemOf, ga4AccessLinks } from "../public/js/funnel-core.js";
 
 assert.deepStrictEqual(STAGES.map((s) => s.key), ["impressions", "clicks", "visits", "demos", "downloads", "aceCreated", "aceOpen", "aceClosed", "deployed", "revenue"], "nine counted stages, then Revenue");
 assert.strictEqual(STAGES[STAGES.length - 1].money, true, "Revenue is an amount");
@@ -86,6 +86,37 @@ assert.deepStrictEqual(bad.failures.map((x) => x.name), ["GA4", "Google Ads"], "
 assert.strictEqual(bad.updatedAt, Date.parse("2026-11-18T00:00:00Z"), "last updated is GA4's last good update, not the leads'");
 assert.match(ingestFailureText(bad), /^GA4 didn't update \(GA4 answered 401: bad credentials\); last good update .+\. Google Ads didn't update/);
 assert.strictEqual(fmtUpdated(0), "never");
+assert.strictEqual(bad.ga4Access, null, "a 401 is not an access problem");
+
+// GA4 refused on access: the status names the account, the property and where to fix it.
+const DENIED = "GA4 answered 403: User does not have sufficient permissions for this property. To learn more about Property ID, see https://developers.google.com/analytics/devguides/reporting/data/v1/property-id.";
+assert.strictEqual(ga4AccessProblemOf(DENIED), "no-access");
+assert.strictEqual(ga4AccessProblemOf("GA4 answered 403: Google Analytics Data API has not been used in project 1 before or it is disabled."), "api-disabled");
+assert.strictEqual(ga4AccessProblemOf("GA4 answered 401: bad credentials"), "");
+const deniedSources = { "ga4-total": { ok: false, error: DENIED, lastSuccessAt: null }, "google-ads": { ok: false, error: DENIED, lastSuccessAt: null }, leads: { ok: true, lastSuccessAt: "2026-11-19T06:00:00Z" }, ace: { ok: false, error: "Partner Central answered 500", lastSuccessAt: null } };
+const denied = ingestStatusView({ lastRunAt: "2026-11-19T06:00:00Z", sources: deniedSources,
+  ga4Access: { ok: false, problem: "no-access", serviceAccount: "123-compute@developer.gserviceaccount.com", propertyId: "473743482", project: "backlog-tracker-e4ed2" } });
+assert.deepStrictEqual(denied.ga4Access, { problem: "no-access", serviceAccount: "123-compute@developer.gserviceaccount.com", propertyId: "473743482", project: "backlog-tracker-e4ed2", lastSuccessAt: 0 });
+const deniedText = ingestFailureText(denied);
+assert.match(deniedText, /^GA4 didn't update: the service account 123-compute@developer\.gserviceaccount\.com has no access to GA4 property 473743482\. Add it as a Viewer/);
+assert.doesNotMatch(deniedText, /Google Ads didn't update|sufficient permissions/, "Google Ads is read through GA4: one access line, not the raw 403 twice");
+assert.match(deniedText, /ACE didn't update \(Partner Central answered 500\)/, "other failures are still listed");
+// A status from before the ingest recorded ga4Access: read from the errors, no account named.
+const older = ingestStatusView({ lastRunAt: "2026-11-19T06:00:00Z", sources: deniedSources });
+assert.strictEqual(older.ga4Access.problem, "no-access");
+assert.match(ingestFailureText(older), /^GA4 didn't update: the console's service account has no access to GA4 property \(not recorded\)/);
+// Access fine again: nothing to fix.
+assert.strictEqual(ingestStatusView({ lastRunAt: "x", sources: { "ga4-total": { ok: true, lastSuccessAt: "2026-11-19T06:00:00Z" } }, ga4Access: { ok: true, problem: "" } }).ga4Access, null);
+const apiOff = ingestStatusView({ lastRunAt: "2026-11-19T06:00:00Z", sources: deniedSources, ga4Access: { ok: false, problem: "api-disabled", project: "backlog-tracker-e4ed2", propertyId: "473743482" } });
+assert.match(ingestFailureText(apiOff), /^GA4 didn't update: the Google Analytics Data API is turned off for Google Cloud project backlog-tracker-e4ed2\. Enable it/);
+assert.deepStrictEqual(ga4AccessLinks(denied.ga4Access), {
+  propertyAccess: "https://analytics.google.com/analytics/web/#/p473743482/admin/suiteusermanagement/property",
+  enableApi: "https://console.cloud.google.com/apis/library/analyticsdata.googleapis.com?project=backlog-tracker-e4ed2",
+});
+assert.deepStrictEqual(ga4AccessLinks({ propertyId: "x\"><script>", project: "Bad Project" }), {
+  propertyAccess: "https://analytics.google.com/analytics/web/",
+  enableApi: "https://console.cloud.google.com/apis/library/analyticsdata.googleapis.com",
+}, "only a numeric property and a valid project id go into a link");
 
 // The Partner Central S3 export ("pc-export" rows): the Revenue stage, attributed revenue first.
 const pcx = (date, o) => normaliseWebRow(`p${date}${o.aceId}`, { date, source: "pc-export", company: "Burger Co", industry: "QSR", country: "UK", channel: "Google Ads", campaign: "DC Spring", currency: "USD", ...o });

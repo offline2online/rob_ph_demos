@@ -241,6 +241,17 @@ const isoMs = (v) => {
   const ms = Date.parse(v);
   return Number.isFinite(ms) ? ms : 0;
 };
+// Why GA4 refused, from its error text ("no-access", "api-disabled", or ""), the same
+// rule as functions/funnel-ingest.js ga4AccessProblem: for a status written before
+// the ingest recorded `ga4Access` itself.
+export function ga4AccessProblemOf(error) {
+  const msg = String(error || "");
+  if (!/\b403\b/.test(msg)) return "";
+  if (/has not been used|is disabled|SERVICE_DISABLED|accessNotConfigured|API has not been enabled/i.test(msg)) return "api-disabled";
+  if (/sufficient permissions|permission|PERMISSION_DENIED/i.test(msg)) return "no-access";
+  return "";
+}
+const GA4_READ_SOURCES = ["ga4-total", "ga4-site", "ga4-industry", "ga4-industry-total", "ga4-industry-users", "ga4-events", "google-ads"];
 export function ingestStatusView(status) {
   const st = status && typeof status === "object" ? status : null;
   if (!st || !st.lastRunAt) return { known: false, updatedAt: 0, failures: [], flagged: false };
@@ -260,7 +271,31 @@ export function ingestStatusView(status) {
   // neutral state, not a failure; once set up, when its newest export was read.
   const pc = sources["pc-export"] || null;
   const pcExport = !pc ? null : { notSetUp: pc.notSetUp === true, ok: pc.ok !== false, exportedAt: isoMs(pc.exportedAt), lastSuccessAt: isoMs(pc.lastSuccessAt) };
-  return { known: true, updatedAt, failures, flagged: failures.length > 0, pcExport };
+  // GA4 refused on access (Google Ads is read through GA4, so it fails with it): who
+  // needs which access. The ingest records it (`ga4Access`); an older status is read
+  // from the sources' errors, without the account.
+  const ga = st.ga4Access && typeof st.ga4Access === "object" ? st.ga4Access : null;
+  const fromErrors = GA4_READ_SOURCES.map((k) => sources[k]).filter((v) => v && v.ok === false).map((v) => ga4AccessProblemOf(v.error)).find(Boolean) || "";
+  const problem = ga ? (ga.ok === false ? String(ga.problem || "") || fromErrors : "") : fromErrors;
+  const ga4Access = !problem ? null : {
+    problem,
+    serviceAccount: String((ga && ga.serviceAccount) || ""),
+    propertyId: String((ga && ga.propertyId) || ""),
+    project: String((ga && ga.project) || ""),
+    lastSuccessAt: okAt(GA4_READ_SOURCES),
+  };
+  return { known: true, updatedAt, failures, flagged: failures.length > 0, pcExport, ga4Access };
+}
+// Where to fix a GA4 access problem: the property's access management, or the
+// Data API's page in the Google Cloud console.
+export function ga4AccessLinks(access) {
+  const a = access || {};
+  const prop = /^\d+$/.test(a.propertyId || "") ? a.propertyId : "";
+  const proj = /^[a-z][a-z0-9-]{4,29}$/.test(a.project || "") ? a.project : "";
+  return {
+    propertyAccess: prop ? `https://analytics.google.com/analytics/web/#/p${prop}/admin/suiteusermanagement/property` : "https://analytics.google.com/analytics/web/",
+    enableApi: `https://console.cloud.google.com/apis/library/analyticsdata.googleapis.com${proj ? `?project=${proj}` : ""}`,
+  };
 }
 // "19 Nov 2026, 06:10" in the viewer's own locale and time zone; "never" for 0.
 export function fmtUpdated(ms) {
@@ -269,7 +304,13 @@ export function fmtUpdated(ms) {
 // One plain sentence naming the failed sources, for the page's status line and the Dashboard tooltip.
 export function ingestFailureText(view) {
   if (!view || !view.flagged) return "";
-  return view.failures.map((f) => `${f.name} didn't update${f.error ? ` (${f.error})` : ""}; last good update ${fmtUpdated(f.lastSuccessAt)}.`).join(" ");
+  const ga = view.ga4Access;
+  // An access problem replaces the GA4 and Google Ads lines with what to do about it.
+  const access = !ga ? "" : ga.problem === "api-disabled"
+    ? `GA4 didn't update: the Google Analytics Data API is turned off${ga.project ? ` for Google Cloud project ${ga.project}` : ""}. Enable it and the data follows within the hour; last good update ${fmtUpdated(ga.lastSuccessAt)}.`
+    : `GA4 didn't update: ${ga.serviceAccount ? `the service account ${ga.serviceAccount}` : "the console's service account"} has no access to GA4 property ${ga.propertyId || "(not recorded)"}. Add it as a Viewer in the property's access management and the data follows within the hour; last good update ${fmtUpdated(ga.lastSuccessAt)}.`;
+  const rest = (ga ? view.failures.filter((f) => f.name !== "GA4" && f.name !== "Google Ads") : view.failures);
+  return [access, ...rest.map((f) => `${f.name} didn't update${f.error ? ` (${f.error})` : ""}; last good update ${fmtUpdated(f.lastSuccessAt)}.`)].filter(Boolean).join(" ");
 }
 
 // ── Formatting ─────────────────────────────────────────────────────────────

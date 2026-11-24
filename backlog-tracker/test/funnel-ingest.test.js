@@ -434,5 +434,60 @@ const sum = (rows, f) => rows.reduce((n, r) => n + (r[f] || 0), 0);
     assert.doesNotMatch(role, /s3:PutObject|s3:\*/, "read only");
   });
 
+  await test("GA4 access: a 403 is sorted into no access or API disabled; anything else is not an access problem", () => {
+    const e = (status, msg) => Object.assign(new Error(`GA4 answered ${status}: ${msg}`), { status });
+    assert.strictEqual(fi.ga4AccessProblem(e(403, "User does not have sufficient permissions for this property. To learn more about Property ID, see https://developers.google.com/analytics/devguides/reporting/data/v1/property-id.")), "no-access");
+    assert.strictEqual(fi.ga4AccessProblem(e(403, "Google Analytics Data API has not been used in project 410903316373 before or it is disabled.")), "api-disabled");
+    assert.strictEqual(fi.ga4AccessProblem(new Error("GA4 answered 403: User does not have sufficient permissions for this property.")), "no-access", "read from the message when the status is not on the error");
+    assert.strictEqual(fi.ga4AccessProblem(e(401, "Request had invalid authentication credentials.")), "");
+    assert.strictEqual(fi.ga4AccessProblem(e(500, "backend error")), "");
+  });
+
+  await test("GA4 access: a refused property records the account it ran as, the property and the project, and retries hourly", async () => {
+    const db = fakeDb({ leads: {} });
+    const refuse = async () => ({ ok: false, status: 403, text: async () => JSON.stringify({ error: { code: 403, message: "User does not have sufficient permissions for this property.", status: "PERMISSION_DENIED" } }) });
+    let t = NOW;
+    let asked = 0;
+    const j = fi.createFunnelIngestJob({ db, fetch: refuse, ga4AccessToken: async () => "T", serviceAccountEmail: async () => { asked++; return "123-compute@developer.gserviceaccount.com"; }, gcpProject: "backlog-tracker-e4ed2", logger: quiet, now: () => t });
+    const out = await j.runIfDue({ budgetMs: 0 });
+    assert.strictEqual(out.mode, "backfill");
+    assert.deepStrictEqual(out.failed, fi.GA4_SOURCES.map(([src]) => src));
+    let st = db.col("consoleConfig").get("funnelIngest");
+    assert.deepStrictEqual({ ...st.ga4Access, at: "" }, { ok: false, problem: "no-access", serviceAccount: "123-compute@developer.gserviceaccount.com", propertyId: fi.DEFAULT_PROPERTY_ID, project: "backlog-tracker-e4ed2", at: "" });
+    assert.strictEqual(asked, 1, "the account is read once per run");
+    assert.strictEqual(st.sources.leads.ok, true, "leads still update");
+    // Refused on access: the next hourly call (50 minutes on) tries again, not 6 hours on.
+    t = new Date(NOW.getTime() + 30 * 60e3);
+    assert.deepStrictEqual(await j.runIfDue(), { skipped: "not due" });
+    t = new Date(NOW.getTime() + fi.ACCESS_RETRY_MS + 1);
+    // Access granted: the retry backfills, records the access as fine, and the 6-hour rhythm returns.
+    const ok = fi.createFunnelIngestJob({ db, fetch: ga4Answers(), ga4AccessToken: async () => "T", serviceAccountEmail: async () => "123-compute@developer.gserviceaccount.com", logger: quiet, now: () => t });
+    const again = await ok.runIfDue({ budgetMs: 0 });
+    assert.strictEqual(again.mode, "backfill");
+    assert.deepStrictEqual(again.failed, []);
+    st = db.col("consoleConfig").get("funnelIngest");
+    assert.strictEqual(st.ga4Access.ok, true);
+    assert.strictEqual(st.ga4Access.problem, "");
+    assert.ok(st.backfilledAt);
+    t = new Date(t.getTime() + fi.ACCESS_RETRY_MS + 1);
+    assert.deepStrictEqual(await ok.runIfDue(), { skipped: "not due" }, "back to every 6 hours once GA4 answers");
+  });
+
+  await test("GA4 access: an unknown account is recorded as empty, never guessed; a failing lookup does not stop the run", async () => {
+    const db = fakeDb({ leads: {} });
+    const off = async () => ({ ok: false, status: 403, text: async () => JSON.stringify({ error: { message: "Google Analytics Data API has not been used in project 1 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/analyticsdata.googleapis.com/overview?project=1" } }) });
+    const out = await fi.createFunnelIngestJob({ db, fetch: off, ga4AccessToken: async () => "T", serviceAccountEmail: async () => { throw new Error("no metadata server"); }, logger: quiet, now: () => NOW }).run({ mode: "daily" });
+    assert.ok(out.failed.includes("ga4-total"));
+    const ga = db.col("consoleConfig").get("funnelIngest").ga4Access;
+    assert.strictEqual(ga.problem, "api-disabled");
+    assert.strictEqual(ga.serviceAccount, "");
+    // A run that never reached GA4 (other sources only) leaves the last record alone.
+    await fi.createFunnelIngestJob({ db, fetch: off, ga4AccessToken: async () => "T", logger: quiet, now: () => NOW }).run({ mode: "daily", only: ["leads"] });
+    assert.strictEqual(db.col("consoleConfig").get("funnelIngest").ga4Access.problem, "api-disabled");
+    const idx = fs.readFileSync(path.join(__dirname, "../functions/index.js"), "utf8");
+    assert.match(idx, /serviceAccountEmail: async \(\) => \{\s+try \{ const c = await auth\.getCredentials\(\);/, "index.js reads the account from the credentials");
+    assert.match(idx, /computeMetadata\/v1\/instance\/service-accounts\/default\/email/, "then from the metadata server");
+  });
+
   console.log(`funnel-ingest: ${count} passed`);
 })().catch((err) => { console.error(err); process.exit(1); });

@@ -6624,6 +6624,22 @@ The TAM is uploaded to AWS Partner Central's **Partner Account Mapping**, which 
   API enabled on the project; Google Ads needs the Ads account linked to that
   property. `consoleConfig/funnelIngest` may override `ga4PropertyId` and
   `timeZone`.
+- **GA4 access (24 Nov 2026, ticket GIUwHBjGPqLmv6uQS692).** Every run that reaches
+  GA4 records `consoleConfig/funnelIngest.ga4Access`: `{ok, problem, serviceAccount,
+  propertyId, project, at}`. `serviceAccount` is the account the function actually
+  ran as (its credentials, then the metadata server's default account; empty if
+  neither answers, never inferred). A 403 is sorted into `problem: "no-access"`
+  (the account is not a user of the property) or `"api-disabled"` (the Google
+  Analytics Data API is off for the project). While GA4 refuses on access, a due
+  run comes every hour (50 minutes, `ACCESS_RETRY_MS`) instead of every 6, so the
+  data follows within the hour of access being granted; once GA4 answers the
+  6-hour rhythm returns. The page's status line then says which account has no
+  access to which property and that it needs Viewer (or that the API is off), in
+  place of the raw 403 on the GA4 and Google Ads lines, and a row under it offers
+  Copy service account, Copy property ID, Copy role and Open GA4 access
+  management (or Enable the Data API). The Dashboard tile's panel carries the
+  same sentence. A status written before `ga4Access` existed is read from the
+  sources' errors, without the account.
 - **A failed source is flagged, never a silent 0.** `consoleConfig/funnelIngest`
   records each source's `ok`, `error` and `lastSuccessAt`. A failing source
   keeps its earlier rows. The page's count line ends "Updated <local date and
