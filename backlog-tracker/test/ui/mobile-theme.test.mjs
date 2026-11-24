@@ -67,7 +67,7 @@ try {
       await shot("build-sheet");
       problems.push(...await check("build sheet", ".nav-drawer.open .nav-drawer-item"));
       await page.click('.tab[data-tab="build"]'); await page.waitForTimeout(250);
-      await page.click('.tab[data-tab="profile"]'); await page.waitForTimeout(350);
+      await page.click("#profile-btn"); await page.waitForTimeout(350);
       await shot("profile-menu");
       problems.push(...await check("profile menu", ".profile-menu .profile-menu-item"));
       assert.deepStrictEqual([...new Set(problems)], [], "theme problems");

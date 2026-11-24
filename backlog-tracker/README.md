@@ -2816,8 +2816,10 @@ every destination already existed.
   width until the pointer leaves (`data-nav-peek`, `nav-shell.js`); the page
   does not move for that, and a touch on a rail icon just goes there. The
   topbar hamburger is not shown at this width. 641 to 1023px, the overlay drawer;
-  640px and down, a bottom tab bar (Build, Promote, Publish, Settings, Search, Profile) that opens
-  one section at a time. The Board's columns stay stacked top to bottom on a
+  640px and down, a bottom tab bar (Build, Promote, Support, Settings) that opens
+  one section at a time; Profile is the top-right avatar at every width, opening
+  its menu as a dropdown under it, and Search is not offered on a phone
+  (LJrgkj70zFIXSG6PuwGg). The Board's columns stay stacked top to bottom on a
   phone (tap a column header to collapse it); a swipe-one-column-at-a-time
   strip was tried and reverted the same day (see below).
 - **Promote › Brand Guidelines** (`#promote/brand-guidelines`,
@@ -2960,7 +2962,7 @@ every destination already existed.
   User Management › Roles. Agents use `list_prospects` and `upsert_prospects`
   (`functions/prospects.js`). A company name opens a detail view (profile, org chart with buying roles and lead overlay, AWS account team, document library; `prospect-detail.js` / `prospect-detail-core.js`); that detail is stored once per company in `prospectCompanies/{companyKey}` and shared by every country record, and a lead card shows a compact org chart and AWS team. `awsAccountId` (12 digits, optional) is on the prospect, the lead and each contact or person. See REQUIREMENTS.md → Promote section: Prospects (TAM).
 - **Prospects (TAM) › Contacts tab (17 Nov 2026)** (`#promote/prospects?tab=contacts`; `public/js/prospect-contacts.js`, rules in `prospect-contacts-core.js`): the page has two tabs, Companies (the grid above) and Contacts, every person at the TAM companies in Firestore `prospectContacts/{id}` (name, role, company link or Unmatched, LinkedIn profile, email, notes, date added; search, sort, company and Unmatched filters). The TAM spreadsheet's contacts (the `contacts[]` on the company records) are copied in by themselves, once each, when an editor opens the page; Add contact and Add from URL add more; a company's detail view has a Contacts tab. **`chrome-extension/`** is a Chrome extension (loaded unpacked by the account owner): one click on a LinkedIn profile adds or updates that person through the signed-in console tab (`window.__phAddProspectContact`), deduplicated on the profile URL. See REQUIREMENTS.md → "Prospects (TAM): Contacts tab and the LinkedIn extension" and `chrome-extension/README.md`.
-- **Command-K** (Ctrl/Cmd+K, the sidebar's Search row or the Search tab) jumps to
+- **Command-K** (Ctrl/Cmd+K or the sidebar's Search row; not offered on a phone) jumps to
   any ticket, concept, project or release. Archived tickets are included once
   the archive has been loaded.
 - Tests: `npm run test:ui` now runs at 1440, 1180, 820 and 390px and includes

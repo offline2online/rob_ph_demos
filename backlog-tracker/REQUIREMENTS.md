@@ -5247,7 +5247,14 @@ A full-screen, shareable whiteboard for sketching ideas in meetings. Started fro
 - The primary nav has four groups: **Build** (Agent Board, Staff Kanban,
   Concepts, Whiteboard), **Support** (Help Centre; labelled Publish before 4 Nov 2026) and **Settings**. Releases and Skills are reachable only
   from Settings. Settings is not in the profile menu. On a phone the tab bar is
-  Build, Publish, Settings, Search, Profile.
+  Build, Promote, Support, Settings.
+- **Profile at the top right on a phone too; no Search on a phone** (24 Nov
+  2026, LJrgkj70zFIXSG6PuwGg). The bottom tab bar has no Profile or Search tab.
+  Profile is the topbar avatar at the top right at every width (a 44px tap
+  target on a phone) and opens the same profile menu as a dropdown under it, as
+  on the web, kept inside the screen and scrolling if taller than the room.
+  Search (the Command-K palette) is not offered on a phone; the sidebar's
+  Search row was already hidden there.
 - Settings has a sub-menu at `#settings/<page>`: Projects (names, descriptions,
   types, repository folders), Releases (versions, names, dates, status),
   Skills & phase bindings (the skills bound to the Build and Deploy phases, and

@@ -243,8 +243,10 @@
     </nav>
 
     <!-- Profile menu: who is signed in, Admin (Settings) and Sign out. The
-         avatar button sits in the topbar; on a phone the Profile tab opens
-         the same menu as a bottom sheet. #topbar-user / #topbar-signout keep
+         avatar button sits at the top right of the topbar at every width,
+         phones included, and opens this menu as a dropdown under it (the
+         phone tab bar has no Profile or Search tab since LJrgkj70zFIXSG6PuwGg).
+         #topbar-user / #topbar-signout keep
          their ids because auth-gate.js writes and listens to them. -->
     <div class="profile-menu" id="profile-menu" role="menu" aria-label="Profile and admin" hidden>
       <div class="profile-menu-who"><span id="profile-photo-face" class="profile-photo-face"><span class="material-symbols-outlined" aria-hidden="true">account_circle</span></span><span class="topbar-user" id="topbar-user"></span></div>
@@ -270,8 +272,6 @@
       <button type="button" class="tab" data-tab="promote"><span class="material-symbols-outlined" aria-hidden="true">palette</span><span>Promote</span></button>
       <button type="button" class="tab" data-tab="publish"><span class="material-symbols-outlined" aria-hidden="true">campaign</span><span>Support</span></button>
       <button type="button" class="tab" data-tab="settings"><span class="material-symbols-outlined" aria-hidden="true">settings</span><span>Settings</span></button>
-      <button type="button" class="tab" data-tab="search"><span class="material-symbols-outlined" aria-hidden="true">search</span><span>Search</span></button>
-      <button type="button" class="tab" data-tab="profile"><span class="material-symbols-outlined" aria-hidden="true">account_circle</span><span>Profile</span></button>
     </nav>
 
     <div class="cmdk-backdrop" id="cmdk-backdrop" hidden>

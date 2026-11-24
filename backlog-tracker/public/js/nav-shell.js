@@ -1,5 +1,6 @@
 // Console navigation shell: Build / Support sidebar, Admin in the profile
-// menu, bottom tab bar on phones, and the Command-K jump palette.
+// menu (the top-right avatar at every width), bottom tab bar on phones
+// (Build, Promote, Support, Settings), and the Command-K jump palette.
 //
 // Navigation and layout only. Every destination here already existed (the old
 // hamburger drawer); this file groups them, adds the persistent/collapsible
@@ -186,8 +187,6 @@ export function initNavShell({ getEntries, openEntry, goHome }) {
   function openProfile() {
     profileMenu.hidden = false;
     profileBtn.setAttribute("aria-expanded", "true");
-    backdrop.classList.toggle("open", mqPhone.matches);
-    setTab("profile");
     const first = profileMenu.querySelector("button");
     if (first) first.focus();
   }
@@ -234,7 +233,6 @@ export function initNavShell({ getEntries, openEntry, goHome }) {
     input.value = "";
     active = 0;
     renderResults();
-    setTab("search");
     input.focus();
   }
   function closePalette() {
@@ -286,8 +284,6 @@ export function initNavShell({ getEntries, openEntry, goHome }) {
     const t = e.target.closest(".tab");
     if (!t) return;
     const which = t.dataset.tab;
-    if (which === "search") { openPalette(); return; }
-    if (which === "profile") { profileMenu.hidden ? openProfile() : closeProfile(); return; }
     closeProfile();
     if (drawer.classList.contains("open") && drawer.dataset.show === which) {
       drawer.classList.remove("open"); backdrop.classList.remove("open"); delete drawer.dataset.show; syncActive();

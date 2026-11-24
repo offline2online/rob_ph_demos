@@ -536,7 +536,7 @@ const scenarios = [
     async run(c) {
       await c.boardReady();
       c.at("open the palette");
-      if (c.width <= 640) await c.click('#tabbar .tab[data-tab="search"]'); else await c.page.keyboard.press("Control+k");
+      await c.page.keyboard.press("Control+k");
       await c.visible("#cmdk-backdrop", "palette shows");
       assert.strictEqual(await c.page.evaluate(() => document.activeElement && document.activeElement.id), "cmdk-input", "focus lands in the search box");
       await c.page.keyboard.type("purple");
@@ -544,16 +544,57 @@ const scenarios = [
       await c.page.keyboard.press("Escape");
       await c.hidden("#cmdk-backdrop", "Escape closes it");
       c.at("jump to the ticket");
-      if (c.width <= 640) await c.click('#tabbar .tab[data-tab="search"]'); else await c.page.keyboard.press("Control+k");
+      await c.page.keyboard.press("Control+k");
       await c.page.keyboard.type("Demo Proj");
       await c.waitText("#cmdk-list", "Demo Project", "project is listed");
       await c.page.keyboard.press("Enter");
       await c.hidden("#cmdk-backdrop", "palette closes on choose");
-      if (c.width <= 640) await c.click('#tabbar .tab[data-tab="search"]'); else await c.page.keyboard.press("Control+k");
+      await c.page.keyboard.press("Control+k");
       await c.page.keyboard.type("purple");
       await c.waitText("#cmdk-list", "Purple widget");
       await c.page.keyboard.press("Enter");
       await c.visible("#ei-backdrop", "the ticket opens");
+    },
+  },
+  {
+    // LJrgkj70zFIXSG6PuwGg: on a phone Profile moved out of the bottom tab bar
+    // to the top right, as on the web, and Search left the phone entirely.
+    name: "nav: Profile is the top-right avatar at every width; the phone tab bar is Build, Promote, Support, Settings",
+    seed: () => seed(),
+    async run(c) {
+      await c.boardReady();
+      c.at("the tab bar holds no Search or Profile tab");
+      const tabs = await c.page.$$eval("#tabbar .tab", (els) => els.map((e) => e.dataset.tab));
+      assert.deepStrictEqual(tabs, ["build", "promote", "publish", "settings"]);
+      if (c.width <= 640) {
+        assert.ok(await c.page.$eval("#tabbar", (e) => e.getClientRects().length > 0), "the phone tab bar shows");
+        assert.strictEqual(await c.page.locator("#cmdk-open-btn:visible").count(), 0, "no Search entry on a phone");
+      }
+      c.at("the avatar sits at the top right of the topbar");
+      await c.visible("#profile-btn", "profile button shows");
+      const where = await c.page.evaluate(() => {
+        const b = document.getElementById("profile-btn").getBoundingClientRect(), bar = document.querySelector(".topbar").getBoundingClientRect();
+        return { right: innerWidth - b.right, inBar: b.top >= bar.top - 1 && b.bottom <= bar.bottom + 1, h: b.height, w: b.width };
+      });
+      assert.ok(where.inBar, "avatar is inside the topbar");
+      assert.ok(where.right < 40, `avatar is at the right edge (${where.right}px from it)`);
+      if (c.width <= 640) assert.ok(where.h >= 44 && where.w >= 44, `avatar is a 44px tap target (${where.w}x${where.h})`);
+      c.at("it opens the profile menu as a dropdown under it");
+      await c.click("#profile-btn", "tap the avatar");
+      await c.visible("#profile-menu", "profile menu opens");
+      const menu = await c.page.evaluate(() => {
+        const m = document.getElementById("profile-menu").getBoundingClientRect(), b = document.getElementById("profile-btn").getBoundingClientRect();
+        return { below: m.top >= b.bottom - 2 && m.top < b.bottom + 24, inside: m.left >= 0 && m.right <= innerWidth + 1, tab: !!document.querySelector("#tabbar .tab.active[data-tab='profile']") };
+      });
+      assert.ok(menu.below, "menu drops down under the avatar");
+      assert.ok(menu.inside, "menu stays inside the screen");
+      await c.visible("#topbar-signout", "Sign out is in the menu");
+      assert.strictEqual(await c.page.getAttribute("#profile-btn", "aria-expanded"), "true");
+      await c.page.keyboard.press("Escape");
+      await c.hidden("#profile-menu", "Escape closes it");
+      assert.strictEqual(await c.page.getAttribute("#profile-btn", "aria-expanded"), "false");
+      const sw = await c.page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
+      assert.ok(sw, "no sideways scroll");
     },
   },
   {

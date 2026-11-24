@@ -2095,8 +2095,16 @@ body { overflow-x: clip; }
   .nav-drawer[data-show="publish"] .nav-drawer-item-dashboard,
   .nav-drawer[data-show="settings"] .nav-drawer-item-dashboard { display: none; }
   .nav-drawer-item, .profile-menu-item { min-height: 48px; font-size: 16px; }
-  .profile-menu { top: auto; left: 0; right: 0; bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px)); width: 100%; max-width: none; border-radius: 16px 16px 0 0; border-width: 1px 0 0; }
-  .profile-btn { display: none; }
+  /* Profile sits at the top right as on the web (LJrgkj70zFIXSG6PuwGg): the
+     topbar avatar stays visible and the menu drops down under it, kept inside
+     the screen with 16px gutters and scrolling if it is taller than the room. */
+  .profile-menu { max-height: calc(100dvh - var(--sticky-topbar-h, 56px) - var(--tabbar-h) - 24px - env(safe-area-inset-bottom, 0px)); overflow-y: auto; }
+  .profile-btn { min-width: 44px; }
+  /* With the avatar beside it, the bell is no longer the last control in the
+     bar, so its panel (right-aligned to the bell elsewhere) would run off the
+     left edge; on a phone it spans the topbar instead. */
+  .topbar-actions .kb-bell-wrap { position: static; }
+  .topbar-actions .kb-bell-panel { left: 0; right: 0; width: auto; top: calc(100% + 4px); }
   .nav-drawer-backdrop { z-index: 20; }
   .btn-primary, .btn-ghost, .notify-claude-btn, .icon-btn { min-height: 44px; }
 
