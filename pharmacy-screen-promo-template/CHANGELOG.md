@@ -10,6 +10,10 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Added
 
+- **Last-frame hold checked for every campaign, portrait and landscape.** `pharmacy-screen/test/ui/hold-every-campaign.test.mjs`
+  plays Morning, Afternoon, Closed, the custom-template demo and Seasonal (the Fallback and each of the six seasons)
+  in both orientations and checks each one stays on its last scene or beat, fully drawn and not black, after it has
+  played; the test checklist gains I2a for the same check on a PH player. No change to playback.
 - **Fallback promotion, and "Currently active promotion" in place of the Season drop-down.** Outside every season's
   dates the Seasonal promotion (`promo=occasions`) now plays a **Fallback**: the pharmacy's own brand colours fill the
   screen, "Thank you, ${Suburb}" slides up (0–2 s), "for supporting your local pharmacy" comes in beneath (2–5 s),

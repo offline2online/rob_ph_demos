@@ -210,7 +210,8 @@ scene**, fully drawn, until the player loads the next campaign:
 - `loop=1` keeps the earlier behaviour, looping forever, for a screen that shows one campaign only.
 
 The admin editor's preview is unchanged: it keeps looping. `scene=<n>` still holds one scene still. Tested by
-`test/ui/playback.test.mjs` and `test/playback.test.mjs`.
+`test/ui/playback.test.mjs`, `test/ui/hold-every-campaign.test.mjs` (every campaign, portrait and landscape) and
+`test/playback.test.mjs`.
 
 ## Query parameters
 
@@ -317,6 +318,11 @@ run holds the train's deploy; see "CI" below.
   suburb, hours and phone; changed hours at the next store poll (every 20 s) without a reload; network killed and restored; unknown,
   unconfigured and missing device; offline badge; the debug panel at every bar state; no request leaves the page's
   own origin (self-hosted fonts).
+- `test/ui/hold-every-campaign.test.mjs`: every campaign holds its last frame, in portrait and in landscape: Morning,
+  Afternoon, Closed, the custom-template demo, and Seasonal in the Fallback and each of the six seasons (mock data),
+  plus Seasonal on the config API's published config (the Fallback and Christmas). Played through on real time, each
+  is checked as it holds and again 3 s later: on its last scene (Seasonal: its last beat; the Fallback: all three
+  beats), no leaving fade, copy on screen and the frame not black.
 
 **End to end** (`npm run test:e2e`, on `admin/tools/dev-server.mjs` with a PH API token and two base URLs saved)
 

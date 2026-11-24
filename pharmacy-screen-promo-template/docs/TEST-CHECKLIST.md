@@ -19,7 +19,7 @@ From a clean checkout, in `pharmacy-screen-promo-template/`:
 | # | Do | Expect | Ours | miPharmacy |
 |---|---|---|---|---|
 | A1 | `npm run check:all` | All pass: deploy config, screen, config API, proxy, seed, handover docs | ☐ | ☐ |
-| A2 | `cd pharmacy-screen && npm run test:ci` (needs Chromium) | Units, the copy-fit audit (every pharmacy × promotion × scene × orientation × bar state) and end to end pass | ☐ | ☐ |
+| A2 | `cd pharmacy-screen && npm run test:ci` (needs Chromium) | Units, the copy-fit audit (every pharmacy × promotion × scene × orientation × bar state), the last-frame hold of every campaign (each promotion, the Fallback and every season, portrait and landscape) and end to end pass | ☐ | ☐ |
 | A3 | `npm run check:aws` | AWS adapters, Lambda entries, CDK template, deploy plan and OIDC sign-in pass | ☐ | ☐ |
 
 ## B. Install
@@ -124,6 +124,7 @@ With `debug=1`, use the panel's test time (or `now=<day>-<HH:MM>`), on a store o
 |---|---|---|---|---|
 | I1 | Set the campaign URL (portrait) on an Android 12 screen in PH, playback duration as the editor shows | It plays full screen with animations; the last scene finishes before the campaign moves on | ☐ | ☐ |
 | I2 | The same in landscape on a landscape screen | It plays | ☐ | ☐ |
+| I2a | Hold on the last frame, every campaign: on a portrait and a landscape screen, play Morning, Afternoon, Closed and Seasonal (the Fallback, then a season put on with **Activate on display**), each with its playback duration set 10 s longer than the editor shows | After its last scene (Seasonal: its last beat; the Fallback: the thank-you line, message, logo and name together) it stays on screen, fully drawn, until the campaign moves on; the screen is never black after the last scene. Any black is only while the page first loads, before the first scene (A2 checks every campaign in both orientations automatically: `test/ui/hold-every-campaign.test.mjs`) | ☐ | ☐ |
 | I3 | Leave it running for an hour | No freeze; hours and the bar stay current | ☐ | ☐ |
 | I4 | Deploy a change, wait up to 30 minutes | The player picks up the new version by itself | ☐ | ☐ |
 | I5 | On an Android 12 player and a Chrome OS player, open the campaign URL with `debug=1` and time the first paint, before and after this release | First paint is faster than before (the page no longer waits for 1.5 MB of stylesheets) | ☐ | ☐ |
