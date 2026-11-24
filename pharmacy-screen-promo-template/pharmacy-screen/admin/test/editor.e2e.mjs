@@ -400,8 +400,9 @@ test('seasonal: Currently active promotion opens on what plays (the Fallback out
   // The seeded seconds (3 s + 4 s): every season's loop is 7 s, so the playback duration is 8 s.
   assert.equal(await page.textContent('#loopLen'), 'Loop 7s');
   assert.equal(await page.textContent('#pbSecs'), '8s');
-  // Each Main line has its "+ Add token" menu (aria-label "Add token") on its label row.
-  assert.deepEqual(await page.$$eval('#occList .slot [aria-label], #occList .slot input', (e) => e.map((x) => x.getAttribute('aria-label') || x.closest('label').querySelector('span').textContent)), ['Starts: day', 'Starts: month', 'Ends: day', 'Ends: month', 'Seconds on screen', 'Add token', 'Main line', 'Seconds on screen', 'Small line above', 'Add token', 'Main line']);
+  // Each Main line and each Small line has its "+ Add token" menu (aria-label "Add token") on its label row, and
+  // its "Tokens used" row under it.
+  assert.deepEqual(await page.$$eval('#occList .slot [aria-label], #occList .slot input', (e) => e.map((x) => x.getAttribute('aria-label') || (x.labels && x.labels[0] ? x.labels[0].textContent : x.closest('label').querySelector('span').textContent))), ['Starts: day', 'Starts: month', 'Ends: day', 'Ends: month', 'Seconds on screen', 'Add token', 'Main line', 'Tokens used', 'Seconds on screen', 'Add token', 'Small line above', 'Tokens used', 'Add token', 'Main line', 'Tokens used']);
   // Christmas's dates: 15 to 27 December by default; changing them is saved with the copy and reaches the screen.
   assert.equal(await page.textContent('#occWhen'), '15 Dec to 27 Dec');
   // The dates read as a yearly schedule: start and end, every year.
@@ -1314,6 +1315,49 @@ test('+ Add token above every headline field lists the available tokens and inse
   assert.match(rec.body.content['seed-promotion-morning'].greeting, / at \$\{StoreCode\}$/);
   assert.deepEqual(errors, []);
   await ctx.close();
+});
+
+test('+ Add token on every copy field, plain lines too, with the tokens each field uses, in the admin and pharmacy views', async () => {
+  for (const path of ['/admin/', '/admin/?store=VIC-MP-003']) {
+    const { ctx, page, errors } = await open('dev-admin', { path });
+    await page.click('#playBtn'); // pause
+    if (path === '/admin/') {
+      await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-003');
+      await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-003');
+    }
+    await own(page);
+    // Every copy field, headlines and plain lines alike (accent lines, Line 1 / Line 2, service chip labels), has
+    // its own "+ Add token" with the same menu.
+    const plain = await page.$$eval('#dpBody .ptf', (l) => l.map((f) => [f.querySelector('input').id, !!f.querySelector('.rt-lab .tok-add')]));
+    for (const id of ['dit', 'dis', 's0sub', 's0label', 's0line1', 's0line2', 'cl2', 'cl3', 'cl4']) assert.ok(plain.some(([x, has]) => x === id && has), `${path}: ${id} has Add token`);
+    assert.ok(await page.$$eval('#dpBody .rtf', (l) => l.every((f) => !!f.querySelector('.rt-lab .tok-add'))));
+    assert.deepEqual(await page.$$eval('[data-tok-menu="cl3"] button code', (l) => l.map((e) => e.textContent)),
+      ['${StoreName}', '${Suburb}', '${StoreCode}', '${State}', '${Phone}']);
+    // The tokens a field uses are shown under it, and follow the copy as it changes.
+    assert.deepEqual(await page.$$eval('[data-tok-used="ftOpen"] .tok', (l) => l.map((e) => e.textContent)), ['${CloseTime}']);
+    await page.fill('#cl3', 'Ask for ');
+    assert.equal(await page.isHidden('[data-tok-used="cl3"]'), true);
+    // A pick goes in at the caret of a plain line, saves it, and the preview fills it from the store's data.
+    await page.click('#cl3');
+    await page.keyboard.press('End');
+    await page.click('.tok-add[data-tok-for="cl3"]');
+    await page.click('[data-tok-menu="cl3"] button[data-t="StoreCode"]');
+    assert.equal(await page.isVisible('[data-tok-menu="cl3"]'), false);
+    assert.equal(await page.inputValue('#cl3'), 'Ask for ${StoreCode}');
+    assert.deepEqual(await page.$$eval('[data-tok-used="cl3"] .tok', (l) => l.map((e) => e.textContent)), ['${StoreCode}']);
+    await page.click('.tok-add[data-tok-for="cl3"]');
+    await page.click('[data-tok-menu="cl3"] button[data-t="Phone"]');
+    assert.deepEqual(await page.$$eval('[data-tok-used="cl3"] .tok', (l) => l.map((e) => e.textContent)), ['${StoreCode}', '${Phone}']);
+    // A token the menu does not offer (one set by hand in Settings → Tokens) is shown too.
+    await page.fill('#cl4', 'Visit ${Website}');
+    assert.deepEqual(await page.$$eval('[data-tok-used="cl4"] .tok', (l) => l.map((e) => e.textContent)), ['${Website}']);
+    await settle(page);
+    const close = (await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-003')).body.content['seed-promotion-morning'].close;
+    assert.equal(close.line1, 'Ask for ${StoreCode}${Phone}');
+    assert.equal(close.line2, 'Visit ${Website}');
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  }
 });
 
 test('seasonal master: editing its copy, dates or timings changes no store\'s screen; a store takes it only by Copy from master', async () => {

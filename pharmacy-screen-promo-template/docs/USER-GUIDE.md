@@ -130,10 +130,13 @@ Service copy needs TGA advertising review before go-live.
 **Copy tips**
 
 - Headlines are rich text: bold, italic, regular weight, accent colour and line breaks.
-- **+ Add token**, on the right of each headline's label, lists the tokens you can use: Store name, Suburb, Store
+- **+ Add token**, on the right of the label of every field that takes copy (headlines, accent lines, Line 1 /
+  Line 2, service chip labels, the Open today bar messages and the seasonal lines), lists the tokens you can use: Store name, Suburb, Store
   code, State and Phone number. Pick one to insert it where the cursor is (e.g. `${StoreCode}`). They come from the
   pharmacy's store data. Copy that already uses `${LanguagesSpoken}` or `${LocalisedCopy}` still shows the value set
-  for the pharmacy in **Settings → Tokens**, and nothing until one is set.
+  for the pharmacy in **Settings → Tokens**, and nothing until one is set. It is there in the full editor and in
+  the pharmacy view alike.
+- Under each copy field, the tokens it uses are shown (e.g. `${Suburb}`), and change as you type.
 - `${Suburb}` becomes the store's suburb from Personalisation Hub. If a store has no suburb it disappears with
   the comma or line break before it.
 - Bar messages use `${CloseTime}` and `${OpenTime}` (worked out in the store's time zone), e.g. "Open today until

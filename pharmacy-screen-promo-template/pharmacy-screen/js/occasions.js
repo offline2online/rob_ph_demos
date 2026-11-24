@@ -210,7 +210,10 @@ T.push({
    logo (.lg) above the name in beat 3. 0-2 s the brand colour fills the screen and "Thank you, ${Suburb}" fades and
    slides up; 2-5 s "for supporting your local pharmacy" comes in beneath and holds; 5-7 s the logo and name settle in
    at the bottom with a gentle scale and a shimmer. The beats stay on screen together (a column, so they never
-   overlap); on a loop (the editor) they all fade out in the last half second, played once (the player) they stay. */
+   overlap); on a loop (the editor) they all fade out in the last half second, played once (the player) they stay.
+   The logo is the same uploaded image Morning and Afternoon show (${Logo}), drawn the same way: as it is, straight
+   on the brand colour, with no tile, padding or shadow behind it. A white tile washed out the white lettering of
+   logos made for the brand colour, so it no longer read as the same logo (24 Nov 2026). */
 T.push({
   id:'thankyou', name:'Fallback', when:'Whenever no season is on', uses:'Suburb + store name, logo, brand colours',
   fx:`<div class="fx fill anim"></div><div class="fx glow"></div>`,
@@ -239,7 +242,7 @@ T.push({
 .occ-thankyou .hl{font:800 11cqmin/1.04 var(--display);letter-spacing:-.01em;text-shadow:0 .4cqmin 2.4cqmin rgba(0,0,0,.18)}
 .occ-thankyou .sub{font:500 6.4cqmin/1.18 var(--body);opacity:.94}
 .occ-thankyou .lg{display:flex;justify-content:center;margin-bottom:2.4cqmin}
-.occ-thankyou .lg img{height:15cqmin;width:auto;max-width:70%;object-fit:contain;padding:2cqmin 3.4cqmin;border-radius:2cqmin;background:#fff;box-shadow:0 1cqmin 4cqmin rgba(0,0,0,.18)}
+.occ-thankyou .lg img{height:15cqmin;width:auto;max-width:70%;object-fit:contain}
 .occ-thankyou .nm{font:700 5cqmin/1.3 var(--body);letter-spacing:.02em;padding-bottom:.6cqmin}
 @container occ (orientation:landscape){.occ-thankyou .txt{inset:9% 12% 6%}.occ-thankyou .hl{font-size:12cqmin}.occ-thankyou .lg img{height:13cqmin}}
 @media (prefers-reduced-motion:reduce){.occ-thankyou .b3::after{animation:none;opacity:0}.occ-thankyou .fill{clip-path:none}}

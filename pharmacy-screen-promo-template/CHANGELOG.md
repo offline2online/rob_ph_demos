@@ -30,6 +30,13 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Changed
 
+- **+ Add token on every copy field, and the tokens each field uses shown under it.** Every field that takes copy,
+  in the admin view and the pharmacy view, now has **+ Add token** on its label row, not just the headlines: the
+  accent lines, Line 1 / Line 2 (greeting, each promotion, walk-in close), the service chip labels and the seasonal
+  Small line above / Line below. The menu is the same (Store name, Suburb, Store code, State, Phone number) and
+  inserts the token at the cursor. Under each copy field, its `${…}` tokens are shown as chips, updated as you type,
+  including a token the menu does not offer (one set by hand in Settings → Tokens, e.g. `${Website}`). Editor only;
+  the screen already filled tokens in every one of these fields.
 - **+ Add token: Languages spoken and Localised copy removed.** The menu above every headline field now lists the
   store's data only: Store name, Suburb, Store code, State and Phone number. Copy that already uses
   `${LanguagesSpoken}` or `${LocalisedCopy}` still shows a value set for it in Settings → Tokens.
@@ -42,6 +49,11 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Fixed
 
+- **Fallback: the pharmacy's logo now looks exactly as it does in Morning and Afternoon.** The Fallback already
+  used the same uploaded logo, but drew it on a white tile with padding and a shadow, which washed out logos made
+  for the brand colour (white lettering) so they no longer read as the same logo. It is now drawn as it is, straight
+  on the pharmacy's brand colour, the way the other campaigns show it (`.occ-thankyou .lg img` in
+  `pharmacy-screen/js/occasions.js`).
 - **Seasonal: Currently active promotion is readable, and Activate on display reaches every screen.** In Retail
   Admin the drop-down was squashed to a sliver beside Activate on display, so what was selected could not be seen;
   it now has the row to itself and keeps one width (Activate on display goes below it on a narrow screen), in the
