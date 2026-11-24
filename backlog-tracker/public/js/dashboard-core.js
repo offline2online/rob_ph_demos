@@ -206,7 +206,9 @@ export const fmtSpan = (ms) => (ms == null ? "—" : fmtWait(ms));
 // 7-day line; over the tickets deployed in the last 7 days, the average lead
 // time from Backlog (createdAt) to Live and the share that passed testing
 // first time. Per project: deployed yesterday, last 7 days, lead time, first pass.
-export function deliveryKpi(items, projects, now = Date.now()) {
+// `period` is the same over the selected `range` against the previous
+// equivalent period (deliveryPeriod below), which the tile and panel show.
+export function deliveryKpi(items, projects, now = Date.now(), range = "yesterday") {
   const y = localDayRange(1, now), p = localDayRange(2, now);
   const week = lastDays(SERIES_DAYS, now);
   const win = { from: week[0].from, to: week[week.length - 1].to };
@@ -236,7 +238,80 @@ export function deliveryKpi(items, projects, now = Date.now()) {
     .map((r) => ({ id: r.id, name: r.name, yesterday: r.yesterday, week: r.week, leadTimeMs: avg(r.leads), firstPassPct: pctOf(r.passed, r.week) }))
     .sort((a, b) => b.yesterday - a.yesterday || b.week - a.week || a.name.localeCompare(b.name));
   const series = dailyCounts((items || []).map(deployedMs), SERIES_DAYS, now);
-  return { value: deployed, prev, trend: trend(deployed, prev), series, shipped, leadTimeMs: avg(leads), firstPassPct: pctOf(passed, shipped), projects: projectsOut };
+  return { value: deployed, prev, trend: trend(deployed, prev), series, shipped, leadTimeMs: avg(leads), firstPassPct: pctOf(passed, shipped), projects: projectsOut, period: deliveryPeriod(items, projects, range, now) };
+}
+
+// ── Delivery: change against the previous period (7KcZdqFjytcmD9S85Fnq) ──
+// The Delivery panel's range: Yesterday (against the day before) or the last
+// 7 days (against the 7 days before). Yesterday is the default.
+export const DELIVERY_RANGES = [
+  { key: "yesterday", label: "Yesterday", days: 1, metric: "Deployed yesterday", than: "the day before" },
+  { key: "week", label: "Last 7 days", days: SERIES_DAYS, metric: "Deployed in the last 7 days", than: "the 7 days before" },
+];
+export const deliveryRange = (key) => DELIVERY_RANGES.find((r) => r.key === key) || DELIVERY_RANGES[0];
+// The `days` local days ending yesterday, and the `days` local days before them.
+export function periodWindows(days, now = Date.now()) {
+  const cur = { from: localDayRange(days, now).from, to: localDayRange(1, now).to };
+  const prev = { from: localDayRange(days * 2, now).from, to: cur.from };
+  return { cur, prev };
+}
+const signed = (n, unit = "") => `${n > 0 ? "+" : n < 0 ? "−" : ""}${fmtCount(Math.abs(n))}${unit}`;
+// A count against the previous period, as a relative change:
+// { dir: "up" | "down" | "flat", pct, short, text }. 4 against 2 is "+100%";
+// from none to some is "New" (never ∞%); none to none is "0%".
+export function countChange(cur, prev, than = "the day before") {
+  const c = Number(cur) || 0, p = Number(prev) || 0;
+  if (c === p) return { dir: "flat", pct: 0, short: "0%", text: `Same as ${than}: ${fmtCount(c)}` };
+  if (!p) return { dir: "up", pct: null, short: "New", text: `New: ${fmtCount(c)}, none in ${than}` };
+  const pct = Math.round(((c - p) / p) * 100);
+  return { dir: c > p ? "up" : "down", pct, short: signed(pct, "%"), text: `${signed(pct, "%")} vs ${than}: ${fmtCount(c)} against ${fmtCount(p)}` };
+}
+// A first-time pass rate against the previous period, in percentage points:
+// 60% against 48% is "+12 pp". A period with no deployments has no rate, so
+// there is nothing to compare: dir "none" and "—".
+export function passChange(cur, prev, than = "the day before") {
+  if (cur == null || prev == null) return { dir: "none", delta: null, short: "—", text: `No first-time pass rate to compare: nothing deployed ${cur == null ? "in this period" : `in ${than}`}` };
+  const delta = cur - prev;
+  if (!delta) return { dir: "flat", delta: 0, short: "0 pp", text: `Same as ${than}: ${cur}%` };
+  return { dir: delta > 0 ? "up" : "down", delta, short: signed(delta, " pp"), text: `${signed(delta, " percentage points")} vs ${than}: ${cur}% against ${prev}%` };
+}
+// Delivery over the selected range against the previous equivalent period:
+// tickets deployed, first-time pass (over the tickets deployed in that
+// period) and lead time, in total and per project. A project is listed when
+// it deployed in either period, most deployed first.
+export function deliveryPeriod(items, projects, rangeKey = "yesterday", now = Date.now()) {
+  const range = deliveryRange(rangeKey);
+  const { cur, prev } = periodWindows(range.days, now);
+  const names = new Map((projects || []).map((x) => [x.id, x.name || "Untitled project"]));
+  const blank = () => ({ count: 0, passed: 0, leads: [] });
+  const total = { cur: blank(), prev: blank() };
+  const rows = new Map();
+  for (const it of items || []) {
+    const at = deployedMs(it);
+    const side = inRange(at, cur) ? "cur" : inRange(at, prev) ? "prev" : null;
+    if (!side) continue;
+    const id = it.projectId || "general";
+    if (!rows.has(id)) rows.set(id, { id, name: names.get(it.projectId) || "General", cur: blank(), prev: blank() });
+    const pass = firstTimePass(it);
+    const born = toMillis(it.createdAt);
+    for (const b of [total[side], rows.get(id)[side]]) {
+      b.count++;
+      if (pass) b.passed++;
+      if (side === "cur" && born && born <= at) b.leads.push(at - born);
+    }
+  }
+  const sum = (x) => {
+    const firstPassPct = pctOf(x.cur.passed, x.cur.count), prevFirstPassPct = pctOf(x.prev.passed, x.prev.count);
+    return {
+      count: x.cur.count, prevCount: x.prev.count, countChange: countChange(x.cur.count, x.prev.count, range.than),
+      firstPassPct, prevFirstPassPct, passChange: passChange(firstPassPct, prevFirstPassPct, range.than),
+      leadTimeMs: avg(x.cur.leads),
+    };
+  };
+  const projectsOut = [...rows.values()]
+    .map((r) => ({ id: r.id, name: r.name, ...sum(r) }))
+    .sort((a, b) => b.count - a.count || b.prevCount - a.prevCount || a.name.localeCompare(b.name));
+  return { range: range.key, label: range.label, metric: range.metric, than: range.than, ...sum(total), projects: projectsOut };
 }
 
 export const READY_WAIT_MS = 24 * 3600000;

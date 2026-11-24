@@ -3765,7 +3765,24 @@ const scenarios = [
       assert.ok(await c.page.locator(panel).isVisible(), "the panel stays pinned when the pointer leaves");
       await pinTile("delivery");
       const dTip = await c.text(panel);
-      assert.ok(dTip.includes("Demo Project") && /Yesterday\s*1/.test(dTip) && dTip.includes("Lead time") && dTip.includes("First-time pass"), `another tile switches the panel: ${dTip}`);
+      assert.ok(dTip.includes("Demo Project") && /Tickets\s*1\s*arrow_upward\s*New/.test(dTip) && dTip.includes("Lead time") && /First-time pass\s*100%/.test(dTip), `another tile switches the panel: ${dTip}`);
+      // 7KcZdqFjytcmD9S85Fnq: a Yesterday / Last 7 days switch; every figure
+      // carries its change on the previous period of the same length.
+      const pressed = () => c.page.$$eval("#dash-panel [data-delivery-range]", (els) => els.filter((e) => e.getAttribute("aria-pressed") === "true").map((e) => e.dataset.deliveryRange));
+      assert.deepStrictEqual(await pressed(), ["yesterday"], "Yesterday is the default range");
+      assert.ok(dTip.includes("deployed yesterday, against the day before"), `the period and what it is compared with: ${dTip}`);
+      assert.strictEqual(await c.page.locator('#dash-panel li[data-project] .dash-change[data-dir="up"]').count(), 1, "the ticket count is up (New) on the day before");
+      assert.strictEqual(await c.page.locator('#dash-panel li[data-project] .dash-change[data-dir="none"]').count(), 1, "no pass rate the day before: nothing to compare");
+      await c.click('#dash-panel [data-delivery-range="week"]', "choose Last 7 days");
+      await until(async () => (await pressed()).join() === "week", "the Last 7 days range to be chosen", 3000);
+      const wTip = await c.text(panel);
+      assert.ok(wTip.includes("deployed in the last 7 days, against the 7 days before") && /Tickets\s*1\s*arrow_upward\s*New/.test(wTip), `the 7-day period: ${wTip}`);
+      assert.ok(/Deployed in the last 7 days/i.test(await tileText("delivery")), "the tile follows the range");
+      assert.ok(await c.page.evaluate(() => document.activeElement && document.activeElement.dataset.deliveryRange === "week"), "focus stays on the chosen option");
+      assert.ok(await c.page.locator(panel).isVisible(), "the panel stays pinned");
+      await c.click('#dash-panel [data-delivery-range="yesterday"]', "back to Yesterday");
+      await until(async () => (await pressed()).join() === "yesterday", "the Yesterday range to be chosen", 3000);
+      assert.ok(/Deployed yesterday/i.test(await tileText("delivery")), "the tile reads yesterday again");
       assert.strictEqual(await c.page.$eval('.dash-tile-wrap[data-tile="kanban"] .dash-tile', (b) => b.getAttribute("aria-expanded")), "false", "only one tile is pinned");
       await pinTile("flow");
       const flTip = await c.text(panel);
@@ -3844,7 +3861,7 @@ const scenarios = [
       await until(async () => (await value("delivery")) === "2", "the Delivery figure to update after the write", 5000);
       assert.ok(await onDelivery(), `focus stays on the same Delivery tile (active: ${await c.page.evaluate(() => document.activeElement && document.activeElement.outerHTML.slice(0, 80))})`);
       assert.ok(await c.page.locator(panel).isVisible(), "its pinned panel stays open");
-      await until(async () => /Yesterday\s*2/.test(await c.text(panel)), "the open panel shows the new figures", 3000);
+      await until(async () => /Tickets\s*2\s*arrow_upward\s*New/.test(await c.text(panel)), "the open panel shows the new figures", 3000);
       assert.strictEqual(await value("flow"), "1", "the blocked ticket shipped: one still stuck");
       await c.page.keyboard.press("Escape");
       await c.hidden(panel, "Escape closes the panel");

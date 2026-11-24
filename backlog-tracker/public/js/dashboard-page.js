@@ -23,7 +23,7 @@
 // no tile left is not shown either.
 
 import { collection, doc, getDoc, getDocs, limit, orderBy, query, where } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
-import { deliveryKpi, flowKpi, kanbanKpi, leadsKpi, funnelKpi, needsPersonKpi, draftsKpi, resolvedKpi, dashboardRelease, localDayRange, lastDays, sparklinePoints, trendShort, tileStatus, rowEnd, SERIES_DAYS, fmtCount, fmtEffort, fmtWait, fmtSpan, fmtDayLabel } from "./dashboard-core.js";
+import { deliveryKpi, DELIVERY_RANGES, deliveryRange, flowKpi, kanbanKpi, leadsKpi, funnelKpi, needsPersonKpi, draftsKpi, resolvedKpi, dashboardRelease, localDayRange, lastDays, sparklinePoints, trendShort, tileStatus, rowEnd, SERIES_DAYS, fmtCount, fmtEffort, fmtWait, fmtSpan, fmtDayLabel } from "./dashboard-core.js";
 import { ingestStatusView, ingestFailureText, fmtUpdated } from "./funnel-core.js";
 import { normaliseTicket, confidenceBand, pct as confPct } from "./support-core.js";
 
@@ -38,7 +38,7 @@ const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&":
 // tile's info tooltip, which is all the explanation a tile carries.
 export const TILES = [
   { key: "delivery", group: "internal", src: "items", section: "agent-board", title: "Delivery", icon: "rocket_launch", target: "#board",
-    info: "Tickets deployed yesterday (your local day), against the day before; the line shows the last 7 days. Lead time is the average from Backlog to Live, and first-time pass the share that passed testing without being sent back, both over the tickets deployed in the last 7 days." },
+    info: "Tickets deployed in the range chosen in its summary panel, Yesterday (your local day) or the last 7 days, against the previous period of the same length; the line shows the last 7 days. First-time pass is the share of those tickets that passed testing without being sent back, its change in percentage points; lead time is the average from Backlog to Live." },
   { key: "flow", group: "internal", src: "items", section: "agent-board", title: "Flow & blockers", icon: "pending_actions", target: "#board",
     info: "Tickets stuck now: blocked, sent back with Failed testing and not rebuilding yet, or waiting in Ready for Testing for more than 24 hours. Amber when one is stuck, red at three or more." },
   { key: "kanban", group: "internal", src: "kanban", section: "staff-kanban", title: "Staff Kanban", icon: "view_kanban", target: "#staff-kanban",
@@ -80,6 +80,9 @@ export function mountDashboard(ctx) {
   // redraws, so a board update never closes it.
   let pinned = null;
   let lastPanel = { key: null, body: null };
+  // The Delivery range (Yesterday or Last 7 days), remembered per viewer.
+  let deliveryRangeKey = "yesterday";
+  try { deliveryRangeKey = deliveryRange(localStorage.getItem("bt-dash-delivery-range")).key; } catch { /* storage blocked */ }
 
   root.innerHTML = `
     <div class="page-header dash-header">
@@ -107,6 +110,8 @@ export function mountDashboard(ctx) {
     if (info) { toggleInfo(info.closest(".dash-tile-wrap")); return; }
     closeInfos();
     if (e.target.closest(".dash-panel-close")) { unpin(true); return; }
+    const rangeBtn = e.target.closest("[data-delivery-range]");
+    if (rangeBtn) { setDeliveryRange(rangeBtn.dataset.deliveryRange); return; }
     const open = e.target.closest(".dash-panel-open");
     if (open) { const t = TILES.find((x) => x.key === pinned); if (t) ctx.go(t.target); return; }
     const tile = e.target.closest(".dash-tile");
@@ -121,6 +126,18 @@ export function mountDashboard(ctx) {
   let placeQueued = false;
   const queuePlace = () => { if (placeQueued) return; placeQueued = true; requestAnimationFrame(() => { placeQueued = false; placePanel(); }); };
   window.addEventListener("resize", queuePlace);
+
+  // Switch the Delivery range: the tile and its panel follow, and the focus
+  // stays on the chosen option, which the redraw replaces.
+  function setDeliveryRange(key) {
+    const next = deliveryRange(key).key;
+    if (next === deliveryRangeKey) return;
+    deliveryRangeKey = next;
+    try { localStorage.setItem("bt-dash-delivery-range", next); } catch { /* storage blocked */ }
+    render();
+    const btn = panel.querySelector(`[data-delivery-range="${next}"]`);
+    if (btn) btn.focus();
+  }
 
   const allowed = (t) => { try { return !!ctx.canView(t.section); } catch { return false; } };
 
@@ -215,6 +232,14 @@ export function mountDashboard(ctx) {
     const days = lastDays(SERIES_DAYS, now()).map((r) => fmtDayLabel(r.from));
     return `Last ${series.length} days: ${series.map((v, i) => `${days[i] || ""} ${fmtCount(v)}`).join(", ")}`;
   };
+  // A change against the previous period (countChange / passChange in
+  // dashboard-core.js): an arrow and "+50%", "New" or "+12 pp", green when it
+  // went up, red when down; the full sentence for screen readers and on hover.
+  const changeHtml = (ch) => {
+    const name = ch.dir === "up" ? "arrow_upward" : ch.dir === "down" ? "arrow_downward" : "remove";
+    const cls = ch.dir === "none" ? "flat" : ch.dir;
+    return `<span class="dash-trend dash-trend-${cls} dash-change" data-dir="${ch.dir}" title="${esc(ch.text)}">${ch.dir === "none" ? "" : icon(name)}<span aria-hidden="true">${esc(ch.short)}</span><span class="visually-hidden">${esc(ch.text)}</span></span>`;
+  };
   const tipList = (rows, empty) => (rows.length ? `<ul class="dash-tip-list">${rows.join("")}</ul>` : `<p class="dash-tip-empty">${esc(empty)}</p>`);
   const pending = (s) => s.status === "idle" || (s.status === "loading" && !s.data);
 
@@ -223,14 +248,21 @@ export function mountDashboard(ctx) {
     const count = (x, one, many = `${one}s`) => `${fmtCount(x)} ${x === 1 ? one : many}`;
     const pct = (p) => (p == null ? "—" : `${p}%`);
     if (t.key === "delivery") {
-      const k = deliveryKpi(ctx.items(), ctx.projects(), n);
-      const rows = k.projects.map((p) => `<li><strong>${esc(p.name)}</strong><span class="dash-tip-grid">`
-        + `<span>Yesterday</span><b>${p.yesterday}</b><span>Last 7 days</span><b>${p.week}</b>`
-        + `<span>Lead time</span><b>${esc(fmtSpan(p.leadTimeMs))}</b><span>First-time pass</span><b>${pct(p.firstPassPct)}</b></span></li>`);
+      const k = deliveryKpi(ctx.items(), ctx.projects(), n, deliveryRangeKey);
+      const per = k.period;
+      const when = per.range === "week" ? "in the last 7 days" : "yesterday";
+      const switcher = `<div class="seg dash-range" role="group" aria-label="Delivery range">${DELIVERY_RANGES.map((r) => {
+        const on = r.key === per.range;
+        return `<button type="button" data-delivery-range="${r.key}" aria-pressed="${on}"${on ? ' class="active"' : ""}>${esc(r.label)}</button>`;
+      }).join("")}</div>`;
+      const rows = per.projects.map((p) => `<li data-project="${esc(p.id)}"><strong>${esc(p.name)}</strong><span class="dash-tip-grid dash-delivery-grid">`
+        + `<span>Tickets</span><b>${fmtCount(p.count)}</b>${changeHtml(p.countChange)}`
+        + `<span>First-time pass</span><b>${pct(p.firstPassPct)}</b>${changeHtml(p.passChange)}`
+        + `<span>Lead time</span><b>${esc(fmtSpan(p.leadTimeMs))}</b><span></span></span></li>`);
       return {
-        metric: "Deployed yesterday", value: fmtCount(k.value), trend: k.trend, series: k.series, status: tileStatus("delivery", k),
-        extra: `<span class="dash-sub">Lead time <b>${esc(fmtSpan(k.leadTimeMs))}</b></span><span class="dash-sub">First-time pass <b>${pct(k.firstPassPct)}</b></span>`,
-        tip: `<p class="dash-tip-title">By project · ${count(k.shipped, "ticket")} deployed in the last 7 days</p>${tipList(rows, "Nothing deployed in the last 7 days.")}`,
+        metric: per.metric, value: fmtCount(per.count), change: per.countChange, series: k.series, status: tileStatus("delivery", k),
+        extra: `<span class="dash-sub">First-time pass <b>${pct(per.firstPassPct)}</b> ${changeHtml(per.passChange)}</span><span class="dash-sub">Lead time <b>${esc(fmtSpan(per.leadTimeMs))}</b></span>`,
+        tip: `<div class="dash-tip-wide">${switcher}</div><p class="dash-tip-title">By project · ${count(per.count, "ticket")} deployed ${when}, against ${esc(per.than)}</p>${tipList(rows, `Nothing deployed ${when} or in ${per.than}.`)}`,
       };
     }
     if (t.key === "flow") {
@@ -370,7 +402,7 @@ export function mountDashboard(ctx) {
     const b = tileBody(t);
     const st = b.status || null;
     const dot = st ? `<span class="dash-status" data-level="${st.level}" title="${esc(st.reason)}"></span><span class="visually-hidden">${esc(st.reason)}.</span>` : "";
-    const main = `<span class="dash-metric">${esc(b.metric)}</span><span class="dash-figure"><span class="dash-value">${b.value}</span>${b.trend ? trendHtml(b.trend) : ""}</span>`;
+    const main = `<span class="dash-metric">${esc(b.metric)}</span><span class="dash-figure"><span class="dash-value">${b.value}</span>${b.trend ? trendHtml(b.trend) : b.change ? changeHtml(b.change) : ""}</span>`;
     const spark = b.series ? sparkHtml(b.series) : "";
     const inner = `<span class="dash-tile-head"><span class="dash-tile-icon">${icon(t.icon)}</span><span class="dash-tile-title">${esc(t.title)}</span>${dot}</span>`
       + main

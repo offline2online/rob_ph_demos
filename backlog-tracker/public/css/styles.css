@@ -3272,6 +3272,13 @@ html[data-console-role="viewer"] .lead-prio-tools { display: none; }
 .dash-tip-warn { display: block; color: var(--warning); }
 .dash-tip-grid { display: grid; grid-template-columns: 1fr auto 1fr auto; gap: 0 10px; margin-top: 2px; color: var(--text-muted); }
 .dash-tip-grid b { color: var(--text); text-align: right; }
+/* Delivery: the range switch (Yesterday / Last 7 days) and each figure's change on the previous period. */
+.dash-range { margin: 0 0 8px; }
+.dash-range > button { min-height: 44px; } /* 44px touch targets, like every control on the board */
+.dash-delivery-grid { grid-template-columns: 1fr auto minmax(56px, auto); }
+.dash-delivery-grid .dash-change { justify-content: flex-end; }
+.dash-sub .dash-change { margin-left: 2px; }
+.dash-sub .dash-change .material-symbols-outlined { margin-right: 0; vertical-align: 0; }
 /* Needs attention sits below the tiles, in normal flow. */
 .dash-groups + .needs-attention { margin-top: 8px; }
 @media (max-width: 1439px) { .dash-groups { --cols: 3; } }

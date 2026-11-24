@@ -4000,8 +4000,10 @@ holds it to them:
 
 The console opens on **Dashboard** (`#dashboard`): eight KPI tiles in three
 sections, all in the viewer's local time (19 Nov 2026, cMyA3FMlUUrSjGtPkLZC).
-Internal: **Delivery** (tickets deployed yesterday, average lead time Backlog
-to Live and first-time test pass rate over the last 7 days), **Flow &
+Internal: **Delivery** (tickets deployed and first-time test pass rate for
+Yesterday or the last 7 days, picked in its panel, each with its change on the
+previous period of the same length — % for tickets, percentage points for the
+pass rate — in total and per project, plus average lead time Backlog to Live), **Flow &
 blockers** (tickets stuck now: blocked, failed testing and not rebuilding, or
 over 24 h in Ready for Testing) and **Staff Kanban** (open tasks of the
 current release by column, its % done, and overdue / unassigned / unestimated

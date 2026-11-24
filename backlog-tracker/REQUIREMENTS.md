@@ -8270,7 +8270,7 @@ tiles. A tile never opens its section (see "Dashboard v2"); the panel's
 
 | Section | Tile | Headline (on the tile) | Summary panel | Open section |
 |---|---|---|---|---|
-| Internal | Delivery | Tickets deployed yesterday (`mergedAt`, else `statusEnteredAt` of a Merged to Main card), against the day before, with a 7-day line; average lead time from Backlog (`createdAt`) to Live and the first-time pass rate, both over the tickets deployed in the last 7 days | Per project: deployed yesterday, last 7 days, lead time, first-time pass | `#board` |
+| Internal | Delivery | Tickets deployed in the selected range — Yesterday (the default) or the last 7 days — (`mergedAt`, else `statusEnteredAt` of a Merged to Main card), against the previous period of the same length, with a 7-day line; the first-time pass rate over those tickets with its change, and their average lead time from Backlog (`createdAt`) to Live | A Yesterday / Last 7 days switch; per project: tickets deployed and first-time pass, each with its change on the previous period, and lead time | `#board` |
 | Internal | Flow & blockers | Tickets stuck now, split blocked / failed testing / waiting to test | Each stuck ticket with its project, the reason and how long it has waited, longest first | `#board` |
 | Internal | Staff Kanban | Open tasks of the current release split To do (Backlog, Ready for Dev) / In progress / Testing (Ready for Testing, Approved); the release's name and % done; amber flags for overdue, unassigned, unestimated and waiting on you in Testing | Workload per person: remaining effort as hours with days in brackets at 8 h a day ("24h (3d)"), open tasks, overdue, and which tasks have no estimate | `#staff-kanban` |
 | External | Leads | New leads in the last 7 days against the 7 days before, with a 7-day line and yesterday's count; the company pipeline Lead → Hot Lead → Demo → Post-demo → Closed Won with the count at each stage now and the conversion from the stage before; stale and not-contacted flags | The last 7 days' leads by source (Website, Network operator, Partner, Other), industry and market, with names; the pipeline with conversion; the stale and not-contacted leads by name | `#promote/leads` |
@@ -8286,6 +8286,21 @@ Rules:
   passed first time when it has no counted send-back and one testing round
   (`countedSendBacks`, `testRound`); a ticket from before testing rounds were
   kept passed when it has no `lastFailureReason`.
+  **Change on the previous period** (7KcZdqFjytcmD9S85Fnq): the Delivery
+  panel's switch picks the range, Yesterday (against the day before) or the
+  last 7 days (against the 7 days before); it is remembered per viewer in
+  `localStorage` (`bt-dash-delivery-range`), and the tile's headline, pass
+  rate and lead time follow it (the 7-day line does not). Every figure is over
+  the tickets deployed in that period, in total and per project (a project is
+  listed when it deployed in either period, most deployed first). Ticket
+  counts change as a relative %: an arrow and "+50%", "New" when the previous
+  period had none (never ∞%), "0%" when equal. First-time pass changes in
+  percentage points ("+12 pp"), since a relative change of a rate misleads;
+  when either period deployed nothing there is no rate to compare, shown as
+  "—" with no arrow. Up is green, down red, no change neutral; the full
+  sentence ("+50% vs the day before: 3 against 2") is on hover and for screen
+  readers (`deliveryPeriod`, `countChange`, `passChange` in
+  `public/js/dashboard-core.js`).
 - **Flow & blockers**: a ticket is stuck when it is blocked (except a plain
   `waiting-on-dependency` wait, which releases itself; one marked `stuckOn`
   counts), when it was sent back with Failed testing and is not rebuilding (a

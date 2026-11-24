@@ -2,7 +2,7 @@
 // Days are the viewer's local days, so every instant here is built with the
 // local Date constructor, never a UTC string.
 import assert from "node:assert";
-import { localDayRange, fmtEffort, trend, fmtWait, deliveryKpi, flowKpi, firstTimePass, kanbanKpi, dashboardRelease, leadsKpi, leadSourceGroup, funnelKpi, needsPersonKpi, draftsKpi, resolvedKpi, isBuilding, isWebsiteLead, lastDays, dailyCounts, sparklinePoints, trendShort, tileStatus, rowEnd } from "../public/js/dashboard-core.js";
+import { localDayRange, fmtEffort, trend, deliveryPeriod, periodWindows, countChange, passChange, deliveryRange, fmtWait, deliveryKpi, flowKpi, firstTimePass, kanbanKpi, dashboardRelease, leadsKpi, leadSourceGroup, funnelKpi, needsPersonKpi, draftsKpi, resolvedKpi, isBuilding, isWebsiteLead, lastDays, dailyCounts, sparklinePoints, trendShort, tileStatus, rowEnd } from "../public/js/dashboard-core.js";
 import { normaliseTicket, queueCounts } from "../public/js/support-core.js";
 import { currentReleaseId } from "../public/js/kanban/kanban-core.js";
 
@@ -355,5 +355,37 @@ assert.strictEqual(tileStatus("resolved", rs).level, "ok");
   assert.strictEqual(tileStatus("funnel", { hasData: false }).level, "warn");
   const fs = funnelKpi([{ date: "2026-11-10", visits: 5 }, { date: "2026-11-15", visits: 7 }, { date: "2026-11-16", visits: 9, users: 8 }], [], NOW).series;
   assert.deepStrictEqual(fs, [5, 0, 0, 0, 0, 7, 8], "funnel visitors per day for the sparkline");
+}
+
+// ── Delivery: change against the previous period (7KcZdqFjytcmD9S85Fnq) ──
+{
+  const w1 = periodWindows(1, NOW), w7 = periodWindows(7, NOW);
+  assert.deepStrictEqual([w1.cur.from, w1.cur.to, w1.prev.from], [new Date(2026, 10, 16).getTime(), new Date(2026, 10, 17).getTime(), new Date(2026, 10, 15).getTime()], "yesterday against the day before");
+  assert.deepStrictEqual([w7.cur.from, w7.prev.from, w7.prev.to], [new Date(2026, 10, 10).getTime(), new Date(2026, 10, 3).getTime(), new Date(2026, 10, 10).getTime()], "the last 7 days against the 7 before");
+  assert.strictEqual(deliveryRange("nonsense").key, "yesterday", "Yesterday is the default range");
+  assert.deepStrictEqual(countChange(3, 2), { dir: "up", pct: 50, short: "+50%", text: "+50% vs the day before: 3 against 2" });
+  assert.strictEqual(countChange(1, 4, "the 7 days before").short, "−75%");
+  assert.strictEqual(countChange(1, 4).dir, "down");
+  assert.deepStrictEqual([countChange(2, 0).dir, countChange(2, 0).short], ["up", "New"], "from none: New, never ∞%");
+  assert.deepStrictEqual([countChange(0, 0).dir, countChange(0, 0).short], ["flat", "0%"]);
+  assert.deepStrictEqual([passChange(60, 48).dir, passChange(60, 48).short], ["up", "+12 pp"], "pass rate changes in percentage points");
+  assert.strictEqual(passChange(0, 50).short, "−50 pp", "a 0% rate is a rate");
+  assert.deepStrictEqual([passChange(null, 50).dir, passChange(null, 50).short], ["none", "—"], "no deployments: nothing to compare");
+  assert.strictEqual(passChange(50, null).dir, "none");
+
+  const py = deliveryPeriod(items, projects, "yesterday", NOW);
+  assert.deepStrictEqual([py.count, py.prevCount, py.countChange.short], [3, 1, "+200%"], "a, b and i yesterday; c the day before");
+  assert.deepStrictEqual([py.firstPassPct, py.prevFirstPassPct, py.passChange.short], [33, 100, "−67 pp"], "first-time pass over each period's own tickets");
+  assert.strictEqual(py.leadTimeMs, 3 * 24 * 3600000, "lead time over yesterday's tickets: 2, 4 and 3 days");
+  assert.deepStrictEqual(py.projects.map((p) => [p.id, p.count, p.prevCount, p.countChange.short, p.firstPassPct, p.passChange.short]),
+    [["p1", 2, 0, "New", 50, "—"], ["p2", 1, 1, "0%", 0, "−100 pp"]], "per project, most deployed first");
+  assert.strictEqual(deliveryKpi(items, projects, NOW).period.range, "yesterday", "deliveryKpi carries the period, Yesterday by default");
+
+  const pw = deliveryKpi(items, projects, NOW, "week").period;
+  assert.deepStrictEqual([pw.metric, pw.count, pw.prevCount, pw.countChange.short], ["Deployed in the last 7 days", 4, 1, "+300%"], "a, b, c and i against j; today's d in neither");
+  assert.deepStrictEqual([pw.firstPassPct, pw.prevFirstPassPct, pw.passChange.short, pw.passChange.dir], [50, 100, "−50 pp", "down"]);
+  assert.deepStrictEqual(pw.projects.map((p) => [p.id, p.count, p.prevCount, p.countChange.short]), [["p1", 2, 1, "+100%"], ["p2", 2, 0, "New"]]);
+  const quiet = deliveryPeriod([], projects, "week", NOW);
+  assert.deepStrictEqual([quiet.count, quiet.countChange.dir, quiet.passChange.short, quiet.projects.length], [0, "flat", "—", 0], "a quiet fortnight");
 }
 console.log("dashboard.test.mjs: ok");
