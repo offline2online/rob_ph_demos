@@ -2876,7 +2876,8 @@ function getPartnerCentralApi() {
   }
   return partnerCentralApi;
 }
-exports.partnerCentral = onRequest({ cors: false, timeoutSeconds: 60, maxInstances: 3 }, (req, res) => getPartnerCentralApi().handle(req, res));
+// 180 s: the Partner Central agent (MCP) can take up to two minutes on a multi-step answer.
+exports.partnerCentral = onRequest({ cors: false, timeoutSeconds: 180, maxInstances: 3 }, (req, res) => getPartnerCentralApi().handle(req, res));
 
 // ACE opportunity stages → GA4 Measurement Protocol, keyed on the GA4
 // client_id the website captured with each lead (ace-ga4.js). Run hourly by

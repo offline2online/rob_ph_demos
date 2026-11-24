@@ -35,6 +35,11 @@
 //   POST  /v1/opportunities                create
 //   PATCH /v1/opportunities/{id}           update
 //   POST  /v1/benefits/drafts              create a draft benefit application
+//   GET   /v1/agent                        Partner Central agent: recent AI sessions + leads to link
+//   POST  /v1/agent/messages {text, sessionId?, leadId?, opportunityId?}   ask the agent (sendMessage)
+//   POST  /v1/agent/sessions/{id}          re-read a session from AWS (getSession)
+//   POST  /v1/agent/sessions/{id}/approvals/{toolUseId} {decision: approve|reject, message?}
+//                                          answer a write the agent is holding for approval
 
 const crypto = require("crypto");
 
@@ -245,6 +250,82 @@ function buildCreate(v) {
   return { Origin: "Partner Referral", OpportunityType: "Net New Business", PrimaryNeedsFromAws: [], Marketing: {}, ...body };
 }
 
+// ── Partner Central agents MCP server (ticket Eo1w5YvY0Xw8YhHDalWj) ─────────
+// AWS hosts an MCP server (JSON-RPC 2.0 over HTTPS, answers as JSON or SSE)
+// that fronts the Partner Central agent: ask it in plain words to list
+// opportunities, build a customer profile or draft an opportunity. Same
+// keyless credentials and SigV4 as above, a different signing name. The
+// server itself holds every write until the partner approves it: the reply
+// has status "requires_approval" and a tool_approval_request block; the
+// console shows that to an admin, and only the approval route below answers
+// it. Nothing here approves on its own. Endpoint, signing name and the two
+// tool shapes are from the AWS getting-started guide as mirrored by a public
+// client; verify on the first Sandbox call, like SERVICES.
+const AGENT_MCP = { host: `partnercentral-agents-mcp.${REGION}.api.aws`, path: "/mcp", signingName: "partnercentral-agents-mcp" };
+const AGENT_TOOLS = ["sendMessage", "getSession"]; // the only MCP tools the console may call
+const AGENT_SESSIONS = "partnerCentralAgentSessions"; // server-only, one doc per AI session id
+const AGENT_SESSION_TTL_MS = 48 * 3600 * 1000; // AWS expires a session 48 hours after it starts
+const AGENT_DECISIONS = ["approve", "reject"];
+const AGENT_MESSAGE_MAX = 4000;
+const SESSION_ID_RE = /^[A-Za-z0-9._:-]{1,128}$/;
+
+// An MCP reply over SSE is "event: message\ndata: {json}\n\n" lines; the
+// JSON-RPC response is the last data line carrying a result or an error.
+function parseMcpBody(raw, contentType) {
+  const body = String(raw || "");
+  if (/text\/event-stream/i.test(String(contentType || "")) || /^\s*(event|data):/m.test(body) && !/^\s*[{[]/.test(body)) {
+    let last = null;
+    for (const line of body.split(/\r?\n/)) {
+      const m = /^data:\s?(.*)$/.exec(line);
+      if (!m) continue;
+      try { const j = JSON.parse(m[1]); if (j && (j.result !== undefined || j.error !== undefined)) last = j; } catch { /* keep-alive or partial */ }
+    }
+    return last;
+  }
+  try { return body ? JSON.parse(body) : null; } catch { return null; }
+}
+
+// Pending writes in a reply: documented as {type:"tool_approval_request",
+// toolUseId, toolName, parameters}; a getSession in TOOL_REQUEST state has
+// them as tool-use events ({tool_use_id|toolUseId, name, input}).
+function collectApprovals(node, needsApproval, out, seen, depth = 0) {
+  if (!node || typeof node !== "object" || depth > 12) return;
+  if (Array.isArray(node)) { node.forEach((n) => collectApprovals(n, needsApproval, out, seen, depth + 1)); return; }
+  const id = text(first(node.toolUseId, node.tool_use_id), 128);
+  const params = first(node.parameters, node.input);
+  const isResult = node.output !== undefined || node.type === "tool_result" || node.type === "serverToolResult" || node.status === "success";
+  if (id && !seen.has(id) && (node.type === "tool_approval_request" || (needsApproval && params && typeof params === "object" && !isResult && node.type !== "tool_approval_response"))) {
+    seen.add(id);
+    out.push({ toolUseId: id, toolName: text(first(node.toolName, node.name), 120) || null, parameters: params && typeof params === "object" ? params : {} });
+  }
+  for (const v of Object.values(node)) if (v && typeof v === "object") collectApprovals(v, needsApproval, out, seen, depth + 1);
+}
+
+// One shape for any tools/call result: { sessionId, status, text, approvals }.
+// The agent's payload is either inline (result.sessionId/status/content) or a
+// JSON string in result.content[0].text.
+function parseAgentResult(result) {
+  const r = result && typeof result === "object" ? result : {};
+  const top = Array.isArray(r.content) ? r.content : [];
+  let inner = null;
+  const firstText = top.find((b) => b && typeof b.text === "string");
+  if (firstText) { try { const j = JSON.parse(firstText.text); if (j && typeof j === "object" && !Array.isArray(j)) inner = j; } catch { inner = null; } }
+  const src = inner || r;
+  const blocks = inner ? (Array.isArray(inner.content) ? inner.content : []) : top;
+  const status = text(first(src.status, src.stateType, r.status), 40) || "complete";
+  const needsApproval = /requires_approval|TOOL_REQUEST/i.test(status);
+  const parts = blocks.filter((b) => b && (b.type === "text" || b.type === undefined) && typeof b.text === "string").map((b) => b.text);
+  let replyText = parts.join("\n\n");
+  if (!replyText && !inner && firstText) replyText = firstText.text;
+  if (!replyText) replyText = text(first(src.text, src.message), 20000);
+  const approvals = []; const seen = new Set();
+  collectApprovals(blocks, needsApproval, approvals, seen);
+  if (!approvals.length && needsApproval && Array.isArray(src.events)) {
+    for (let i = src.events.length - 1; i >= 0 && !approvals.length; i--) collectApprovals(src.events[i], true, approvals, seen);
+  }
+  return { sessionId: text(first(src.sessionId, r.sessionId), 128) || null, status, text: text(replyText, 20000), approvals, isError: r.isError === true };
+}
+
 const xmlTag = (xml, tag) => { const m = new RegExp(`<${tag}>([^<]*)</${tag}>`).exec(xml); return m ? m[1] : null; };
 
 function createPartnerCentralApi({
@@ -417,6 +498,182 @@ function createPartnerCentralApi({
     return { opportunity: await aceOne(id, ctx) };
   }
 
+  // ── Partner Central agent (the AWS-hosted MCP server) ──
+  let rpcId = 0;
+  // The single door to the agents MCP server: only AGENT_TOOLS, signed with
+  // the same short-lived role credentials, audited like callAws.
+  async function callAgent(tool, args, { by, config } = {}) {
+    const cfg = config || (await loadConfig());
+    const started = now();
+    if (!AGENT_TOOLS.includes(tool)) {
+      await audit({ operation: `agent:${tool}`, catalog: cfg.catalog, by: by || null, ok: false, error: "tool not allowed" });
+      throw Object.assign(new Error(`agent tool not allowed: ${tool}`), { status: 400 });
+    }
+    const payload = { jsonrpc: "2.0", id: ++rpcId, method: "tools/call", params: { name: tool, arguments: { ...args, catalog: cfg.catalog }, _meta: { integrator: "Personalisation Hub", sourceProduct: "PH Agent Console" } } };
+    let result = null; let error = null; let httpStatus = null; let rpcCode = null;
+    try {
+      const creds = await assumeRole(cfg.roleArn);
+      const body = JSON.stringify(payload);
+      const headers = signRequest({
+        host: AGENT_MCP.host, path: AGENT_MCP.path, service: AGENT_MCP.signingName, creds, body, date: now(),
+        headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+      });
+      const r = await fetchImpl(`https://${AGENT_MCP.host}${AGENT_MCP.path}`, { method: "POST", headers, body });
+      httpStatus = r.status;
+      const ctype = r.headers && typeof r.headers.get === "function" ? r.headers.get("content-type") : "";
+      const raw = await r.text();
+      const msg = parseMcpBody(raw, ctype);
+      if (!r.ok) error = `HTTP ${r.status}: ${String((msg && msg.error && msg.error.message) || (msg && msg.message) || raw || "").slice(0, 200)}`;
+      else if (!msg) error = "The Partner Central agent answered with something that is not JSON-RPC";
+      else if (msg.error) { rpcCode = msg.error.code === undefined ? null : msg.error.code; error = `${rpcCode !== null ? `${rpcCode}: ` : ""}${String(msg.error.message || "error").slice(0, 200)}`; }
+      else result = msg.result;
+      if (error) logger.warn("partnerCentral agent error", { tool, httpStatus, rpcCode, error });
+    } catch (err) {
+      error = err && (err.cause || /fetch failed/i.test(String(err.message))) ? describeNetworkError(err, AGENT_MCP.host) : String((err && err.message) || err).slice(0, 300);
+    }
+    const ok = !error;
+    await audit({ operation: `agent:${tool}`, catalog: cfg.catalog, roleArn: cfg.roleArn, by: by || null, ok, httpStatus, awsType: rpcCode === null ? null : String(rpcCode), error, ms: now().getTime() - started.getTime(), target: (args && args.sessionId) || null });
+    await recordState(ok
+      ? { lastSuccessAt: now(), lastSuccessOperation: `agent:${tool}`, lastSuccessCatalog: cfg.catalog, lastError: null }
+      : { lastErrorAt: now(), lastError: error, lastErrorOperation: `agent:${tool}` });
+    if (!ok) throw Object.assign(new Error(error), { status: 502 });
+    return parseAgentResult(result);
+  }
+
+  const sessionRef = (id) => db.collection(AGENT_SESSIONS).doc(id);
+  function sessionView(id, d) {
+    const x = d || {};
+    return {
+      sessionId: id, catalog: x.catalog || null, status: x.status || null, lastReply: x.lastReply || "",
+      leadId: x.leadId || null, leadName: x.leadName || null, opportunityId: x.opportunityId || null,
+      createdBy: x.createdBy || null, createdAt: iso(x.createdAt), updatedAt: iso(x.updatedAt), expiresAt: iso(x.expiresAt),
+      approvals: (Array.isArray(x.approvals) ? x.approvals : []).map((a) => ({ ...a, decidedAt: iso(a.decidedAt), requestedAt: iso(a.requestedAt) })),
+    };
+  }
+  // A stored session may only be continued in the catalogue it started in and
+  // within AWS's 48 hours; otherwise say so rather than silently start anew.
+  async function loadSession(id, cfg) {
+    if (!SESSION_ID_RE.test(String(id || ""))) throw Object.assign(new Error("unknown AI session id"), { status: 400 });
+    const snap = await sessionRef(id).get();
+    if (!snap.exists) throw Object.assign(new Error("This AI session was not started from the console"), { status: 404 });
+    const d = snap.data() || {};
+    if (d.catalog && d.catalog !== cfg.catalog) throw Object.assign(new Error(`This AI session belongs to the ${d.catalog} catalogue; the console now uses ${cfg.catalog}. Start a new session.`), { status: 409 });
+    const exp = Date.parse(iso(d.expiresAt) || "");
+    if (Number.isFinite(exp) && exp <= now().getTime()) throw Object.assign(new Error("This AI session has expired (AWS keeps a session for 48 hours). Start a new session."), { status: 410 });
+    return d;
+  }
+  // Merge the reply into the session record: new pending approvals are added,
+  // ones AWS no longer reports as pending stay as they were (decided or not).
+  async function saveSession(id, prev, reply, extra) {
+    const approvals = Array.isArray(prev && prev.approvals) ? prev.approvals.slice() : [];
+    for (const a of reply.approvals) {
+      if (!approvals.some((x) => x.toolUseId === a.toolUseId)) approvals.push({ ...a, state: "pending", requestedAt: now() });
+    }
+    const doc = { ...(prev || {}), ...extra, status: reply.status, lastReply: text(reply.text, 20000), approvals: approvals.slice(-50), updatedAt: now() };
+    await sessionRef(id).set(doc, { merge: true });
+    return doc;
+  }
+  // The AI Session ID is logged once against the linked lead (a line in its
+  // history, which the lead card shows) — and against the opportunity on the
+  // session record. Idempotent: loggedOnLead is set on the session.
+  async function logSessionOnLead(id, d, by) {
+    if (!d.leadId || d.loggedOnLead) return d;
+    try {
+      const ref = db.collection("leads").doc(d.leadId);
+      const snap = await ref.get();
+      if (!snap.exists) return d;
+      const lead = snap.data() || {};
+      const line = `Partner Central AI session ${id} (${d.catalog} catalogue)${d.opportunityId ? ` for ACE opportunity ${d.opportunityId}` : ""}, started from the console.`;
+      const history = [...(Array.isArray(lead.history) ? lead.history : []), { at: now().toISOString(), by: String(by || "").slice(0, 200), kind: "note", text: line }].slice(-100);
+      await ref.set({ history, aiSessionIds: [...new Set([...(Array.isArray(lead.aiSessionIds) ? lead.aiSessionIds : []), id])].slice(-50), updatedAt: now(), updatedByEmail: by || null }, { merge: true });
+      await sessionRef(id).set({ loggedOnLead: true }, { merge: true });
+      return { ...d, loggedOnLead: true };
+    } catch (err) {
+      logger.warn("partnerCentral could not log the AI session on the lead", { error: String(err) });
+      return d;
+    }
+  }
+
+  async function agentMessage(input, ctx) {
+    const body = input && typeof input === "object" ? input : {};
+    const message = String(body.text == null ? "" : body.text).trim();
+    if (!message) throw Object.assign(new Error("Type a message for the Partner Central agent."), { status: 400 });
+    if (message.length > AGENT_MESSAGE_MAX) throw Object.assign(new Error(`A message holds up to ${AGENT_MESSAGE_MAX} characters.`), { status: 400 });
+    const cfg = await loadConfig();
+    const sessionId = body.sessionId ? String(body.sessionId) : null;
+    const prev = sessionId ? await loadSession(sessionId, cfg) : null;
+    let leadId = text(body.leadId, 128);
+    const opportunityId = text(body.opportunityId, 64);
+    if (opportunityId && !/^[A-Za-z0-9._-]{1,64}$/.test(opportunityId)) throw Object.assign(new Error("That is not an ACE opportunity id."), { status: 400 });
+    if (leadId && !/^[A-Za-z0-9_-]{1,128}$/.test(leadId)) throw Object.assign(new Error("That lead was not found."), { status: 404 });
+    // An opportunity with no lead named: link the lead already matched to it.
+    if (!leadId && opportunityId && !(prev && prev.leadId)) {
+      try {
+        const m = await db.collection("leads").where("aceOpportunityId", "==", opportunityId).limit(1).get();
+        if (m.docs.length) leadId = m.docs[0].id;
+      } catch { /* no match: the session still records the opportunity */ }
+    }
+    const reply = await callAgent("sendMessage", { content: [{ type: "text", text: message }], ...(sessionId ? { sessionId } : {}) }, { by: ctx.by, config: cfg });
+    const id = reply.sessionId || sessionId;
+    if (!id || !SESSION_ID_RE.test(id)) return { session: null, reply };
+    let leadName = prev && prev.leadName || null;
+    if (leadId && (!prev || prev.leadId !== leadId)) {
+      const l = await db.collection("leads").doc(leadId).get().catch(() => null);
+      if (!l || !l.exists) throw Object.assign(new Error("That lead was not found."), { status: 404 });
+      const ld = l.data() || {};
+      leadName = text((ld.company && ld.company.name) || (Array.isArray(ld.contacts) && ld.contacts[0] && ld.contacts[0].name) || leadId, 160);
+    }
+    const leadChanged = !!(leadId && prev && prev.leadId !== leadId);
+    const extra = prev
+      ? { ...(leadId ? { leadId, leadName } : {}), ...(leadChanged ? { loggedOnLead: false } : {}), ...(opportunityId ? { opportunityId } : {}) }
+      : { catalog: cfg.catalog, createdBy: ctx.by, createdAt: now(), expiresAt: new Date(now().getTime() + AGENT_SESSION_TTL_MS), leadId: leadId || null, leadName, opportunityId: opportunityId || null, loggedOnLead: false };
+    let doc = await saveSession(id, prev, reply, extra);
+    doc = await logSessionOnLead(id, doc, ctx.by);
+    return { session: sessionView(id, doc), reply };
+  }
+
+  async function agentRefresh(id, ctx) {
+    const cfg = await loadConfig();
+    const prev = await loadSession(id, cfg);
+    const reply = await callAgent("getSession", { sessionId: id }, { by: ctx.by, config: cfg });
+    const doc = await saveSession(id, prev, reply, {});
+    return { session: sessionView(id, doc), reply };
+  }
+
+  // Answer one pending write. Only a toolUseId the console recorded as pending
+  // for this session can be answered, and only once.
+  async function agentDecide(id, toolUseId, input, ctx) {
+    const body = input && typeof input === "object" ? input : {};
+    const decision = String(body.decision || "");
+    if (!AGENT_DECISIONS.includes(decision)) throw Object.assign(new Error("decision must be approve or reject"), { status: 400 });
+    const cfg = await loadConfig();
+    const prev = await loadSession(id, cfg);
+    const approvals = Array.isArray(prev.approvals) ? prev.approvals.slice() : [];
+    const i = approvals.findIndex((a) => a.toolUseId === toolUseId);
+    if (i < 0) throw Object.assign(new Error("No such write is waiting for approval in this session."), { status: 404 });
+    if (approvals[i].state !== "pending") throw Object.assign(new Error(`That write was already ${approvals[i].state}.`), { status: 409 });
+    const note = text(body.message, 1000);
+    const block = { type: "tool_approval_response", toolUseId, decision, ...(note ? { message: note } : {}) };
+    const reply = await callAgent("sendMessage", { content: [block], sessionId: id }, { by: ctx.by, config: cfg });
+    approvals[i] = { ...approvals[i], state: decision === "approve" ? "approved" : "rejected", decidedBy: ctx.by, decidedAt: now(), ...(note ? { decisionNote: note } : {}) };
+    await audit({ operation: `agent:${decision}`, catalog: cfg.catalog, by: ctx.by, ok: true, target: id, toolName: approvals[i].toolName || null, toolUseId });
+    const doc = await saveSession(id, { ...prev, approvals }, reply, {});
+    return { session: sessionView(id, doc), reply };
+  }
+
+  async function agentOverview() {
+    const cfg = await loadConfig();
+    const snap = await db.collection(AGENT_SESSIONS).orderBy("updatedAt", "desc").limit(20).get();
+    const sessions = snap.docs.map((d) => sessionView(d.id, d.data())).filter((x) => x.catalog === cfg.catalog);
+    let leads = [];
+    try {
+      const ls = await db.collection("leads").get();
+      leads = ls.docs.map((d) => { const x = d.data() || {}; return { id: d.id, name: text((x.company && x.company.name) || (Array.isArray(x.contacts) && x.contacts[0] && x.contacts[0].name) || "", 160), archived: !!x.archived }; })
+        .filter((l) => l.name && !l.archived).map(({ id, name }) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)).slice(0, 500);
+    } catch { leads = []; }
+    return { catalog: cfg.catalog, sessions, leads };
+  }
+
   async function requireAdmin(req, min = "admin") {
     const idToken = String(req.get("x-firebase-id-token") || "");
     if (!idToken) return { ok: false, status: 401, error: "sign in first" };
@@ -457,6 +714,12 @@ function createPartnerCentralApi({
       const a = /^\/v1\/ace\/([A-Za-z0-9._-]{1,64})$/.exec(path);
       if (a && req.method === "GET") return send(res, 200, { opportunity: await aceOne(a[1], ctx) });
       if (a && req.method === "PATCH") return send(res, 200, await aceUpdate(a[1], body, ctx));
+      if (path === "/v1/agent" && req.method === "GET") return send(res, 200, await agentOverview());
+      if (path === "/v1/agent/messages" && req.method === "POST") return send(res, 200, await agentMessage(body, ctx));
+      const g = /^\/v1\/agent\/sessions\/([A-Za-z0-9._:-]{1,128})$/.exec(path);
+      if (g && req.method === "POST") return send(res, 200, await agentRefresh(g[1], ctx));
+      const ap = /^\/v1\/agent\/sessions\/([A-Za-z0-9._:-]{1,128})\/approvals\/([A-Za-z0-9._:-]{1,128})$/.exec(path);
+      if (ap && req.method === "POST") return send(res, 200, await agentDecide(ap[1], ap[2], body, ctx));
       if (path === "/v1/opportunities" && req.method === "GET") return send(res, 200, await listOpportunities({}, ctx));
       if (path === "/v1/opportunities" && req.method === "POST") return send(res, 200, await createOpportunity(body, ctx));
       const m = /^\/v1\/opportunities\/([A-Za-z0-9._-]{1,64})$/.exec(path);
@@ -472,7 +735,7 @@ function createPartnerCentralApi({
   // The role's short-lived credentials, for the S3 export reader (pc-export.js). Never sent to a browser.
   const awsCredentials = async () => assumeRole((await loadConfig()).roleArn);
 
-  return { handle, status, awsCredentials, aceOpportunities, aceCreate, aceUpdate, aceOne, callAws, listOpportunities, getOpportunity, createOpportunity, updateOpportunity, createBenefitDraft };
+  return { handle, status, awsCredentials, agentMessage, agentRefresh, agentDecide, agentOverview, callAgent, aceOpportunities, aceCreate, aceUpdate, aceOne, callAws, listOpportunities, getOpportunity, createOpportunity, updateOpportunity, createBenefitDraft };
 }
 
-module.exports = { createPartnerCentralApi, sanitiseAceInput, buildUpdate, buildCreate, EDITABLE, describeNetworkError, normaliseOpportunity, signRequest, OPERATIONS, SERVICES, CATALOGS, AUDIT, DEFAULT_ROLE_ARN };
+module.exports = { createPartnerCentralApi, parseAgentResult, parseMcpBody, AGENT_MCP, AGENT_TOOLS, AGENT_SESSIONS, sanitiseAceInput, buildUpdate, buildCreate, EDITABLE, describeNetworkError, normaliseOpportunity, signRequest, OPERATIONS, SERVICES, CATALOGS, AUDIT, DEFAULT_ROLE_ARN };

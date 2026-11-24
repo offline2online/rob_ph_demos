@@ -12896,10 +12896,11 @@ async function partnerCentralCall(path, opts = {}) {
   if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
   return data;
 }
-async function loadPartnerCentral() {
+async function loadPartnerCentral({ agent = true } = {}) {
   const box = document.getElementById("partner-central-status");
   const auditBox = document.getElementById("partner-central-audit");
   if (!box) return;
+  if (agent) loadPartnerCentralAgent();
   try {
     const [s, a] = await Promise.all([partnerCentralCall("status", { method: "GET" }), partnerCentralCall("audit", { method: "GET" })]);
     const label = { connected: "Connected", "not-linked": "Not linked yet", error: "Error" }[s.state] || s.state;
@@ -12913,6 +12914,119 @@ async function loadPartnerCentral() {
     box.innerHTML = `<p class="interface-row-empty">Couldn't load the Partner Central status: ${escapeHTML(err.message)}</p>`;
   }
 }
+// ── Settings → AWS Partner Central → Ask the Partner Central agent ───────
+// The agent proposes writes; each one waits here as a pending approval until
+// an admin approves or rejects it (the server only answers ones it recorded).
+const pca = { sessions: [], current: null };
+function pcaSetStatus(msg, bad) {
+  const el = document.getElementById("pca-status");
+  if (el) { el.textContent = msg || ""; el.classList.toggle("is-bad", !!bad); }
+}
+function pcaRenderSession(session) {
+  pca.current = session || null;
+  const reply = document.getElementById("pca-reply");
+  const box = document.getElementById("pca-approvals");
+  const refresh = document.getElementById("pca-refresh");
+  if (refresh) refresh.hidden = !session;
+  if (!reply || !box) return;
+  if (!session) { reply.innerHTML = ""; box.innerHTML = ""; return; }
+  const linked = [session.leadName ? `Lead: ${escapeHTML(session.leadName)}` : "", session.opportunityId ? `Opportunity: ${escapeHTML(session.opportunityId)}` : ""].filter(Boolean).join(" · ");
+  reply.innerHTML = `<div class="pca-reply">
+      <div class="pca-meta">AI session <code>${escapeHTML(session.sessionId)}</code> · ${escapeHTML(session.catalog || "")}${linked ? ` · ${linked}` : ""}</div>
+      <div class="pca-text">${session.lastReply ? escapeHTML(session.lastReply) : '<span class="field-hint">No reply yet.</span>'}</div>
+    </div>`;
+  const approvals = Array.isArray(session.approvals) ? session.approvals : [];
+  const pending = approvals.filter((a) => a.state === "pending");
+  const decided = approvals.filter((a) => a.state !== "pending").slice(-5);
+  box.innerHTML = (pending.length ? `<p class="pca-approvals-title"><span class="pca-dot is-amber" aria-hidden="true"></span><b>${pending.length}</b> ${pending.length === 1 ? "write waits" : "writes wait"} for your approval</p>` : "")
+    + pending.map((a) => `<div class="pca-approval" data-tool-use-id="${escapeHTML(a.toolUseId)}">
+        <div class="pca-approval-head"><span class="material-symbols-outlined" aria-hidden="true">pending_actions</span> ${escapeHTML(a.toolName || "Write to Partner Central")}</div>
+        <pre class="pca-params">${escapeHTML(JSON.stringify(a.parameters || {}, null, 2))}</pre>
+        <div class="pca-approval-actions">
+          <button type="button" class="btn-primary" data-pca-decide="approve">Approve</button>
+          <button type="button" class="btn-ghost" data-pca-decide="reject">Reject</button>
+        </div>
+      </div>`).join("")
+    + decided.map((a) => `<p class="pca-decided"><span class="pca-dot ${a.state === "approved" ? "is-green" : "is-red"}" aria-hidden="true"></span>${escapeHTML(a.toolName || "Write")}: ${a.state === "approved" ? "approved" : "rejected"} by ${escapeHTML(a.decidedBy || "")}${a.decidedAt ? ` · ${escapeHTML(mediaKeyDate(a.decidedAt))}` : ""}</p>`).join("");
+}
+function pcaApply(out) {
+  if (!out || !out.session) { pcaSetStatus("The agent answered without an AI session id.", true); return; }
+  const s = out.session;
+  pca.sessions = [s, ...pca.sessions.filter((x) => x.sessionId !== s.sessionId)];
+  pcaFillSessions(s.sessionId);
+  pcaRenderSession(s);
+  const waiting = (s.approvals || []).filter((a) => a.state === "pending").length;
+  pcaSetStatus(waiting ? "Waiting for your approval." : "Done.");
+}
+function pcaFillSessions(selected) {
+  const sel = document.getElementById("pca-session");
+  if (!sel) return;
+  sel.innerHTML = '<option value="">New session</option>' + pca.sessions.map((x) => {
+    const pending = (x.approvals || []).filter((a) => a.state === "pending").length;
+    return `<option value="${escapeHTML(x.sessionId)}">${escapeHTML(mediaKeyDate(x.updatedAt || x.createdAt))}${x.leadName ? ` · ${escapeHTML(x.leadName)}` : ""}${pending ? ` · ${pending} to approve` : ""}</option>`;
+  }).join("");
+  sel.value = selected || "";
+}
+async function loadPartnerCentralAgent() {
+  if (!document.getElementById("pca")) return;
+  try {
+    const out = await partnerCentralCall("agent", { method: "GET" });
+    pca.sessions = out.sessions || [];
+    const lead = document.getElementById("pca-lead");
+    if (lead) lead.innerHTML = '<option value="">No lead</option>' + (out.leads || []).map((l) => `<option value="${escapeHTML(l.id)}">${escapeHTML(l.name)}</option>`).join("");
+    const keep = pca.current && pca.sessions.find((x) => x.sessionId === pca.current.sessionId);
+    pcaFillSessions(keep ? keep.sessionId : "");
+    pcaRenderSession(keep || null);
+  } catch (err) {
+    pcaSetStatus(`Couldn't load the agent sessions: ${err.message}`, true);
+  }
+}
+document.getElementById("pca-session")?.addEventListener("change", (e) => {
+  const s = pca.sessions.find((x) => x.sessionId === e.target.value) || null;
+  pcaRenderSession(s);
+  pcaSetStatus("");
+});
+document.getElementById("pca-send")?.addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  const textEl = document.getElementById("pca-text");
+  const text = (textEl?.value || "").trim();
+  if (!text) { pcaSetStatus("Type a message for the agent.", true); return; }
+  const body = { text, sessionId: document.getElementById("pca-session")?.value || undefined, leadId: document.getElementById("pca-lead")?.value || undefined, opportunityId: (document.getElementById("pca-opportunity")?.value || "").trim() || undefined };
+  btn.disabled = true;
+  pcaSetStatus("Asking the agent… this can take a minute.");
+  try {
+    pcaApply(await partnerCentralCall("agent/messages", { method: "POST", body: JSON.stringify(body) }));
+    if (textEl) textEl.value = "";
+  } catch (err) {
+    pcaSetStatus(err.message, true);
+  }
+  btn.disabled = false;
+  loadPartnerCentral({ agent: false });
+});
+document.getElementById("pca-refresh")?.addEventListener("click", async (e) => {
+  if (!pca.current) return;
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  pcaSetStatus("Reading the session from Partner Central…");
+  try { pcaApply(await partnerCentralCall(`agent/sessions/${encodeURIComponent(pca.current.sessionId)}`, { method: "POST", body: "{}" })); } catch (err) { pcaSetStatus(err.message, true); }
+  btn.disabled = false;
+});
+document.getElementById("pca-approvals")?.addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-pca-decide]");
+  if (!btn || !pca.current) return;
+  const card = btn.closest("[data-tool-use-id]");
+  const decision = btn.getAttribute("data-pca-decide");
+  card.querySelectorAll("button").forEach((b) => { b.disabled = true; });
+  pcaSetStatus(decision === "approve" ? "Approving… the agent is writing to Partner Central." : "Rejecting…");
+  try {
+    pcaApply(await partnerCentralCall(`agent/sessions/${encodeURIComponent(pca.current.sessionId)}/approvals/${encodeURIComponent(card.getAttribute("data-tool-use-id"))}`, { method: "POST", body: JSON.stringify({ decision }) }));
+  } catch (err) {
+    card.querySelectorAll("button").forEach((b) => { b.disabled = false; });
+    pcaSetStatus(err.message, true);
+  }
+  loadPartnerCentral({ agent: false });
+});
+
 document.getElementById("partner-central-test")?.addEventListener("click", async (e) => {
   const btn = e.currentTarget;
   btn.disabled = true;

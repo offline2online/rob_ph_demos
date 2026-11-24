@@ -57,3 +57,16 @@ target answers `MissingAuthenticationToken`, an unknown one `UnknownOperation`. 
 authorisation error shows as "Not linked yet" with AWS's message; a network failure shows the cause
 (for example `Couldn't reach host (ENOTFOUND)`) in the audit row and Last error, and the details in
 Cloud Logging. Constants are in `SERVICES`.
+
+## Partner Central agent (MCP server)
+
+The console's **Ask the Partner Central agent** panel (Settings -> Integrations & MCP -> AWS Partner
+Central) calls AWS's hosted agents MCP server at
+`https://partnercentral-agents-mcp.us-east-1.api.aws/mcp` (SigV4 signing name
+`partnercentral-agents-mcp`, `tools/call` of `sendMessage` / `getSession` only) with the same role.
+The role needs `partnercentral:UseSession` (the `PartnerCentralAgentMcp` policy in
+`partner-central-role.yaml`; redeploy the stack to add it). Every write the agent proposes waits for an
+admin's Approve or Reject in the panel. Test in the **Sandbox** catalogue first: list opportunities,
+ask for a customer profile, ask it to draft a test opportunity (not submitted) and check the approval
+card appears before anything is written. An authentication error answers `-32001` and shows in the audit
+list as `agent:sendMessage`.

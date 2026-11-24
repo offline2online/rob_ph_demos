@@ -62,6 +62,20 @@ Resources:
                   - partnercentral:SubmitBenefitApplication
                   - partnercentral:CancelBenefitApplication
                 Resource: "*"
+        - PolicyName: PartnerCentralAgentMcp
+          # The Partner Central agents MCP server (the console's "Ask the
+          # Partner Central agent" panel). UseSession lets the role open and
+          # continue agent sessions; what the agent may read or write is
+          # still limited by the policies above (opportunities, customer
+          # insights, benefit drafts), and every write waits for an admin's
+          # approval in the console. Benefit submission stays denied above.
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - partnercentral:UseSession
+                Resource: "*"
   # Read-only access to the Partner Central data export bucket, and nothing else in S3.
   ExportReadPolicy:
     Type: AWS::IAM::Policy

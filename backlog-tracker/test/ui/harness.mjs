@@ -75,6 +75,7 @@ export async function startHarness() {
     const refused = [];
     const mediaKeyWrites = [];
     const aceWrites = [];
+    const pcAgentCalls = [];
     const enrichCalls = [];
     const supportCalls = [];
     const agentSendCalls = [];
@@ -160,6 +161,27 @@ export async function startHarness() {
           if (seed.aceStatus && seed.aceStatus !== 200) return route.fulfill({ status: seed.aceStatus, contentType: "application/json", body: JSON.stringify({ error: seed.aceError || "Server error" }) });
           return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ catalog: "Sandbox", truncated: false, opportunities: aceStore }) });
         }
+        // Partner Central agent (functions/partner-central.js /v1/agent/*). A message that mentions "draft"
+        // comes back holding one write for approval; an approval decides it. Calls are returned as pcAgentCalls.
+        if (url.pathname.startsWith("/partnerCentral/v1/agent")) {
+          const method = route.request().method();
+          const body = method === "GET" ? null : JSON.parse(route.request().postData() || "{}");
+          pcAgentCalls.push({ method, path: url.pathname, body });
+          const json = (b) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(b) });
+          if (url.pathname === "/partnerCentral/v1/agent") return json({ catalog: "Sandbox", sessions: [], leads: seed.pcAgentLeads || [{ id: "L1", name: "Demo Brand" }] });
+          const base = { sessionId: "sess-1", catalog: "Sandbox", createdAt: "2026-11-24T10:00:00Z", updatedAt: "2026-11-24T10:00:00Z", expiresAt: "2026-11-26T10:00:00Z", leadId: body && body.leadId || null, leadName: body && body.leadId ? "Demo Brand" : null, opportunityId: body && body.opportunityId || null };
+          if (url.pathname === "/partnerCentral/v1/agent/messages") {
+            const draft = /draft/i.test(body.text || "");
+            const session = { ...base, status: draft ? "requires_approval" : "complete", lastReply: draft ? "I will create this draft opportunity. Approve to continue." : "You have 2 open opportunities.", approvals: draft ? [{ toolUseId: "tu-1", toolName: "CreateOpportunity", parameters: { Title: "Test opportunity", Stage: "Prospect" }, state: "pending" }] : [] };
+            return json({ session, reply: { sessionId: "sess-1", status: session.status, text: session.lastReply, approvals: session.approvals } });
+          }
+          if (/\/approvals\//.test(url.pathname)) {
+            const approved = body.decision === "approve";
+            const session = { ...base, leadName: "Demo Brand", leadId: "L1", status: "complete", lastReply: approved ? "Draft opportunity created (not submitted)." : "Cancelled.", approvals: [{ toolUseId: "tu-1", toolName: "CreateOpportunity", parameters: {}, state: approved ? "approved" : "rejected", decidedBy: "admin@ph.example", decidedAt: "2026-11-24T10:01:00Z" }] };
+            return json({ session, reply: { sessionId: "sess-1", status: "complete", text: session.lastReply, approvals: [] } });
+          }
+          return json({ session: { ...base, status: "complete", lastReply: "Session read.", approvals: [] } });
+        }
         if (url.pathname.startsWith("/partnerCentral/")) {
           const body = url.pathname.endsWith("/audit") ? { entries: [] } : { state: "not-linked", catalog: "Sandbox", roleArn: "arn:aws:iam::817173160653:role/PH-Console-PartnerCentral", lastSuccessAt: null, lastError: null, note: "Not linked yet" };
           return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
@@ -234,7 +256,7 @@ export async function startHarness() {
     // a case's own 8 s wait, and the case failed on a page that was still
     // starting (Modals @820px, Promote Leads, mobile-shell; 24 Oct-14 Nov 2026).
     if (waitForApp) await appRendered(page).catch(() => {});
-    return { page, context, problems, refused, mediaKeyWrites, aceWrites, enrichCalls, supportCalls, agentSendCalls, voiceMentionCalls, routineWrites, origin, close: () => context.close() };
+    return { page, context, problems, refused, mediaKeyWrites, aceWrites, pcAgentCalls, enrichCalls, supportCalls, agentSendCalls, voiceMentionCalls, routineWrites, origin, close: () => context.close() };
   }
 
   return {

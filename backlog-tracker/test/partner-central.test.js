@@ -3,7 +3,7 @@
 // Run: node test/partner-central.test.js
 "use strict";
 const assert = require("assert");
-const { createPartnerCentralApi, signRequest, normaliseOpportunity, sanitiseAceInput, OPERATIONS } = require("../functions/partner-central");
+const { createPartnerCentralApi, signRequest, normaliseOpportunity, sanitiseAceInput, OPERATIONS, parseAgentResult, parseMcpBody, AGENT_MCP, AGENT_TOOLS } = require("../functions/partner-central");
 
 function fakeDb() {
   const state = {};
@@ -15,7 +15,9 @@ function fakeDb() {
         async set(data, opts) { state[name][id] = opts && opts.merge ? { ...(state[name][id] || {}), ...data } : { ...data }; },
       }),
       async add(data) { const id = `a${Object.keys(state[name]).length}`; state[name][id] = data; return { id }; },
-      orderBy() { return { limit: () => ({ async get() { return { docs: Object.values(state[name]).reverse().map((d) => ({ data: () => d })) }; } }) }; },
+      orderBy() { return { limit: () => ({ async get() { return { docs: Object.entries(state[name]).reverse().map(([id, d]) => ({ id, data: () => d })) }; } }) }; },
+      async get() { return { docs: Object.entries(state[name]).map(([id, d]) => ({ id, data: () => d })) }; },
+      where(field, op, value) { return { limit: (n) => ({ async get() { return { docs: Object.entries(state[name]).filter(([, d]) => d && d[field] === value).slice(0, n).map(([id, d]) => ({ id, data: () => d })) }; } }) }; },
     };
   };
   return { collection: col, state };
@@ -30,7 +32,7 @@ function makeApi({ awsReply, stsStatus = 200, stsBody = STS_OK } = {}) {
     calls.push({ url, init });
     if (url.startsWith("https://sts.amazonaws.com")) return { ok: stsStatus < 400, status: stsStatus, text: async () => stsBody };
     const reply = awsReply ? awsReply(url, init) : { status: 200, body: { OpportunitySummaries: [] } };
-    return { ok: reply.status < 400, status: reply.status, text: async () => JSON.stringify(reply.body) };
+    return { ok: reply.status < 400, status: reply.status, headers: { get: (h) => (/content-type/i.test(h) ? reply.contentType || "application/json" : null) }, text: async () => (typeof reply.raw === "string" ? reply.raw : JSON.stringify(reply.body)) };
   };
   const api = createPartnerCentralApi({
     db, fetch, logger: { warn() {}, error() {}, info() {} },
@@ -263,6 +265,123 @@ check("SigV4 matches a recomputation and is deterministic", () => {
   const a = signRequest(args); const b = signRequest(args);
   assert.strictEqual(a.authorization, b.authorization);
   assert.match(a.authorization, /Credential=A\/20261106\/us-east-1\/svc\/aws4_request, SignedHeaders=host;x-amz-date;x-amz-security-token;x-amz-target, Signature=[0-9a-f]{64}$/);
+});
+
+
+// ── Partner Central agent (AWS-hosted MCP server) ──
+// A fake agent: the first message proposes a write and waits for approval; an
+// approval response completes it. Replies use the "stringified" shape.
+const agentPayload = (o) => ({ result: { content: [{ type: "text", text: JSON.stringify(o) }] } });
+function agentReply({ onCall } = {}) {
+  return (url, init) => {
+    if (!url.startsWith("https://partnercentral-agents-mcp.us-east-1.api.aws/mcp")) return { status: 200, body: { OpportunitySummaries: [] } };
+    const rpc = JSON.parse(init.body);
+    if (onCall) onCall(rpc);
+    const args = rpc.params.arguments;
+    const first = args.content && args.content[0];
+    if (rpc.params.name === "getSession") return { status: 200, body: { jsonrpc: "2.0", id: rpc.id, ...agentPayload({ sessionId: args.sessionId, status: "complete", content: [{ type: "text", text: "Session read." }] }) } };
+    if (first && first.type === "tool_approval_response") return { status: 200, body: { jsonrpc: "2.0", id: rpc.id, ...agentPayload({ sessionId: args.sessionId, status: "complete", content: [{ type: "text", text: first.decision === "approve" ? "Draft opportunity created (not submitted)." : "Cancelled." }] }) } };
+    if (/draft/i.test(first.text)) return { status: 200, body: { jsonrpc: "2.0", id: rpc.id, ...agentPayload({ sessionId: "sess-1", status: "requires_approval", content: [{ type: "text", text: "I will create this draft." }, { type: "tool_approval_request", toolUseId: "tu-1", toolName: "CreateOpportunity", parameters: { Title: "Test opportunity" } }] }) } };
+    // SSE answer for a read
+    const msg = { jsonrpc: "2.0", id: rpc.id, ...agentPayload({ sessionId: args.sessionId || "sess-2", status: "complete", content: [{ type: "text", text: "You have 2 open opportunities." }] }) };
+    return { status: 200, contentType: "text/event-stream", raw: `event: message\ndata: ${JSON.stringify(msg)}\n\n` };
+  };
+}
+
+check("agent routes are admin only", async () => {
+  const { api } = makeApi({ awsReply: agentReply() });
+  assert.strictEqual((await call(api, "POST", "/v1/agent/messages", { token: "", body: { text: "hi" } })).statusCode, 401);
+  assert.strictEqual((await call(api, "POST", "/v1/agent/messages", { token: "ed@x.example", body: { text: "hi" } })).statusCode, 403);
+  assert.strictEqual((await call(api, "GET", "/v1/agent", { token: "ed@x.example" })).statusCode, 403);
+  assert.strictEqual((await call(api, "POST", "/v1/agent/sessions/sess-1/approvals/tu-1", { token: "ed@x.example", body: { decision: "approve" } })).statusCode, 403);
+});
+
+check("a read: signed tools/call sendMessage to the agents endpoint in the Sandbox catalogue, SSE answer parsed", async () => {
+  const seen = [];
+  const { api, calls, db } = makeApi({ awsReply: agentReply({ onCall: (r) => seen.push(r) }) });
+  const r = await call(api, "POST", "/v1/agent/messages", { body: { text: "List my opportunities" } });
+  assert.strictEqual(r.statusCode, 200, JSON.stringify(r.body));
+  assert.strictEqual(r.body.reply.text, "You have 2 open opportunities.");
+  assert.strictEqual(r.body.session.sessionId, "sess-2"); assert.strictEqual(r.body.session.catalog, "Sandbox");
+  const sent = calls.find((c) => c.url === `https://${AGENT_MCP.host}${AGENT_MCP.path}`);
+  assert.match(sent.init.headers.authorization, /\/us-east-1\/partnercentral-agents-mcp\/aws4_request/);
+  assert.match(sent.init.headers.accept, /text\/event-stream/);
+  assert.strictEqual(seen[0].method, "tools/call"); assert.strictEqual(seen[0].params.name, "sendMessage");
+  assert.strictEqual(seen[0].params.arguments.catalog, "Sandbox"); assert.deepStrictEqual(seen[0].params.arguments.content, [{ type: "text", text: "List my opportunities" }]);
+  assert.ok(Object.values(db.state.partnerCentralAudit).some((e) => e.operation === "agent:sendMessage" && e.ok));
+  assert.ok(db.state.partnerCentralAgentSessions["sess-2"], "the AI session is recorded");
+  assert.deepStrictEqual(AGENT_TOOLS, ["sendMessage", "getSession"]);
+});
+
+check("a write waits for an admin's approval, which is the only thing that answers it", async () => {
+  const seen = [];
+  const { api, db } = makeApi({ awsReply: agentReply({ onCall: (r) => seen.push(r) }) });
+  const r = await call(api, "POST", "/v1/agent/messages", { body: { text: "Draft a test opportunity, do not submit" } });
+  assert.strictEqual(r.statusCode, 200);
+  assert.strictEqual(r.body.session.status, "requires_approval");
+  assert.deepStrictEqual(r.body.session.approvals.map((a) => [a.toolUseId, a.toolName, a.state]), [["tu-1", "CreateOpportunity", "pending"]]);
+  assert.strictEqual(seen.length, 1, "nothing is sent back to the agent until someone decides");
+  assert.strictEqual((await call(api, "POST", "/v1/agent/sessions/sess-1/approvals/tu-9", { body: { decision: "approve" } })).statusCode, 404, "an unknown toolUseId is refused");
+  assert.strictEqual((await call(api, "POST", "/v1/agent/sessions/sess-1/approvals/tu-1", { body: { decision: "override" } })).statusCode, 400, "only approve or reject");
+  const ok = await call(api, "POST", "/v1/agent/sessions/sess-1/approvals/tu-1", { body: { decision: "approve" } });
+  assert.strictEqual(ok.statusCode, 200, JSON.stringify(ok.body));
+  assert.deepStrictEqual(seen[1].params.arguments.content, [{ type: "tool_approval_response", toolUseId: "tu-1", decision: "approve" }]);
+  assert.strictEqual(seen[1].params.arguments.sessionId, "sess-1");
+  const a = ok.body.session.approvals[0];
+  assert.strictEqual(a.state, "approved"); assert.strictEqual(a.decidedBy, "owner@example.com");
+  assert.strictEqual(ok.body.reply.text, "Draft opportunity created (not submitted).");
+  assert.strictEqual((await call(api, "POST", "/v1/agent/sessions/sess-1/approvals/tu-1", { body: { decision: "reject" } })).statusCode, 409, "decided once only");
+  assert.ok(Object.values(db.state.partnerCentralAudit).some((e) => e.operation === "agent:approve" && e.toolUseId === "tu-1"));
+});
+
+check("the AI session id is logged once on the linked lead (or the lead matched to the opportunity)", async () => {
+  const { api, db } = makeApi({ awsReply: agentReply() });
+  db.state.leads = { L1: { company: { name: "Acme Retail" }, history: [] }, L2: { company: { name: "Beta" }, aceOpportunityId: "O7", history: [] } };
+  const r = await call(api, "POST", "/v1/agent/messages", { body: { text: "Build a customer profile", leadId: "L1", opportunityId: "O1" } });
+  assert.strictEqual(r.statusCode, 200, JSON.stringify(r.body));
+  assert.strictEqual(r.body.session.leadName, "Acme Retail"); assert.strictEqual(r.body.session.opportunityId, "O1");
+  const h = db.state.leads.L1.history;
+  assert.strictEqual(h.length, 1); assert.strictEqual(h[0].kind, "note"); assert.match(h[0].text, /Partner Central AI session sess-2 \(Sandbox catalogue\) for ACE opportunity O1/);
+  assert.deepStrictEqual(db.state.leads.L1.aiSessionIds, ["sess-2"]);
+  await call(api, "POST", "/v1/agent/messages", { body: { text: "And its funding?", sessionId: "sess-2" } });
+  assert.strictEqual(db.state.leads.L1.history.length, 1, "not logged twice");
+  const viaOpp = await call(api, "POST", "/v1/agent/messages", { body: { text: "Summarise", opportunityId: "O7" } });
+  assert.strictEqual(viaOpp.body.session.leadId, "L2");
+  assert.strictEqual(db.state.leads.L2.history.length, 1);
+  assert.strictEqual((await call(api, "POST", "/v1/agent/messages", { body: { text: "x", leadId: "nope" } })).statusCode, 404);
+  const ov = await call(api, "GET", "/v1/agent");
+  assert.deepStrictEqual(ov.body.leads.map((l) => l.name), ["Acme Retail", "Beta"]);
+  assert.ok(ov.body.sessions.some((x) => x.sessionId === "sess-2"));
+});
+
+check("an expired or other-catalogue session is refused, not silently replaced", async () => {
+  const { api, db } = makeApi({ awsReply: agentReply() });
+  db.state.partnerCentralAgentSessions = {
+    old: { catalog: "Sandbox", expiresAt: new Date("2020-01-01T00:00:00Z"), approvals: [] },
+    live: { catalog: "AWS", expiresAt: new Date("2099-01-01T00:00:00Z"), approvals: [] },
+  };
+  assert.strictEqual((await call(api, "POST", "/v1/agent/messages", { body: { text: "hi", sessionId: "old" } })).statusCode, 410);
+  assert.strictEqual((await call(api, "POST", "/v1/agent/messages", { body: { text: "hi", sessionId: "live" } })).statusCode, 409);
+  assert.strictEqual((await call(api, "POST", "/v1/agent/messages", { body: { text: "hi", sessionId: "never" } })).statusCode, 404);
+  assert.strictEqual((await call(api, "POST", "/v1/agent/messages", { body: { text: "  " } })).statusCode, 400);
+});
+
+check("agent JSON-RPC errors surface and are audited", async () => {
+  const { api, db } = makeApi({ awsReply: (url) => url.includes("agents-mcp") ? { status: 200, body: { jsonrpc: "2.0", id: 1, error: { code: -32001, message: "Authentication failed" } } } : { status: 200, body: {} } });
+  const r = await call(api, "POST", "/v1/agent/messages", { body: { text: "hi" } });
+  assert.strictEqual(r.statusCode, 502); assert.match(r.body.error, /-32001: Authentication failed/);
+  assert.ok(Object.values(db.state.partnerCentralAudit).some((e) => e.operation === "agent:sendMessage" && !e.ok));
+});
+
+check("parseAgentResult reads both reply shapes and approval events", () => {
+  const inline = parseAgentResult({ sessionId: "s", status: "requires_approval", content: [{ type: "text", text: "Proposed" }, { type: "tool_approval_request", toolUseId: "t1", toolName: "UpdateOpportunity", parameters: { a: 1 } }] });
+  assert.strictEqual(inline.sessionId, "s"); assert.strictEqual(inline.text, "Proposed"); assert.strictEqual(inline.approvals[0].toolUseId, "t1");
+  const events = parseAgentResult({ content: [{ type: "text", text: JSON.stringify({ sessionId: "s2", stateType: "TOOL_REQUEST", events: [{ data: { tool_use_id: "t2", name: "CreateBenefitApplication", input: { b: 2 } } }] }) }] });
+  assert.deepStrictEqual(events.approvals, [{ toolUseId: "t2", toolName: "CreateBenefitApplication", parameters: { b: 2 } }]);
+  const done = parseAgentResult({ content: [{ type: "text", text: JSON.stringify({ sessionId: "s3", status: "complete", content: [{ type: "serverToolUse", tool_use_id: "x", input: { q: 1 } }, { type: "text", text: "ok" }] }) }] });
+  assert.deepStrictEqual(done.approvals, [], "a read tool in a complete reply is not an approval");
+  assert.strictEqual(parseMcpBody("event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}\n\n", "text/event-stream").id, 1);
+  assert.strictEqual(parseMcpBody("not json", "application/json"), null);
 });
 
 (async () => {

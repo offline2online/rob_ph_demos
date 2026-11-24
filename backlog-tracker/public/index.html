@@ -1866,6 +1866,30 @@
                 <button type="button" class="btn-ghost" id="partner-central-test">Test connection</button>
               </div>
               <div id="partner-central-status"><p class="interface-row-empty">Loading…</p></div>
+              <!-- Ask the Partner Central agent (the AWS-hosted MCP server,
+                   functions/partner-central.js → /v1/agent/*). Admin only.
+                   Every write the agent proposes waits here for Approve/Reject. -->
+              <div class="pca" id="pca">
+                <h4 class="pca-title">Ask the Partner Central agent
+                  <span class="info-tip" tabindex="0" role="note" aria-label="About the Partner Central agent" data-tip="Ask in plain words to list opportunities, build a customer profile or draft an opportunity or funding application. Nothing is written until an admin approves it below. Each AI session is kept for 48 hours and is logged on the lead you link it to."><span class="material-symbols-outlined" aria-hidden="true">info</span></span>
+                </h4>
+                <div class="pca-fields">
+                  <label class="pca-field"><span class="field-label">Session</span>
+                    <select id="pca-session" aria-label="AI session"><option value="">New session</option></select></label>
+                  <label class="pca-field"><span class="field-label">Lead</span>
+                    <select id="pca-lead" aria-label="Link a lead"><option value="">No lead</option></select></label>
+                  <label class="pca-field"><span class="field-label">ACE opportunity ID</span>
+                    <input type="text" id="pca-opportunity" maxlength="64" placeholder="Optional" autocomplete="off" spellcheck="false"></label>
+                </div>
+                <textarea id="pca-text" rows="3" maxlength="4000" aria-label="Message for the Partner Central agent" placeholder="e.g. List my open opportunities"></textarea>
+                <div class="pca-actions">
+                  <button type="button" class="notify-claude-btn" id="pca-send"><span class="material-symbols-outlined notify-claude-icon" aria-hidden="true">auto_awesome</span><span class="notify-claude-label">Ask agent</span></button>
+                  <button type="button" class="btn-ghost" id="pca-refresh" hidden>Refresh session</button>
+                  <span class="pca-status" id="pca-status" role="status" aria-live="polite"></span>
+                </div>
+                <div id="pca-approvals"></div>
+                <div id="pca-reply"></div>
+              </div>
               <div id="partner-central-audit"></div>
             </div>
 

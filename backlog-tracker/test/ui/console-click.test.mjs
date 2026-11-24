@@ -79,6 +79,7 @@ function makeCtx(o, width) {
   const at = (step, selector = "") => { ctx.step = step; ctx.selector = selector; };
   ctx.at = at;
   ctx.aceWrites = o.aceWrites;
+  ctx.pcAgentCalls = o.pcAgentCalls;
   ctx.enrichCalls = o.enrichCalls;
   ctx.supportCalls = o.supportCalls;
   ctx.routineWrites = o.routineWrites;
@@ -4272,6 +4273,52 @@ const scenarios = [
       assert.strictEqual(await c.page.locator(".support-msg-aidan .support-msg-files").count(), 0, "no attachment line");
       assert.strictEqual(new URL(c.page.url()).hash, "#support/aidan/ticket/a1");
       assert.strictEqual(await c.page.locator(".support-aidan-sources, .support-conf").count(), 0, "an answer that isn't from the Help Centre shows no articles or confidence");
+    },
+  },
+  {
+    // Eo1w5YvY0Xw8YhHDalWj: Settings › Integrations › AWS Partner Central › Ask the Partner Central agent.
+    // A write the agent proposes shows as an approval card, and nothing is sent until Approve is clicked.
+    name: "Settings › Integrations › Partner Central agent: a draft waits for Approve, then shows approved",
+    hash: "#settings/integrations",
+    seed: () => {
+      const s = only("b1");
+      s.user = { email: "admin@ph.example", role: "admin" };
+      s.docs.consoleUsers = { "admin@ph.example": { email: "admin@ph.example", role: "admin", displayName: "Ada Admin" } };
+      return s;
+    },
+    run: async (c) => {
+      c.at("the agent panel");
+      await c.visible("#pca", "the Ask the Partner Central agent panel");
+      await until(async () => (await c.page.locator("#pca-lead option").count()) === 2, "the lead picker to fill", 4000);
+      assert.strictEqual(await c.page.inputValue("#pca-session"), "", "a new session by default");
+      await c.click("#pca-send", "Ask agent with nothing typed");
+      await c.waitText("#pca-status", "Type a message for the agent.", "an empty message is refused on the page");
+      assert.strictEqual(c.pcAgentCalls.filter((x) => x.method === "POST").length, 0, "nothing sent");
+
+      c.at("a draft request");
+      await c.page.selectOption("#pca-lead", "L1");
+      await c.page.fill("#pca-opportunity", "O123");
+      await c.page.fill("#pca-text", "Draft a test opportunity for Demo Brand, do not submit");
+      await c.click("#pca-send", "Ask agent");
+      await c.waitText("#pca-status", "Waiting for your approval.", "the agent holds the write");
+      const sent = c.pcAgentCalls.find((x) => x.path === "/partnerCentral/v1/agent/messages").body;
+      assert.deepStrictEqual([sent.leadId, sent.opportunityId, sent.sessionId], ["L1", "O123", undefined]);
+      await c.visible('.pca-approval[data-tool-use-id="tu-1"]', "the approval card");
+      assert.match(await c.text(".pca-approval-head"), /CreateOpportunity/);
+      assert.match(await c.text(".pca-params"), /"Title": "Test opportunity"/);
+      assert.match(await c.text(".pca-meta"), /AI session sess-1 · Sandbox · Lead: Demo Brand · Opportunity: O123/);
+      assert.strictEqual(await c.page.inputValue("#pca-session"), "sess-1", "the new session is selected to continue");
+      assert.strictEqual(await c.page.inputValue("#pca-text"), "", "the box clears after sending");
+      assert.strictEqual(c.pcAgentCalls.filter((x) => /approvals/.test(x.path)).length, 0, "nothing approved yet");
+
+      c.at("approve");
+      await c.click('.pca-approval [data-pca-decide="approve"]', "Approve");
+      await c.waitText("#pca-status", "Done.", "the approval goes through");
+      const decided = c.pcAgentCalls.find((x) => /approvals/.test(x.path));
+      assert.deepStrictEqual([decided.path, decided.body], ["/partnerCentral/v1/agent/sessions/sess-1/approvals/tu-1", { decision: "approve" }]);
+      assert.strictEqual(await c.page.locator(".pca-approval").count(), 0, "no approval left waiting");
+      assert.match(await c.text("#pca-approvals"), /CreateOpportunity: approved by admin@ph\.example/);
+      assert.match(await c.text(".pca-text"), /Draft opportunity created \(not submitted\)/);
     },
   },
   {
