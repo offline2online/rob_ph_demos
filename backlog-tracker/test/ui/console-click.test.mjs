@@ -3633,6 +3633,10 @@ const scenarios = [
         // Written only to hello@ or aidan@: in none of the figures.
         h1: { subject: "Partnership", customerName: "Hattie", status: "open", needsHuman: true, inboxes: ["hello"], createdAt: t(daysAgo(2, 8)), lastMessageAt: t(daysAgo(2, 8)), lastInboundAt: t(daysAgo(2, 8)) },
         a1: { subject: "For Aidan", customerName: "Abe", status: "resolved", resolvedBy: "ai", resolvedAt: t(yday(9)), lastReplyAt: t(yday(9)), inboxes: ["aidan"], createdAt: t(yday(7)), lastMessageAt: t(yday(9)) },
+        // Needs a person is support queries only: an Aidan request whose reply came back to support@,
+        // and mail to support@ that is not about PH (from a high-value sender, so it still needs a person).
+        a2: { subject: "One pager", customerName: "Ann", status: "open", needsHuman: true, inboxes: ["support", "aidan"], aidan: { status: "needs-person", kind: "generate", reason: "No skill matches." }, createdAt: t(yday(8)), lastMessageAt: t(yday(8)), lastInboundAt: t(yday(8)) },
+        u1: { subject: "Your invoice", customerName: "Vendor", status: "open", needsHuman: true, highValue: true, unrelated: true, category: "unrelated", inboxes: ["support"], createdAt: t(yday(8)), lastMessageAt: t(yday(8)), lastInboundAt: t(yday(8)) },
       };
       return s;
     },
@@ -3664,7 +3668,8 @@ const scenarios = [
       const fText = await tileText("funnel");
       assert.ok(fText.includes("Visitor to lead") && fText.includes("Opps"), `visitor-to-lead and the mini funnel: ${fText}`);
       assert.strictEqual(await c.page.locator('.dash-tile-wrap[data-tile="funnel"] .dash-mini-step.dash-drop-max').count(), 1, "the biggest drop-off is marked");
-      assert.strictEqual(await value("person"), "1", "one support@ ticket needs a person; hello@ is not counted");
+      assert.strictEqual(await value("person"), "1", "one support@ platform query needs a person; hello@, an Aidan request and mail not about PH are not counted");
+      assert.ok(!/One pager|Your invoice/.test(await c.page.locator('.dash-tile-wrap[data-tile="person"]').innerHTML()), "neither the Aidan request nor the non-support email is listed");
       assert.ok(/^(\d+h|1d( \d+h)?)$/.test((await tileText("person")).match(/Oldest\s*(\S+( \d+h)?)/)?.[1] || ""), `the age of the oldest: ${await tileText("person")}`);
       assert.strictEqual(await value("drafts"), "1", "one AI draft to approve");
       assert.strictEqual(await value("resolved"), "2", "two support@ tickets resolved yesterday; aidan@ is not counted");

@@ -555,7 +555,9 @@ const queueTest = (key) => QUEUES.find((q) => q.key === key).test;
 const waitOf = (t, now) => Math.max(0, now - (t.lastInboundAt || t.lastMessageAt || t.createdAt || now));
 const customerOf = (t) => t.customerName || t.customerEmail || "Unknown sender";
 // Needs a person: the queue's count, the age of the oldest and every ticket
-// with its customer and wait, longest first.
+// with its customer and wait, longest first. The queue holds support queries
+// only (support-core's isSupportQuery): not an Aidan request, nor mail that is
+// automated, not about PH or spam-like.
 export function needsPersonKpi(tickets, now = Date.now()) {
   const list = (tickets || []).filter((t) => inInbox(t, DEFAULT_INBOX) && queueTest("needs-person")(t))
     .map((t) => ({ id: t.id, customer: customerOf(t), subject: t.subject || "", waitedMs: waitOf(t, now) }))

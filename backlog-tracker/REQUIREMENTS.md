@@ -6811,6 +6811,8 @@ hello@ and aidan@ (at personalisationhub.com). Each has its own tab.
   has queues and their counts (SUP-INB-9).
 - **SUP-INB-7** The Dashboard's three Support tiles count the Support
   Inbox only. Mail written only to hello@ or aidan@ is in none of its figures.
+  Needs a person counts support queries only (SUP-TKT-4): an Aidan request
+  that came back to support@, and support@ mail not about PH, are not in it.
 - **SUP-INB-8** Only a ticket in the Support Inbox can be answered without a
   person. With sending switched on, a draft for mail written only to hello@
   or aidan@ still waits for a person to approve it.
@@ -7926,6 +7928,15 @@ Ticket Ebq2oqSH3Lp1UrHWnfgJ. Code: `functions/aidan-core.js`
 - **SUP-TKT-4** Queues: Needs a person, AI drafts to approve, Automated &
   unsorted, Waiting on customer, Resolved, Spam, All tickets. An open,
   waiting, resolved or spam ticket is in exactly one of the first six.
+  Needs a person holds support queries only (24 Nov 2026, ticket
+  j7fSAp4aZO4HGd7iCR3G): an open ticket that needs a person and is a
+  question about the platform or Personalisation Hub. A thread that carries
+  an Aidan request (it started at aidan@; Aidan replies from support@, so a
+  reply to him also files it under the Support Inbox) and mail triage found
+  automated, not about PH or spam-like are not in it, even when they need a
+  person (a high-value sender's unrelated mail, Aidan needing a person): they
+  sit in Automated & unsorted, and Aidan's still show in the Aidan tab. A
+  failed triage stays in Needs a person.
 - **SUP-TKT-5** Marking spam asks first, moves the thread to Gmail's Spam
   too, and can be undone ("Not spam"). It is available in all three tabs
   (SUP-INB-14), and cancels a request Aidan has queued on the thread

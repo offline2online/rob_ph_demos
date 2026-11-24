@@ -300,6 +300,20 @@ assert.strictEqual(np.tickets[1].customer, "Customer 2");
 assert.strictEqual(tileStatus("person", np).level, "alert", "red when the oldest has waited a day");
 assert.strictEqual(tileStatus("person", needsPersonKpi([tickets[0]], NOW)).level, "warn");
 assert.deepStrictEqual(needsPersonKpi([], NOW), { count: 0, oldestMs: null, tickets: [] });
+// Needs a person is support queries only (j7fSAp4aZO4HGd7iCR3G): an Aidan request whose
+// reply came back to support@, and support@ mail that is not about PH, are not counted.
+{
+  const mixed = [
+    t("q", { status: "open", needsHuman: true, inboxes: ["support"], lastInboundAt: at(17, 7) }),
+    t("ai", { status: "open", needsHuman: true, inboxes: ["support", "aidan"], aidan: { status: "needs-person", reason: "No skill matches." }, lastInboundAt: at(16, 7) }),
+    t("un", { status: "open", needsHuman: true, highValue: true, unrelated: true, inboxes: ["support"], lastInboundAt: at(16, 7) }),
+    t("au", { status: "open", needsHuman: true, automated: "noreply", lastInboundAt: at(16, 7) }),
+    t("sp", { status: "open", needsHuman: true, spamLikely: true, lastInboundAt: at(16, 7) }),
+  ];
+  const k = needsPersonKpi(mixed, NOW);
+  assert.deepStrictEqual(k.tickets.map((x) => x.id), ["q"], "only the platform query to support@");
+  assert.strictEqual(k.count, queueCounts(mixed, "support")["needs-person"], "still equals the Support Inbox tab's queue");
+}
 const dr = draftsKpi(tickets, NOW);
 assert.strictEqual(dr.count, queueCounts(tickets, "support")["ai-drafts"], "equals the AI drafts to approve queue count");
 assert.deepStrictEqual(dr.drafts.map((d) => [d.id, d.confidence]), [["15", 0.91], ["3", 0.62]], "each draft with its confidence, most confident first");

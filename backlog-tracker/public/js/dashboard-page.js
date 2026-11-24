@@ -48,7 +48,7 @@ export const TILES = [
   { key: "funnel", group: "external", src: "funnel", section: "conversion-funnel", title: "Conversion funnel", icon: "filter_alt", target: "#promote/conversion-funnel",
     info: "Unique website visitors over the last 7 days, against the 7 days before, and the share who became a lead. The mini funnel marks the biggest drop-off in amber. Top movers are the industry and market whose interest grew most on the week before. Amber when yesterday's website figures have not arrived yet." },
   { key: "person", group: "support", src: "support", section: "support-inbox", title: "Needs a person", icon: "support_agent", target: "#support",
-    info: "Support Inbox tickets in the Needs a person queue now, and how long the oldest has waited. Mail written only to other addresses is not counted. Amber when one waits, red when the oldest has waited over a day." },
+    info: "Support Inbox tickets in the Needs a person queue now, and how long the oldest has waited. Only questions about the platform or Personalisation Hub sent to support@ count: mail to other addresses, requests to Aidan and mail not about Personalisation Hub are not counted. Amber when one waits, red when the oldest has waited over a day." },
   { key: "drafts", group: "support", src: "support", section: "support-inbox", title: "AI drafts to approve", icon: "auto_awesome", target: "#support?queue=ai-drafts",
     info: "Support Inbox replies the AI has drafted that wait for a person to approve them, and how many are high confidence (80% or more)." },
   { key: "resolved", group: "support", src: "support", section: "support-inbox", title: "Resolved & automation", icon: "task_alt", target: "#support?queue=resolved",

@@ -3999,7 +3999,9 @@ count, the pipeline Lead to Closed Won with stage conversion, stale and
 not-contacted flags; test leads left out) and **Conversion funnel** (visitors
 over the last 7 days, visitor-to-lead %, a mini funnel to opportunities with
 the biggest drop-off in amber, top-moving industry and market). Support, all
-of the support@ inbox only: **Needs a person**, **AI drafts to approve** and
+of the support@ inbox only: **Needs a person** (platform and Personalisation
+Hub questions only: not Aidan requests that came back to support@, nor mail
+not about PH), **AI drafts to approve** and
 **Resolved & automation** (resolved yesterday, % by the AI alone; the panel
 lists FAQ gaps). Dashboard v2 (19 Nov 2026): the tiles of all
 three sections flow through one grid, each section's heading above its first
