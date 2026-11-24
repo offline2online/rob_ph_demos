@@ -2581,13 +2581,6 @@ body { overflow-x: clip; }
 .prospect-contacts-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .prospect-contacts-table th, .prospect-contacts-table td { padding: 4px 6px; text-align: left; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
 .prospect-insights { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13.5px; }
-/* Prospects (TAM) › Missing industries */
-.prospect-gaps-group { padding: 12px 0; border-top: 1px solid var(--border); }
-.prospect-gaps-group:first-child { border-top: 0; padding-top: 0; }
-.prospect-gaps-group h3 { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 6px; font-size: 14px; font-weight: 500; color: var(--text); }
-.prospect-gaps-count { font-size: 13px; font-weight: 400; color: var(--text-muted); white-space: nowrap; }
-.prospect-gaps-list { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.6; color: var(--text); }
-.prospect-gaps-list .prospect-gaps-country { color: var(--text-muted); }
 .prospects-pop { position: fixed; z-index: 60; min-width: 200px; max-width: min(320px, calc(100vw - 16px)); max-height: 70vh; overflow: auto; padding: 6px; background: #fff; border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, .15); }
 .prospects-pop[hidden] { display: none; }
 .prospects-pop-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; font: inherit; font-size: 14px; text-align: left; background: none; border: 0; border-radius: 6px; cursor: pointer; color: var(--text); }

@@ -240,36 +240,6 @@ t("industries map onto the nine on personalisationhub.com; the rest are Unassign
   assert.equal(mk("o", { name: "O", industry: "Petrol" }).industry, "Fuel & Convenience", "stored legacy values read mapped");
   assert.equal(C.filterProspects([mk("p", { name: "P", industry: "Beauty" }), mk("q", { name: "Q", industry: "Pharmacy" })], { industry: "Unassigned" }).map((p) => p.id).join(), "p");
 });
-t("missing industries: blank companies are grouped by the industry they would need, and every one is counted", () => {
-  const rows = [
-    mk("a", { name: "Alpha", country: "UK", industry: "Grocery & Supermarkets" }),
-    mk("b", { name: "Beta", country: "UK", industry: "Retail", subIndustry: "Electronics" }),
-    mk("c", { name: "Gamma", country: "AU", industry: "", subIndustry: "Consumer Electronics" }),
-    mk("d", { name: "Delta", country: "AU", subIndustry: "Hardware" }),
-    mk("e", { name: "Epsilon", country: "NZ" }),
-    mk("f", { name: "Zeta", country: "NZ", subIndustry: "Bank" }),
-    mk("g", { name: "Eta", country: "NZ", subIndustry: "Something odd" }),
-  ];
-  assert.equal(C.proposeIndustry(rows[0]), "", "a company with one of the nine needs nothing");
-  assert.equal(C.proposeIndustry(rows[1]), "Consumer Electronics");
-  assert.equal(C.proposeIndustry(rows[3]), "Hardware & DIY");
-  assert.equal(C.proposeIndustry(rows[4]), C.UNCLASSIFIED_PROPOSAL);
-  assert.equal(C.proposeIndustry({ industry: "", subIndustry: "Home, Furniture & Homewares" }), "Home, Furniture & Homewares", "an exact label wins");
-  assert.equal(C.proposeIndustry({ subIndustry: "Home Hardware" }), "Hardware & DIY");
-  for (const l of C.PROPOSED_INDUSTRY_LABELS) {
-    assert.equal(C.normaliseIndustry(l), "", `${l} is not one of the nine`);
-    assert.equal(C.proposeIndustry({ subIndustry: l }), l, `${l} reads back as itself`);
-  }
-  const r = C.missingIndustriesReport(rows);
-  assert.equal(r.total, 7); assert.equal(r.unassigned, 6); assert.equal(r.assigned, 1, "a sub-industry never gives a company an industry");
-  assert.equal(r.groups.reduce((n, g) => n + g.count, 0), r.unassigned, "the groups account for every blank company");
-  assert.deepEqual(r.groups.map((g) => [g.label, g.count]), [["Consumer Electronics", 2], ["Hardware & DIY", 1], [C.UNCLASSIFIED_PROPOSAL, 3]]);
-  assert.deepEqual(r.groups[0].companies.map((x) => x.name), ["Beta", "Gamma"]);
-  const csv = C.missingIndustriesCsv(r).trim().split("\r\n");
-  assert.equal(csv[0], "Proposed industry,Companies needing it,Company,Country");
-  assert.equal(csv.length, 7);
-  assert.equal(csv[1], "Consumer Electronics,2,Beta,UK");
-});
 t("the country list is complete and UK/USA spellings fold in", () => {
   for (const c of ["Australia", "United Kingdom", "United States", "Ireland", "Japan", "Zimbabwe"]) assert.ok(C.COUNTRIES.includes(c), c);
   assert.ok(C.COUNTRIES.length > 190);
