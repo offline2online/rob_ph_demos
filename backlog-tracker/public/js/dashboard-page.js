@@ -25,7 +25,7 @@
 import { collection, doc, getDoc, getDocs, limit, orderBy, query, where } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import { deliveryKpi, DELIVERY_RANGES, deliveryRange, flowKpi, kanbanKpi, leadsKpi, funnelKpi, needsPersonKpi, draftsKpi, resolvedKpi, dashboardRelease, localDayRange, lastDays, sparklinePoints, trendShort, tileStatus, rowEnd, SERIES_DAYS, fmtCount, fmtEffort, fmtWait, fmtSpan, fmtDayLabel } from "./dashboard-core.js";
 import { ingestStatusView, ingestFailureText, fmtUpdated } from "./funnel-core.js";
-import { normaliseTicket, confidenceBand, pct as confPct } from "./support-core.js";
+import { normaliseTicket, confidenceBand, pct as confPct, INBOXES, inboxOf, supportHash } from "./support-core.js";
 
 const STALE_MS = 5 * 60 * 1000;
 const SUPPORT_LIMIT = 300;
@@ -52,9 +52,9 @@ export const TILES = [
   { key: "person", group: "support", src: "support", section: "support-inbox", title: "Needs a person", icon: "support_agent", target: "#support",
     info: "Support Inbox tickets in the Needs a person queue now, and how long the oldest has waited. Only questions about the platform or Personalisation Hub sent to support@ count: mail to other addresses, requests to Aidan and mail not about Personalisation Hub are not counted. Amber when one waits, red when the oldest has waited over a day." },
   { key: "drafts", group: "support", src: "support", section: "support-inbox", title: "AI drafts to approve", icon: "auto_awesome", target: "#support?queue=ai-drafts",
-    info: "Support Inbox replies the AI has drafted that wait for a person to approve them, and how many are high confidence (80% or more)." },
+    info: "Replies the AI has drafted that wait for a person to approve them, in every inbox (Support Inbox, Hello and Aidan), and how many are high confidence (80% or more). The filter in the summary narrows the tile to one inbox; the choice is kept until the page is reloaded." },
   { key: "resolved", group: "support", src: "support", section: "support-inbox", title: "Resolved & automation", icon: "task_alt", target: "#support?queue=resolved",
-    info: "Support Inbox tickets resolved yesterday (your local day), against the day before, and the share the AI resolved with no person involved. The panel lists FAQ gaps: questions from the last 30 days the Help Centre couldn't answer." },
+    info: "Tickets resolved yesterday (your local day) in every inbox (Support Inbox, Hello and Aidan), against the day before, and the share the AI resolved with no person involved. The panel lists FAQ gaps: questions from the last 30 days the Help Centre couldn't answer. The filter in the summary narrows the tile to one inbox; the choice is kept until the page is reloaded." },
 ];
 export const GROUPS = [
   { key: "internal", label: "Internal" },
@@ -85,6 +85,10 @@ export function mountDashboard(ctx) {
   // The Delivery range (Yesterday or Last 7 days), remembered per viewer.
   let deliveryRangeKey = "yesterday";
   try { deliveryRangeKey = deliveryRange(localStorage.getItem("bt-dash-delivery-range")).key; } catch { /* storage blocked */ }
+  // The inbox filter of each Support tile that has one (ZCNIxvtORgZN0csAlO44):
+  // "" is every inbox. Kept while the page is open (closing the panel keeps
+  // it), never saved, so a reload starts on All inboxes again.
+  const inboxFilter = { drafts: "", resolved: "" };
 
   root.innerHTML = `
     <div class="page-header dash-header">
@@ -116,8 +120,17 @@ export function mountDashboard(ctx) {
     if (rangeBtn) { setDeliveryRange(rangeBtn.dataset.deliveryRange); return; }
     const goto = e.target.closest(".dash-tip-open[data-go]");
     if (goto) { ctx.go(goto.dataset.go); return; }
+    const pick = e.target.closest("[data-dash-inbox]");
+    if (pick && pinned in inboxFilter) {
+      const key = pick.dataset.dashInbox;
+      inboxFilter[pinned] = key;
+      render();
+      // The panel's body was rewritten: keep focus on the choice just made.
+      panel.querySelector(`[data-dash-inbox="${key}"]`)?.focus();
+      return;
+    }
     const open = e.target.closest(".dash-panel-open");
-    if (open) { const t = TILES.find((x) => x.key === pinned); if (t) ctx.go(t.target); return; }
+    if (open) { const t = TILES.find((x) => x.key === pinned); if (t) ctx.go(targetOf(t)); return; }
     const tile = e.target.closest(".dash-tile");
     if (tile) { const key = tile.closest(".dash-tile-wrap").dataset.tile; if (pinned === key) unpin(false); else pin(key); }
   });
@@ -143,6 +156,12 @@ export function mountDashboard(ctx) {
     if (btn) btn.focus();
   }
 
+  // Open section: a filtered Support tile opens that inbox's tab (Hello and
+  // Aidan have no queues); All inboxes and Support Inbox open the queue.
+  const targetOf = (t) => {
+    const key = inboxFilter[t.key];
+    return key && key !== "support" ? supportHash({ inbox: key }) : t.target;
+  };
   const allowed = (t) => { try { return !!ctx.canView(t.section); } catch { return false; } };
 
   async function nameMap() {
@@ -358,7 +377,8 @@ export function mountDashboard(ctx) {
           + `<div class="dash-tip-col"><p class="dash-tip-title">Traffic sources</p>${tipList(k.channels.map((c) => `<li><span class="dash-tip-row"><span>${esc(c.name)}</span><b>${fmtCount(c.count)}</b></span></li>`), "No traffic source data.")}</div>`,
       };
     }
-    // The three Support tiles share one read of the Support Inbox.
+    // The three Support tiles share one read of the support mailbox (every
+    // inbox); Needs a person counts the Support Inbox only.
     const s = src.support;
     const metric = t.key === "person" ? "Waiting" : t.key === "drafts" ? "Pending approval" : "Resolved yesterday";
     if (pending(s)) return loadingBody(metric);
@@ -374,26 +394,44 @@ export function mountDashboard(ctx) {
       };
     }
     if (t.key === "drafts") {
-      const k = draftsKpi(s.data, n);
+      const k = draftsKpi(s.data, n, inboxFilter.drafts);
       const shown = k.drafts.slice(0, SUPPORT_TIP_ROWS);
+      // With All inboxes, each row names its inbox ("Hello · <subject>").
       const row = (d) => `<li><span class="dash-tip-row"><strong>${esc(d.customer)}</strong><b class="dash-conf" data-band="${confidenceBand(d.confidence)}">${esc(confPct(d.confidence))}</b></span>`
-        + `<span class="dash-tip-meta">${esc(d.subject)}${d.subject ? " · " : ""}waiting ${esc(fmtWait(d.waitedMs))}</span></li>`;
+        + `<span class="dash-tip-meta">${esc([k.inbox ? "" : inboxNames(d.inboxes), d.subject, `waiting ${fmtWait(d.waitedMs)}`].filter(Boolean).join(" · "))}</span></li>`;
       return {
         metric, value: fmtCount(k.count), status: tileStatus("drafts", k),
-        extra: `<span class="dash-sub">High confidence <b>${fmtCount(k.high)}</b></span>`,
-        tip: `<p class="dash-tip-title">Drafts to approve (${k.count}), most confident first</p>${tipList(shown.map(row), "No drafts waiting.")}`
-          + (k.drafts.length > shown.length ? `<p class="dash-tip-empty">And ${k.drafts.length - shown.length} more in the Support Inbox.</p>` : ""),
+        extra: `<span class="dash-sub">High confidence <b>${fmtCount(k.high)}</b></span>${onlyHtml(k.inbox)}`,
+        tip: inboxFilterHtml(k)
+          + `<p class="dash-tip-title">Drafts to approve${k.inbox ? ` in ${esc(inboxOf(k.inbox).label)}` : ""} (${k.count}), most confident first</p>${tipList(shown.map(row), k.inbox ? `No drafts waiting in ${inboxOf(k.inbox).label}.` : "No drafts waiting.")}`
+          + (k.drafts.length > shown.length ? `<p class="dash-tip-empty">And ${k.drafts.length - shown.length} more${k.inbox ? ` in ${esc(inboxOf(k.inbox).label)}` : ""}.</p>` : ""),
       };
     }
-    const k = resolvedKpi(s.data, n);
-    const gaps = k.gaps.slice(0, SUPPORT_TIP_ROWS).map((g) => `<li><span class="dash-tip-row"><strong>${esc(g.subject || "(no subject)")}</strong><b>${esc(fmtDayLabel(g.at))}</b></span><span class="dash-tip-meta">${esc(g.customer)}</span></li>`);
+    const k = resolvedKpi(s.data, n, inboxFilter.resolved);
+    const where = k.inbox ? ` in ${esc(inboxOf(k.inbox).label)}` : "";
+    const gaps = k.gaps.slice(0, SUPPORT_TIP_ROWS).map((g) => `<li><span class="dash-tip-row"><strong>${esc(g.subject || "(no subject)")}</strong><b>${esc(fmtDayLabel(g.at))}</b></span>`
+      + `<span class="dash-tip-meta">${esc([k.inbox ? "" : inboxNames(g.inboxes), g.customer].filter(Boolean).join(" · "))}</span></li>`);
     return {
       metric, value: fmtCount(k.value), trend: k.trend, status: tileStatus("resolved", k),
-      extra: `<span class="dash-sub">By AI alone <b>${k.aiPct == null ? "—" : `${k.aiPct}%`}</b></span>`,
-      tip: `<p class="dash-tip-wide dash-tip-empty">${fmtCount(k.value)} resolved yesterday, ${fmtCount(k.aiCount)} by the AI with no person involved.</p>`
-        + `<p class="dash-tip-title">FAQ gaps: questions the Help Centre couldn't answer, last 30 days (${k.gaps.length})</p>${tipList(gaps, "No gaps in the last 30 days.")}`
+      extra: `<span class="dash-sub">By AI alone <b>${k.aiPct == null ? "—" : `${k.aiPct}%`}</b></span>${onlyHtml(k.inbox)}`,
+      tip: inboxFilterHtml(k)
+        + `<p class="dash-tip-wide dash-tip-empty">${fmtCount(k.value)} resolved yesterday${where}, ${fmtCount(k.aiCount)} by the AI with no person involved.</p>`
+        + `<p class="dash-tip-title">FAQ gaps: questions the Help Centre couldn't answer${where}, last 30 days (${k.gaps.length})</p>${tipList(gaps, k.inbox ? `No gaps in ${inboxOf(k.inbox).label} in the last 30 days.` : "No gaps in the last 30 days.")}`
         + (k.gaps.length > gaps.length ? `<p class="dash-tip-empty">And ${k.gaps.length - gaps.length} more.</p>` : ""),
     };
+  }
+  const inboxNames = (keys) => (keys || []).map((key) => inboxOf(key).label).join(", ");
+  // A filtered tile says which inbox it shows.
+  const onlyHtml = (key) => (key ? `<span class="dash-sub dash-inbox-only">${esc(inboxOf(key).label)} only</span>` : "");
+  // The inbox filter at the top of a Support tile's summary: All inboxes and
+  // each inbox, with the tile's figure for each. A ticket written to two
+  // addresses is in both, so the inboxes' figures need not add up to All.
+  function inboxFilterHtml(k) {
+    const choices = [{ key: "", label: "All inboxes", n: k.allCount }, ...INBOXES.map((i) => ({ key: i.key, label: i.label, n: k.byInbox[i.key] || 0 }))];
+    return `<div class="seg dash-inbox-filter" role="group" aria-label="Filter by inbox">${choices.map((c) => {
+      const on = c.key === k.inbox;
+      return `<button type="button" class="dash-inbox-choice${on ? " active dash-inbox-on" : ""}" data-dash-inbox="${c.key}" aria-pressed="${on}">${esc(c.label)} <span class="dash-inbox-count">${fmtCount(c.n)}</span></button>`;
+    }).join("")}</div>`;
   }
   const waitRow = (w) => `<li><span class="dash-tip-row"><strong>${esc(w.customer)}</strong><b>${esc(fmtWait(w.waitedMs))}</b></span>${w.subject ? `<span class="dash-tip-meta">${esc(w.subject)}</span>` : ""}</li>`;
   // Lead → Closed Won: companies at each stage now, the conversion from the stage before under it.

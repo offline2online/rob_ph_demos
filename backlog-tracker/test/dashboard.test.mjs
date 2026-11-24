@@ -333,17 +333,42 @@ assert.deepStrictEqual(needsPersonKpi([], NOW), { count: 0, oldestMs: null, tick
   assert.deepStrictEqual(k.tickets.map((x) => x.id), ["q"], "only the platform query to support@");
   assert.strictEqual(k.count, queueCounts(mixed, "support")["needs-person"], "still equals the Support Inbox tab's queue");
 }
-const dr = draftsKpi(tickets, NOW);
+const dr = draftsKpi(tickets, NOW, "support");
 assert.strictEqual(dr.count, queueCounts(tickets, "support")["ai-drafts"], "equals the AI drafts to approve queue count");
 assert.deepStrictEqual(dr.drafts.map((d) => [d.id, d.confidence]), [["15", 0.91], ["3", 0.62]], "each draft with its confidence, most confident first");
 assert.strictEqual(dr.high, 1);
 assert.strictEqual(tileStatus("drafts", dr).level, "warn");
-const rs = resolvedKpi(tickets, NOW);
+const rs = resolvedKpi(tickets, NOW, "support");
 assert.deepStrictEqual([rs.value, rs.prev, rs.aiCount, rs.aiPct], [3, 1, 1, 33], "resolved yesterday: 4, 5 and 6; only 4 by the AI with no person");
 assert.strictEqual(rs.trend.dir, "up");
 assert.deepStrictEqual(rs.gaps.map((g) => g.id), ["13", "12"], "the Help Centre couldn't answer, last 30 days, newest first; spam and Hello left out");
 assert.strictEqual(resolvedKpi([], NOW).aiPct, null, "nothing resolved: no share");
 assert.strictEqual(tileStatus("resolved", rs).level, "ok");
+// Inbox filter (ZCNIxvtORgZN0csAlO44): AI drafts to approve and Resolved & automation
+// cover every inbox by default; an inbox key narrows them to that inbox.
+{
+  const all = draftsKpi(tickets, NOW);
+  assert.strictEqual(all.inbox, "", "every inbox by default");
+  assert.deepStrictEqual(all.drafts.map((d) => d.id), ["18", "15", "3"], "Hello's draft is listed with the Support Inbox's, most confident first");
+  assert.deepStrictEqual(all.drafts[0].inboxes, ["hello"], "each draft names its inbox");
+  assert.deepStrictEqual(all.drafts[1].inboxes, ["support"], "no inbox recorded: the Support Inbox");
+  assert.strictEqual(all.allCount, 3);
+  assert.deepStrictEqual(all.byInbox, { support: 2, hello: 1, aidan: 0 }, "the count on each filter choice");
+  assert.deepStrictEqual(draftsKpi(tickets, NOW, "hello").drafts.map((d) => d.id), ["18"], "Hello only");
+  const aidan = draftsKpi(tickets, NOW, "aidan");
+  assert.deepStrictEqual([aidan.count, aidan.allCount, aidan.inbox], [0, 3, "aidan"], "Aidan has none; All still counts every inbox");
+  assert.strictEqual(draftsKpi(tickets, NOW, "nowhere").inbox, "", "an unknown inbox is every inbox");
+  const ra = resolvedKpi(tickets, NOW);
+  assert.deepStrictEqual([ra.value, ra.prev, ra.aiCount, ra.aiPct], [4, 1, 2, 50], "every inbox: 4, 5, 6 and Aidan's 9; 4 and 9 by the AI alone");
+  assert.deepStrictEqual([ra.allCount, ra.byInbox], [4, { support: 3, hello: 0, aidan: 1 }]);
+  const rAidan = resolvedKpi(tickets, NOW, "aidan");
+  assert.deepStrictEqual([rAidan.value, rAidan.prev, rAidan.aiPct, rAidan.gaps.length], [1, 0, 100, 0], "Aidan's figures only");
+  assert.deepStrictEqual(resolvedKpi(tickets, NOW, "hello").gaps.map((g) => g.id), ["18"], "the FAQ gaps follow the filter: Hello's unanswerable draft");
+  assert.deepStrictEqual(ra.gaps.map((g) => [g.id, g.inboxes]), [["13", ["support"]], ["18", ["hello"]], ["12", ["support"]]], "every inbox's gaps, each naming its inbox");
+  // A ticket written to two addresses is in both inboxes' counts.
+  const two = [t("x", { status: "open", aiDraft: { text: "x", confidence: 0.5 }, inboxes: ["support", "hello"] })];
+  assert.deepStrictEqual([draftsKpi(two, NOW).allCount, draftsKpi(two, NOW).byInbox], [1, { support: 1, hello: 1, aidan: 0 }]);
+}
 
 // ── Dashboard v2 (GUI9xPe3CJY3LyMws88m): 7-day series, sparkline, trend, status ──
 {

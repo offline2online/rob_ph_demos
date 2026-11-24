@@ -3722,7 +3722,9 @@ const scenarios = [
         s3: { subject: "Thanks", customerName: "Lee", status: "resolved", resolvedBy: "ai", resolvedAt: t(yday(11)), lastReplyAt: t(yday(11)), createdAt: t(yday(7)), lastMessageAt: t(yday(11)) },
         s5: { subject: "Resolved yesterday", customerName: "Ola", status: "resolved", resolvedBy: "editor@ph.example", resolvedAt: t(yday(16)), lastReplyAt: t(yday(16)), createdAt: t(yday(7)), lastMessageAt: t(yday(16)) },
         s6: { subject: "Custom fonts?", customerName: "Ivy", status: "pending", triageReason: "The help centre doesn't answer this.", lastReplyAt: today, createdAt: t(yday(6)), lastMessageAt: today },
-        // Written only to hello@ or aidan@: in none of the figures.
+        // Written only to hello@ or aidan@: not in Needs a person. AI drafts and Resolved count every
+        // inbox by default, with an inbox filter (ZCNIxvtORgZN0csAlO44).
+        h2: { subject: "Intro call", customerName: "Hal", status: "open", aiDraft: { text: "Hi Hal", confidence: 0.7, answerable: true }, inboxes: ["hello"], createdAt: t(yday(10)), lastMessageAt: t(yday(10)), lastInboundAt: t(yday(10)) },
         h1: { subject: "Partnership", customerName: "Hattie", status: "open", needsHuman: true, inboxes: ["hello"], createdAt: t(daysAgo(2, 8)), lastMessageAt: t(daysAgo(2, 8)), lastInboundAt: t(daysAgo(2, 8)) },
         a1: { subject: "For Aidan", customerName: "Abe", status: "resolved", resolvedBy: "ai", resolvedAt: t(yday(9)), lastReplyAt: t(yday(9)), inboxes: ["aidan"], createdAt: t(yday(7)), lastMessageAt: t(yday(9)) },
         // Needs a person is support queries only: an Aidan request whose reply came back to support@,
@@ -3763,9 +3765,9 @@ const scenarios = [
       assert.strictEqual(await value("person"), "1", "one support@ platform query needs a person; hello@, an Aidan request and mail not about PH are not counted");
       assert.ok(!/One pager|Your invoice/.test(await c.page.locator('.dash-tile-wrap[data-tile="person"]').innerHTML()), "neither the Aidan request nor the non-support email is listed");
       assert.ok(/^(\d+h|1d( \d+h)?)$/.test((await tileText("person")).match(/Oldest\s*(\S+( \d+h)?)/)?.[1] || ""), `the age of the oldest: ${await tileText("person")}`);
-      assert.strictEqual(await value("drafts"), "1", "one AI draft to approve");
-      assert.strictEqual(await value("resolved"), "2", "two support@ tickets resolved yesterday; aidan@ is not counted");
-      assert.ok((await tileText("resolved")).includes("50%"), "half by the AI alone");
+      assert.strictEqual(await value("drafts"), "2", "two AI drafts to approve: support@'s and hello@'s (every inbox by default)");
+      assert.strictEqual(await value("resolved"), "3", "three resolved yesterday in every inbox: two support@ and one aidan@");
+      assert.ok((await tileText("resolved")).includes("67%"), "two of three by the AI alone");
       assert.strictEqual(await c.page.locator(".dash-tile p, .dash-tile div, .dash-tile-wrap > p").count(), 0, "no explanatory copy under the tiles, and nothing but phrasing content in a tile button");
       assert.strictEqual(await c.page.locator(".dash-tile-wrap .dash-info[aria-describedby]").count(), 8, "every tile has an info tooltip");
 
@@ -3866,9 +3868,34 @@ const scenarios = [
       await pinTile("drafts");
       const drTip = await c.text(panel);
       assert.ok(drTip.includes("Tom") && drTip.includes("90%"), `each draft with its confidence: ${drTip}`);
+      c.at("the inbox filter on AI drafts to approve");
+      const inboxPressed = () => c.page.$eval("#dash-panel [data-dash-inbox][aria-pressed=true]", (e) => e.dataset.dashInbox);
+      const choice = (key) => `#dash-panel [data-dash-inbox="${key}"]`;
+      assert.strictEqual(await inboxPressed(), "", "All inboxes by default");
+      assert.deepStrictEqual(await c.page.$$eval("#dash-panel [data-dash-inbox]", (els) => els.map((e) => e.innerText.replace(/\s+/g, " ").trim())), ["All inboxes 2", "Support Inbox 1", "Hello 1", "Aidan 0"], "each inbox with its count");
+      assert.ok(drTip.includes("Hello · Intro call") && drTip.includes("Support Inbox · Where is the menu editor?"), `each draft names its inbox: ${drTip}`);
+      await c.click(choice("hello"), "Hello");
+      assert.strictEqual(await value("drafts"), "1", "the tile follows the filter");
+      assert.ok((await tileText("drafts")).includes("Hello only"), "a filtered tile names the inbox");
+      assert.ok((await c.text(panel)).includes("Hal") && !(await c.text(panel)).includes("Tom"), "only Hello's drafts");
+      assert.strictEqual(await c.page.evaluate(() => document.activeElement?.dataset.dashInbox), "hello", "focus stays on the choice");
+      await c.click(choice("aidan"), "Aidan");
+      assert.ok((await c.text(panel)).includes("No drafts waiting in Aidan"), "the empty state names the inbox");
+      assert.strictEqual(await value("drafts"), "0");
+      await c.click(choice("support"), "Support Inbox");
+      assert.strictEqual(await value("drafts"), "1", "the Support Inbox's queue count");
       await pinTile("resolved");
       const rTip = await c.text(panel);
       assert.ok(rTip.includes("FAQ gaps") && rTip.includes("Custom fonts?"), `FAQ gaps: ${rTip}`);
+      c.at("the inbox filter on Resolved & automation");
+      assert.strictEqual(await inboxPressed(), "", "its own filter, on All inboxes");
+      await c.click(choice("aidan"), "Aidan");
+      assert.strictEqual(await value("resolved"), "1", "Aidan's resolved yesterday");
+      const raText = await tileText("resolved");
+      assert.ok(raText.includes("Aidan only") && raText.includes("100%"), `figures follow the filter: ${raText}`);
+      assert.ok((await c.text(panel)).includes("No gaps in Aidan"), "the FAQ gaps follow the filter");
+      await c.click(choice(""), "All inboxes");
+      assert.strictEqual(await value("resolved"), "3");
       c.at("close the panel");
       await c.click("#dash-panel .dash-panel-close", "Close");
       await c.hidden(panel);
@@ -3933,9 +3960,16 @@ const scenarios = [
       c.at("the panel's Open section goes to the section");
       await c.page.mouse.move(2, 2);
       await pinTile("drafts");
+      assert.strictEqual(await inboxPressed(), "support", "the filter is kept after the panel closed");
       await c.click("#dash-panel .dash-panel-open", "Open section for AI drafts");
       await c.visible("#support-page");
       assert.strictEqual(new URL(c.page.url()).hash, "#support?queue=ai-drafts", "AI drafts opens that Support Inbox queue");
+      await openFromNav(c, "build", "dashboard-btn", "dashboard-page");
+      if (!(await c.page.locator('.dash-tile-wrap[data-tile="drafts"].pinned').count())) await pinTile("drafts");
+      await c.click(choice("hello"), "Hello");
+      await c.click("#dash-panel .dash-panel-open", "Open section for Hello's drafts");
+      await c.visible("#support-page");
+      assert.strictEqual(new URL(c.page.url()).hash, "#support/hello", "a filtered tile opens that inbox's tab");
       await openFromNav(c, "build", "dashboard-btn", "dashboard-page");
       await pinTile("leads");
       await c.click("#dash-panel .dash-panel-open", "Open section");

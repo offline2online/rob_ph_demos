@@ -6882,10 +6882,25 @@ hello@ and aidan@ (at personalisationhub.com). Each has its own tab.
   inbox). The header line counts the inbox on show. `#support/ticket/<id>`
   still opens any ticket, under its own inbox's tab. Only the Support Inbox
   has queues and their counts (SUP-INB-9).
-- **SUP-INB-7** The Dashboard's three Support tiles count the Support
+- **SUP-INB-7** The Dashboard's Needs a person tile counts the Support
   Inbox only. Mail written only to hello@ or aidan@ is in none of its figures.
   Needs a person counts support queries only (SUP-TKT-4): an Aidan request
   that came back to support@, and support@ mail not about PH, are not in it.
+  AI drafts to approve and Resolved & automation count every inbox, with an
+  inbox filter (SUP-INB-7a).
+- **SUP-INB-7a** Inbox filter on the Dashboard (24 Nov 2026, ticket
+  ZCNIxvtORgZN0csAlO44). The summary panels of AI drafts to approve and
+  Resolved & automation each open with their own filter: All inboxes
+  (selected by default), Support Inbox, Hello and Aidan, each with the tile's
+  figure for that choice. A ticket written to two addresses is in both
+  inboxes, so the inboxes' figures need not add up to All. The choice narrows
+  the tile's figure, its trend, "By AI alone" and the panel's lists (the FAQ
+  gaps too), and a filtered tile reads "<inbox> only". With All inboxes, each
+  draft and FAQ gap names its inbox ("Hello · <subject>"); an empty list names
+  the inbox ("No drafts waiting in Aidan"). The choice is kept while the page
+  is open, closing the panel included, and never saved: after a reload both
+  tiles are on All inboxes. Open section goes to the Support Inbox queue for
+  All inboxes or Support Inbox, and to the Hello or Aidan tab for those.
 - **SUP-INB-8** Only a ticket in the Support Inbox can be answered without a
   person. With sending switched on, a draft for mail written only to hello@
   or aidan@ still waits for a person to approve it.
@@ -8164,8 +8179,9 @@ with nothing sent and nothing touching the mailbox.
 - **SUP-STAT-1** Removed 17 Nov 2026: the Support Inbox has no Stats tab.
   `#support/stats` opens the inbox. SUP-STAT-2 to 4 went with it.
 - **SUP-STAT-5** The support figures are the Dashboard's three Support
-  tiles (Needs a person, AI drafts to approve, Resolved & automation), all of
-  the support@ inbox (SUP-INB-7). See "Dashboard —
+  tiles (Needs a person, AI drafts to approve, Resolved & automation). Needs a
+  person is of the support@ inbox (SUP-INB-7); the other two cover every inbox
+  with an inbox filter (SUP-INB-7a). See "Dashboard —
   the console's landing page".
 
 ### Writing a new email (17 Nov 2026)
@@ -8325,8 +8341,8 @@ tiles. A tile never opens its section (see "Dashboard v2"); the panel's
 | External | Leads | New leads in the last 7 days against the 7 days before, with a 7-day line and yesterday's count; the company pipeline Lead → Hot Lead → Demo → Post-demo → Closed Won with the count at each stage now and the conversion from the stage before; stale and not-contacted flags | The last 7 days' leads by source (Website, Network operator, Partner, Other), industry and market, with names; the pipeline with conversion; the stale and not-contacted leads by name | `#promote/leads` |
 | External | Conversion funnel | Unique visitors over the last 7 days against the 7 days before, with a 7-day line; visitor-to-lead %; a mini funnel Visitors → Industry → Engaged → Leads → Opps with the biggest drop-off in amber; the top-moving industry and market | The full funnel with count and drop-off at each step; industries and markets ranked by visitors with the change on the week before; traffic sources | `#promote/conversion-funnel` |
 | Support | Needs a person | The Support Inbox's Needs a person queue count, and the age of the oldest | Each ticket with the customer and its wait, longest first (the first 10) | `#support` |
-| Support | AI drafts to approve | The AI drafts to approve queue count, and how many are high confidence (80% or more) | Each draft with the customer and its confidence, most confident first (the first 10) | `#support?queue=ai-drafts` |
-| Support | Resolved & automation | Tickets resolved yesterday against the day before; the % resolved by the AI with no person involved | FAQ gaps: questions from the last 30 days the Help Centre couldn't answer (the first 10) | `#support?queue=resolved` |
+| Support | AI drafts to approve | Drafts waiting for approval in every inbox (or the inbox chosen in the panel's filter), and how many are high confidence (80% or more) | The inbox filter (All inboxes, Support Inbox, Hello, Aidan, each with its count); each draft with the customer, its inbox and its confidence, most confident first (the first 10) | `#support?queue=ai-drafts`; with Hello or Aidan chosen, that inbox's tab |
+| Support | Resolved & automation | Tickets resolved yesterday in every inbox (or the chosen one) against the day before; the % resolved by the AI with no person involved | The inbox filter; FAQ gaps: questions from the last 30 days the Help Centre couldn't answer, each with its inbox (the first 10) | `#support?queue=resolved`; with Hello or Aidan chosen, that inbox's tab |
 
 Rules:
 
@@ -8413,9 +8429,16 @@ Rules:
   now at Demo or beyond. The biggest drop-off is the step with the largest
   percentage drop. A top mover is the industry or market whose visitors grew
   most on the week before.
-- **Support figures**: all three tiles are of the support@ inbox only
-  (SUP-INB-7) and use the Support Inbox's own queues, so Needs a person and AI
-  drafts to approve equal those two queue counts on the Support Inbox tab. The
+- **Support figures**: Needs a person is of the support@ inbox only
+  (SUP-INB-7). AI drafts to approve and Resolved & automation cover every
+  inbox by default (SUP-INB-7a). All three use the Support Inbox's own queue
+  tests, so Needs a person, and AI drafts to approve with Support Inbox
+  chosen, equal those two queue counts on the Support Inbox tab.
+- **Inbox filter** (ZCNIxvtORgZN0csAlO44): toggle buttons (`aria-pressed`) at
+  the top of the AI drafts to approve and Resolved & automation panels, one
+  filter per tile, All inboxes by default, kept in memory only (a saved narrow
+  choice would silently under-count on the next visit). Needs a person has
+  none. See SUP-INB-7a. The
   wait runs from `lastInboundAt` (else the last message). Resolved yesterday is
   a ticket still resolved whose `resolvedAt` is yesterday; by the AI alone is
   `resolvedBy: "ai"` with no `humanInvolved`. An FAQ gap is a ticket from the

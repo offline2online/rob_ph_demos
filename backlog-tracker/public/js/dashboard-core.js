@@ -21,7 +21,7 @@
 
 import { remaining, currentReleaseId } from "./kanban/kanban-core.js";
 import { leadName } from "./leads-core.js";
-import { inInbox, DEFAULT_INBOX, QUEUES } from "./support-core.js";
+import { inInbox, DEFAULT_INBOX, QUEUES, INBOXES } from "./support-core.js";
 import { retestedRows } from "./test-rounds-view.js";
 
 export const HOURS_PER_DAY = 8;
@@ -628,10 +628,12 @@ export function funnelKpi(rows, leads, now = Date.now()) {
 }
 
 // ── Support (three tiles) ────────────────────────────────────────────────
-// tickets: normalised supportTickets (support-core's normaliseTicket). All
-// three tiles are of the Support Inbox (mail written to support@; Hello's and
-// Aidan's tickets are never counted), and use the inbox's own queues, so the
-// two counts equal the queue counts on the Support Inbox tab.
+// tickets: normalised supportTickets (support-core's normaliseTicket). Needs a
+// person is of the Support Inbox only (mail written to support@). AI drafts to
+// approve and Resolved & automation cover every inbox by default, and take an
+// inbox key to narrow them to one (ZCNIxvtORgZN0csAlO44): "" is every inbox.
+// They use the Support Inbox's own queue tests, so the Support Inbox figures
+// equal its queue counts.
 export const FAQ_GAP_DAYS = 30;
 const queueTest = (key) => QUEUES.find((q) => q.key === key).test;
 const waitOf = (t, now) => Math.max(0, now - (t.lastInboundAt || t.lastMessageAt || t.createdAt || now));
@@ -646,29 +648,47 @@ export function needsPersonKpi(tickets, now = Date.now()) {
     .sort((a, b) => b.waitedMs - a.waitedMs);
   return { count: list.length, oldestMs: list.length ? list[0].waitedMs : null, tickets: list };
 }
-// AI drafts to approve: the queue's count and each draft with its confidence,
-// most confident first (the quickest to approve).
-export function draftsKpi(tickets, now = Date.now()) {
-  const list = (tickets || []).filter((t) => inInbox(t, DEFAULT_INBOX) && queueTest("ai-drafts")(t))
-    .map((t) => ({ id: t.id, customer: customerOf(t), subject: t.subject || "", confidence: (t.aiDraft && t.aiDraft.confidence) || 0, waitedMs: waitOf(t, now) }))
+// The inboxes a ticket is filed under (none recorded: the Support Inbox).
+export const ticketInboxes = (t) => (t.inboxes && t.inboxes.length ? t.inboxes : [DEFAULT_INBOX]);
+// An inbox key the filter knows, else "" (every inbox).
+export const dashInboxKey = (key) => (INBOXES.some((i) => i.key === key) ? key : "");
+// Per inbox, the headline figure of the tickets in it. A ticket written to two
+// addresses is in both, so the figures need not add up to the all-inbox one.
+const perInbox = (list, figure) => Object.fromEntries(INBOXES.map((i) => [i.key, figure(list.filter((t) => inInbox(t, i.key)))]));
+// AI drafts to approve: the queue's count and each draft with its confidence
+// and inboxes, most confident first (the quickest to approve). `inbox` narrows
+// it to one inbox ("" = every inbox); allCount and byInbox are the counts the
+// filter shows on each of its choices.
+export function draftsKpi(tickets, now = Date.now(), inbox = "") {
+  const key = dashInboxKey(inbox);
+  const all = (tickets || []).filter(queueTest("ai-drafts"));
+  const list = all.filter((t) => !key || inInbox(t, key))
+    .map((t) => ({ id: t.id, customer: customerOf(t), subject: t.subject || "", inboxes: ticketInboxes(t), confidence: (t.aiDraft && t.aiDraft.confidence) || 0, waitedMs: waitOf(t, now) }))
     .sort((a, b) => b.confidence - a.confidence || b.waitedMs - a.waitedMs);
-  return { count: list.length, high: list.filter((d) => d.confidence >= 0.8).length, drafts: list };
+  return { inbox: key, count: list.length, high: list.filter((d) => d.confidence >= 0.8).length, drafts: list, allCount: all.length, byInbox: perInbox(all, (l) => l.length) };
 }
 // Resolved & automation: tickets resolved yesterday (still resolved), against
 // the day before; the share of those the AI resolved with no person involved;
 // and the FAQ gaps of the last 30 days: questions the Help Centre couldn't
 // answer (a draft marked not answerable, or triage saying so), newest first.
-export function resolvedKpi(tickets, now = Date.now()) {
-  const inbox = (tickets || []).filter((t) => inInbox(t, DEFAULT_INBOX) && t.status !== "spam");
+// `inbox` narrows every figure and the gaps to one inbox ("" = every inbox);
+// allCount and byInbox are the resolved-yesterday figure of each choice.
+export function resolvedKpi(tickets, now = Date.now(), inbox = "") {
+  const key = dashInboxKey(inbox);
+  const every = (tickets || []).filter((t) => t.status !== "spam");
+  const pool = every.filter((t) => !key || inInbox(t, key));
   const y = localDayRange(1, now), p = localDayRange(2, now);
-  const on = (r) => inbox.filter((t) => t.status === "resolved" && inRange(t.resolvedAt, r));
-  const done = on(y);
+  const on = (list, r) => list.filter((t) => t.status === "resolved" && inRange(t.resolvedAt, r));
+  const done = on(pool, y);
   const ai = done.filter((t) => t.resolvedBy === "ai" && !t.humanInvolved).length;
   const since = now - FAQ_GAP_DAYS * 24 * 3600000;
-  const gaps = inbox.filter((t) => (t.createdAt || t.lastMessageAt) >= since
+  const gaps = pool.filter((t) => (t.createdAt || t.lastMessageAt) >= since
       && ((t.aiDraft && !t.aiDraft.answerable) || /help centre doesn.t answer/i.test(t.triageReason || "")))
-    .map((t) => ({ id: t.id, subject: t.subject || "", customer: customerOf(t), at: t.createdAt || t.lastMessageAt }))
+    .map((t) => ({ id: t.id, subject: t.subject || "", customer: customerOf(t), inboxes: ticketInboxes(t), at: t.createdAt || t.lastMessageAt }))
     .sort((a, b) => b.at - a.at);
-  const prev = on(p).length;
-  return { value: done.length, prev, trend: trend(done.length, prev), aiCount: ai, aiPct: pctOf(ai, done.length), gaps };
+  const prev = on(pool, p).length;
+  return {
+    inbox: key, value: done.length, prev, trend: trend(done.length, prev), aiCount: ai, aiPct: pctOf(ai, done.length), gaps,
+    allCount: on(every, y).length, byInbox: perInbox(every, (l) => on(l, y).length),
+  };
 }

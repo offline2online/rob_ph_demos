@@ -3290,6 +3290,15 @@ html[data-console-role="viewer"] .lead-prio-tools { display: none; }
 .dash-delivery-grid .dash-change { justify-content: flex-end; }
 .dash-sub .dash-change { margin-left: 2px; }
 .dash-sub .dash-change .material-symbols-outlined { margin-right: 0; vertical-align: 0; }
+/* Inbox filter at the top of the AI drafts / Resolved summaries (a segmented
+   control, css/apple.css .seg). It wraps on a narrow screen rather than
+   scrolling, so every inbox stays in view. */
+.dash-panel-body > .dash-inbox-filter { grid-column: 1 / -1; justify-self: start; flex-wrap: wrap; overflow-x: visible; margin: 0 0 8px; }
+.dash-inbox-filter > button { min-height: 44px; font: inherit; font-weight: 500; color: var(--text); cursor: pointer; }
+.dash-inbox-filter > .dash-inbox-on { color: var(--primary); }
+.dash-inbox-filter > button:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.dash-inbox-count { color: var(--text-muted); font-weight: 400; font-variant-numeric: tabular-nums; }
+.dash-inbox-only { color: var(--primary); }
 /* Needs attention sits below the tiles, in normal flow. */
 .dash-groups + .needs-attention { margin-top: 8px; }
 @media (max-width: 1439px) { .dash-groups { --cols: 3; } }

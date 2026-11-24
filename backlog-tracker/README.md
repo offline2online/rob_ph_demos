@@ -4015,12 +4015,13 @@ never blank). External: **Leads** (new leads in the last 7 days, yesterday's
 count, the pipeline Lead to Closed Won with stage conversion, stale and
 not-contacted flags; test leads left out) and **Conversion funnel** (visitors
 over the last 7 days, visitor-to-lead %, a mini funnel to opportunities with
-the biggest drop-off in amber, top-moving industry and market). Support, all
-of the support@ inbox only: **Needs a person** (platform and Personalisation
+the biggest drop-off in amber, top-moving industry and market). Support:
+**Needs a person** (the support@ inbox only; platform and Personalisation
 Hub questions only: not Aidan requests that came back to support@, nor mail
 not about PH), **AI drafts to approve** and
 **Resolved & automation** (resolved yesterday, % by the AI alone; the panel
-lists FAQ gaps). Dashboard v2 (19 Nov 2026): the tiles of all
+lists FAQ gaps). Those two cover every inbox, and each panel opens with an
+inbox filter (All inboxes, Support Inbox, Hello, Aidan; kept until a reload). Dashboard v2 (19 Nov 2026): the tiles of all
 three sections flow through one grid, each section's heading above its first
 tile, four across on a wide desktop, three on a laptop,
 two on an iPad in portrait and one on a phone; each tile is a headline figure,
