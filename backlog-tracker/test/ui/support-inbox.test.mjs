@@ -449,6 +449,10 @@ try {
     const picked = () => page.$$eval("[data-support-pick]:checked", (els) => els.map((e) => e.dataset.supportPick).sort());
     const count = async () => ((await page.locator("#support-bulk-count").count()) ? page.textContent("#support-bulk-count") : "");
     const barKeys = () => page.$$eval("#support-bulk [data-support-bulk], #support-bulk [data-support-bulk-pick]", (els) => els.map((e) => e.dataset.supportBulk || e.dataset.supportBulkPick));
+    // A bulk call is recorded when it is sent, but the page is busy until its answer arrives and only then clears the
+    // selection and shows the one result message. Wait for that message before the next step, or a late answer clears
+    // what the next step just ticked (and its action leaves the bar under the click).
+    const settled = (what) => until(() => page.locator("#support-bulk-result").count(), what);
     await until(() => page.locator('[data-support-ticket="h1"]').count(), "the Hello emails", 15000);
 
     // Every row has its own labelled checkbox; nothing is selected and no actions show yet.
@@ -512,6 +516,7 @@ try {
     await page.click('[data-support-bulk="archive"]');
     await until(() => bulkCalls().length === 2, "the archive call");
     assert.deepStrictEqual(bulkCalls()[1].body, { ids: ["h4"], action: "archive", archived: true });
+    await settled("the archive is done");
     await setDocs(page, [["h4", { archived: true }]]);
     await until(async () => (await subjects()).join() === "Hello new", "the archived email leaves the list");
     await page.click('[data-support-queue="archived"]');
@@ -533,6 +538,7 @@ try {
     await page.click('[data-support-bulk="aidan-dismiss"]');
     await until(() => bulkCalls().length === 3, "the dismiss call");
     assert.deepStrictEqual(bulkCalls()[2].body, { ids: ["a2", "a1"], action: "aidan-dismiss" });
+    await settled("the dismiss is done");
 
     // Test step: select all in the Support Inbox, assign to a member: all assigned, in one call.
     await page.click('[data-support-tab="inbox"]');
@@ -559,7 +565,7 @@ try {
     await page.selectOption('[data-support-bulk-pick="move"]', "pending");
     await until(() => bulkCalls().length === 5, "the move call");
     assert.deepStrictEqual(bulkCalls()[4].body, { ids: ["s2", "s1"], action: "status", status: "pending" });
-    await until(() => page.locator('[data-support-pick="s1"]:not(:disabled)').count(), "the list again");
+    await settled("the move is done");
     await page.check('[data-support-pick="s1"]');
     await page.check('[data-support-pick="s2"]');
     await page.click('[data-support-bulk="escalate"]');
@@ -570,7 +576,7 @@ try {
     assert.deepStrictEqual(bulkCalls()[5].body, { ids: ["s2", "s1"], action: "escalate" });
 
     // Marked unread shows in the Support Inbox too, until the ticket is opened. Changing queue clears the selection.
-    await until(() => page.locator('[data-support-pick="s3"]:not(:disabled)').count(), "the list again");
+    await settled("the escalate is done");
     await page.check('[data-support-pick="s3"]');
     await page.click('[data-support-bulk="unread"]');
     await until(() => page.locator('[data-support-ticket="s3"].is-unread .support-unread').count(), "Support three reads Unread");
@@ -583,6 +589,7 @@ try {
     await page.click('[data-support-bulk="not-spam"]');
     await until(() => bulkCalls().length === 7, "the not-spam call");
     assert.deepStrictEqual(bulkCalls()[6].body, { ids: ["s4"], action: "status", status: "open" });
+    await settled("the not-spam is done");
     await page.click('[data-support-queue="needs-person"]');
     await page.click('[data-support-ticket="s3"]');
     await until(() => page.evaluate(() => location.hash === "#support/ticket/s3"), "the ticket");

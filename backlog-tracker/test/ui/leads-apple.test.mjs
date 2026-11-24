@@ -72,8 +72,9 @@ try {
       assert.deepStrictEqual(a.links, [], "link rows under 44px in the detail view");
       assert.deepStrictEqual(a.helpers, [], "helper copy outside tooltips in the detail view");
       const order = await page.evaluate(() => [...document.querySelectorAll("#lead-sum-body .ap-group-title")].map((x) => x.firstChild.textContent.trim()));
-      // AWS funding (O37hnP69Cnn8N32HpHot) shows under the AWS team: this lead is a Hot Lead, so a check is suggested.
-      assert.deepStrictEqual(order.slice(0, 6), ["Contacts", "AWS team", "AWS funding", "Company research", "Recent news", "Recent financials · FY25"], "detail sections in order");
+      // AWS Partner Central lead enrichment (FoNADWojhgIQerONNXwb) shows under the AWS team, then AWS funding
+      // (O37hnP69Cnn8N32HpHot): this lead is a Hot Lead, so a check is suggested.
+      assert.deepStrictEqual(order.slice(0, 6), ["Contacts", "AWS team", "AWS Partner Central", "AWS funding", "Company research", "Recent news"], "detail sections in order");
       assert.ok(await page.locator("#lead-sum-logo .enrich-logo").count(), "logo in the header");
       assert.strictEqual((await page.textContent("#lead-sum-contacts .lead-inbound")).trim(), "3 inbound", "inbound count beside Contacts");
       assert.ok((await page.textContent("#lead-sum-aws")).includes("Pat Lee"), "AWS team shown");

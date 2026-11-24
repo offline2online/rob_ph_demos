@@ -1443,6 +1443,7 @@
           <button type="button" class="btn-ghost" id="prospects-columns-btn" aria-haspopup="menu" aria-expanded="false" title="Choose which columns to show">Columns</button>
           <button type="button" class="btn-ghost" id="prospects-export" title="Download the rows that match the current filters as a CSV file">Export CSV</button>
           <button type="button" class="btn-ghost" id="prospects-export-linkedin" title="Download the selected rows (or, with none selected, the rows that match the current filters) as a LinkedIn Campaign Manager Matched Audiences company list">Export for LinkedIn</button>
+          <button type="button" class="btn-ghost" id="prospects-gaps-btn" aria-haspopup="dialog" title="Companies with no website industry, grouped by the industry each one would need">Missing industries</button>
         </div>
       </div>
       <div class="um-bulk" id="prospects-bulk" data-editor-only hidden>
@@ -1536,6 +1537,22 @@
           <input type="file" id="prospect-awsmap-file" class="prospect-awsmap-file" accept=".csv,text/csv" tabindex="-1" aria-hidden="true">
           <button type="button" class="btn-ghost" id="prospect-awsmap-show">Rank by propensity</button>
           <button type="button" class="btn-ghost" id="prospect-awsmap-greenfield">Greenfield eligible</button>
+        </div>
+      </aside>
+    </div>
+
+    <!-- Prospects (TAM) › Missing industries (js/prospects-page.js): every company with no website
+         industry, grouped by the industry it would need (prospects-core.js missingIndustriesReport). -->
+    <div class="modal-backdrop lead-drawer-backdrop" id="prospect-gaps-backdrop" hidden>
+      <aside class="modal-panel lead-drawer prospect-drawer" id="prospect-gaps" role="dialog" aria-modal="true" aria-labelledby="prospect-gaps-title">
+        <div class="modal-header">
+          <div class="lead-sum-head"><h2 id="prospect-gaps-title">Missing industries</h2><p class="field-hint" id="prospect-gaps-sub"></p></div>
+          <button type="button" class="modal-close" id="prospect-gaps-close" aria-label="Close">&times;</button>
+        </div>
+        <div id="prospect-gaps-body" class="lead-sum-body"></div>
+        <div class="lead-sum-actions">
+          <button type="button" class="btn-primary" id="prospect-gaps-show">Show in grid</button>
+          <button type="button" class="btn-ghost" id="prospect-gaps-export">Export CSV</button>
         </div>
       </aside>
     </div>
@@ -1935,6 +1952,13 @@
                 </div>
                 <div id="pca-approvals"></div>
                 <div id="pca-reply"></div>
+                <!-- Lead stage moves queued for ACE (functions/ace-draft.js → /v1/ace-sync):
+                     one agent message for all of them, each write still waits above. -->
+                <div class="pca-sync" id="pca-sync">
+                  <span class="field-label">ACE stages</span>
+                  <span class="pca-status" id="pca-sync-status" role="status" aria-live="polite">Loading…</span>
+                  <button type="button" class="btn-ghost" id="pca-sync-send" hidden>Sync ACE stages</button>
+                </div>
               </div>
               <div id="partner-central-audit"></div>
             </div>

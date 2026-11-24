@@ -28,6 +28,13 @@
 //   inboundCount   how many times someone from this company and country came in (website form or New lead)
 //   enrichment     { at, by, techStack[], summary, sources[{source,status,message}] }
 //   test           true for a lead submitted with the website's test flag
+//   partnerCentral AWS Partner Central lead enrichment (server-written by functions/pc-lead-enrich.js, an
+//                  editor's save keeps it): { status sending|running|done|not-sent|error, reason, catalog
+//                  Sandbox|AWS, engagementId, taskId, attempts, checks, sentAt, finishedAt, autoPromotedAt,
+//                  customer{accountName, geo, region, subRegion, country, industry, subIndustry, segment,
+//                  companySize, eligiblePrograms[], publicProfileSummary}, insights{leadReadiness,
+//                  marketplaceEngagement, solutionScore, solutionCategory, solutionSubCategory,
+//                  recommendedChannel, outreachWindows[{day, start, end}]} }; see normalisePartnerCentral
 //   sourceLabel / sourceDetail  which website form ("Interactive product tour – Telco") and demo ("Personalisation"), "" when not sent
 //   websiteActivity[]  { at (ISO), label, detail, page }, every website submission, the 20 newest
 //   sourcePage / sourceIndustry  the page and industry a website lead came from
@@ -392,6 +399,7 @@ function normaliseLead(id, d) {
       .map((h) => ({ at: typeof h.at === "string" ? h.at : "", atMs: ms(h.at), by: String(h.by || ""), kind: String(h.kind || ""), text: String(h.text || "") })),
     customerAccount: x.customerAccount && typeof x.customerAccount === "object" ? { id: String(x.customerAccount.id || ""), name: String(x.customerAccount.name || "") } : null,
     enrichment: x.enrichment && typeof x.enrichment === "object" ? x.enrichment : null,
+    partnerCentral: normalisePartnerCentral(x.partnerCentral),
     tam: x.tam && typeof x.tam === "object" && !Array.isArray(x.tam) ? x.tam : null, // read-only: no TAM data model yet
     // Priority within its lane (lower is higher up); null until someone orders the lane by dragging.
     rank: typeof x.rank === "number" && Number.isFinite(x.rank) ? x.rank : null,
@@ -540,4 +548,119 @@ function companyLine(l) {
   return parts.join(" · ");
 }
 
-module.exports = { STAGES, STAGE_KEYS, DEFAULT_STAGE, LEAD_TYPES, LEAD_TYPE_KEYS, DEFAULT_LEAD_TYPE, OPERATOR_STAGES, OPERATOR_STAGE_KEYS, OPERATOR_DEFAULT_STAGE, ALL_STAGE_KEYS, BACKGROUNDS, AUDIENCES, OPERATOR_SOURCE_LABEL, OPERATOR_FORMS, operatorFormKey, BUYING_ROLES, BUYING_ROLE_KEYS, HISTORY_LIMIT, NOTE_MAX, LIMITS, stageLabel, roleLabel, isStage, isClosed, leadTypeOf, leadTypeLabel, stagesFor, defaultStageFor, isStageFor, backgroundKey, backgroundLabel, audienceKey, audienceLabel, leadName, parseCountries, parseStoreCount, normaliseUrl, normaliseAwsAccountId, newContactId, blankContact, blankLead, leadFromForm, gaEntryFromWebsite, mergeGaClientIds, truthy, leadFromWebsite, operatorFromWebsite, normaliseLead, groupByStage, compareInLane, RANK_STEP, planLaneOrder, topRank, historyEntry, appendHistory, conversionFields, mergeCompanyEnrichment, mergeInbound, inboundLabel, companyLine };
+// ── AWS Partner Central lead enrichment and the lead score ──────────────────────────────────
+// functions/pc-lead-enrich.js sends a new company lead to Partner Central lead enrichment and
+// prospecting and stores AWS's answer on leads/{id}.partnerCentral. These rules read it for the
+// card (the score chip), the summary drawer, and the server's Hot Lead promotion.
+const HOT_LEAD_SCORE = 70;
+const PC_STATUSES = ["sending", "running", "done", "not-sent", "error"];
+
+// AWS gives levels as words ("HIGH", "Medium") or, for some signals, numbers: one display label.
+function pcLevelLabel(v) {
+  const s = String(v == null ? "" : v).trim();
+  if (!s) return "";
+  if (/^-?\d+(\.\d+)?$/.test(s)) return s;
+  const w = s.replace(/[_-]+/g, " ").toLowerCase().slice(0, 40);
+  return w.charAt(0).toUpperCase() + w.slice(1);
+}
+// A level as a fraction of full marks, or null when AWS gave nothing usable.
+function pcLevelFraction(v) {
+  const s = String(v == null ? "" : v).trim();
+  if (!s) return null;
+  if (/^-?\d+(\.\d+)?$/.test(s)) { const n = Number(s); return Math.max(0, Math.min(1, n > 1 ? n / 100 : n)); }
+  const w = s.replace(/[_-]+/g, " ").toLowerCase();
+  if (/very high|highest/.test(w)) return 1;
+  if (/very low|lowest|none/.test(w)) return 0;
+  if (/high|strong/.test(w)) return 1;
+  if (/medium|moderate|mid/.test(w)) return 0.6;
+  if (/low|weak/.test(w)) return 0.2;
+  return null;
+}
+const pcStr = (v, max) => String(v == null ? "" : v).trim().slice(0, max);
+const pcMs = (v) => ms(v);
+function normalisePartnerCentral(v) {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const c = v.customer && typeof v.customer === "object" ? v.customer : {};
+  const i = v.insights && typeof v.insights === "object" ? v.insights : {};
+  return {
+    status: PC_STATUSES.includes(v.status) ? v.status : "",
+    reason: pcStr(v.reason, 600),
+    catalog: v.catalog === "AWS" ? "AWS" : v.catalog === "Sandbox" ? "Sandbox" : "",
+    engagementId: pcStr(v.engagementId, 80),
+    taskId: pcStr(v.taskId, 80),
+    attempts: Number(v.attempts) || 0,
+    checks: Number(v.checks) || 0,
+    sentAtMs: pcMs(v.sentAt), finishedAtMs: pcMs(v.finishedAt), autoPromotedAtMs: pcMs(v.autoPromotedAt),
+    customer: {
+      accountName: pcStr(c.accountName, 200), geo: pcStr(c.geo, 80), region: pcStr(c.region, 80), subRegion: pcStr(c.subRegion, 80),
+      country: pcStr(c.country, 10), industry: pcStr(c.industry, 120), subIndustry: pcStr(c.subIndustry, 120),
+      segment: pcStr(c.segment, 80), companySize: pcStr(c.companySize, 80),
+      eligiblePrograms: (Array.isArray(c.eligiblePrograms) ? c.eligiblePrograms : []).map((x) => pcStr(x, 80)).filter(Boolean).slice(0, 20),
+      publicProfileSummary: pcStr(c.publicProfileSummary, 2000),
+    },
+    insights: {
+      leadReadiness: pcLevelLabel(i.leadReadiness), marketplaceEngagement: pcLevelLabel(i.marketplaceEngagement),
+      solutionScore: pcLevelLabel(i.solutionScore), solutionCategory: pcStr(i.solutionCategory, 120), solutionSubCategory: pcStr(i.solutionSubCategory, 120),
+      recommendedChannel: pcStr(i.recommendedChannel, 40).toUpperCase(),
+      outreachWindows: (Array.isArray(i.outreachWindows) ? i.outreachWindows : []).filter((w) => w && typeof w === "object" && w.day)
+        .map((w) => ({ day: pcStr(w.day, 12).toUpperCase(), start: pcStr(w.start, 5), end: pcStr(w.end, 5) })).slice(0, 7),
+    },
+  };
+}
+
+// 0-100. Partner Central signals (readiness 35, AWS Marketplace engagement 20, solution fit 20,
+// eligible AWS programs 10) plus what the console knows (inbound interest 10, a decision maker 5).
+// A Partner Central signal not given yet counts as neutral, about a third of its weight, never zero.
+// { score, hot, enriched, parts: [{ key, label, points, max, from }] }, `from` being "Partner Central",
+// "console" or "not given yet".
+function leadScore(lead) {
+  const l = lead || {};
+  const pc = l.partnerCentral && typeof l.partnerCentral === "object" && l.partnerCentral.insights ? l.partnerCentral : normalisePartnerCentral(l.partnerCentral);
+  const enriched = !!(pc && pc.status === "done");
+  const parts = [];
+  const neutral = (max) => Math.round(max / 3);
+  const level = (key, label, max, raw) => {
+    const f = enriched ? pcLevelFraction(raw) : null;
+    parts.push(f === null ? { key, label, points: neutral(max), max, from: "not given yet" } : { key, label, points: Math.round(f * max), max, from: "Partner Central" });
+  };
+  level("readiness", "Lead readiness", 35, pc && pc.insights.leadReadiness);
+  level("marketplace", "AWS Marketplace engagement", 20, pc && pc.insights.marketplaceEngagement);
+  level("solution", "Solution fit", 20, pc && pc.insights.solutionScore);
+  if (enriched) {
+    const n = pc.customer.eligiblePrograms.length;
+    parts.push({ key: "programs", label: "Eligible AWS programs", points: n >= 2 ? 10 : n === 1 ? 5 : 0, max: 10, from: "Partner Central" });
+  } else parts.push({ key: "programs", label: "Eligible AWS programs", points: neutral(10), max: 10, from: "not given yet" });
+  const inbound = Number(l.inboundCount) || 0;
+  parts.push({ key: "inbound", label: "Inbound interest", points: inbound >= 3 ? 10 : inbound === 2 ? 5 : 0, max: 10, from: "console" });
+  const dm = (Array.isArray(l.contacts) ? l.contacts : []).some((k) => k && k.buyingRole === "decision-maker");
+  parts.push({ key: "decision-maker", label: "Decision maker in contacts", points: dm ? 5 : 0, max: 5, from: "console" });
+  const score = Math.max(0, Math.min(100, parts.reduce((a, p) => a + p.points, 0)));
+  return { score, hot: enriched && score >= HOT_LEAD_SCORE, enriched, parts };
+}
+
+// Moves a lead from Lead to Hot Lead (the server does it, functions/pc-lead-enrich.js): only a
+// company lead still in the Lead stage, not archived, not a test lead, on a finished live (AWS
+// catalogue) result scoring HOT_LEAD_SCORE or more, and only once per lead (autoPromotedAt), so a
+// lead someone drags back stays put. `enabled: false` is the off switch.
+function shouldAutoPromote(lead, { enabled = true } = {}) {
+  const l = lead || {};
+  const pc = l.partnerCentral && l.partnerCentral.insights ? l.partnerCentral : normalisePartnerCentral(l.partnerCentral);
+  if (enabled === false || !pc) return false;
+  if (l.leadType === "operator" || l.test === true || l.archived || l.archivedAt) return false;
+  if ((l.stage || DEFAULT_STAGE) !== "lead") return false;
+  if (pc.status !== "done" || pc.catalog !== "AWS" || pc.autoPromotedAtMs) return false;
+  return leadScore({ ...l, partnerCentral: pc }).score >= HOT_LEAD_SCORE;
+}
+
+// One line for the card's tooltip and the drawer's Status row.
+function partnerCentralStatusText(pc) {
+  const p = pc && pc.insights ? pc : normalisePartnerCentral(pc);
+  if (!p || !p.status) return "Not sent to Partner Central yet";
+  if (p.status === "sending") return "Sending…";
+  if (p.status === "running") return "Partner Central is enriching this lead…";
+  if (p.status === "done") return "Enriched by Partner Central";
+  if (p.status === "not-sent") return `Not sent: ${p.reason || "no reason given"}`;
+  return `Enrichment failed: ${p.reason || "no reason given"}`;
+}
+
+module.exports = { STAGES, STAGE_KEYS, DEFAULT_STAGE, LEAD_TYPES, LEAD_TYPE_KEYS, DEFAULT_LEAD_TYPE, OPERATOR_STAGES, OPERATOR_STAGE_KEYS, OPERATOR_DEFAULT_STAGE, ALL_STAGE_KEYS, BACKGROUNDS, AUDIENCES, OPERATOR_SOURCE_LABEL, OPERATOR_FORMS, operatorFormKey, BUYING_ROLES, BUYING_ROLE_KEYS, HISTORY_LIMIT, NOTE_MAX, LIMITS, stageLabel, roleLabel, isStage, isClosed, leadTypeOf, leadTypeLabel, stagesFor, defaultStageFor, isStageFor, backgroundKey, backgroundLabel, audienceKey, audienceLabel, leadName, parseCountries, parseStoreCount, normaliseUrl, normaliseAwsAccountId, newContactId, blankContact, blankLead, leadFromForm, gaEntryFromWebsite, mergeGaClientIds, truthy, leadFromWebsite, operatorFromWebsite, normaliseLead, groupByStage, compareInLane, RANK_STEP, planLaneOrder, topRank, historyEntry, appendHistory, conversionFields, mergeCompanyEnrichment, mergeInbound, inboundLabel, companyLine, HOT_LEAD_SCORE, PC_STATUSES, pcLevelLabel, pcLevelFraction, normalisePartnerCentral, leadScore, shouldAutoPromote, partnerCentralStatusText };

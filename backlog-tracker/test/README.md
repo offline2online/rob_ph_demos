@@ -158,6 +158,13 @@ UI (Playwright) cases get **one retry inside the run**; nothing else retries.
   the ticket; closing the form before that left the loading editor reading the
   closed form's ticket, a page error (KB-C30, "Cannot read properties of null
   (reading 'description')").
+- A Support Inbox bulk action (`ui/support-inbox.test.mjs`, "selecting
+  several threads") waits for its one result message (`#support-bulk-result`)
+  before the next step, not only for the call to be sent: the harness records
+  a call when it is sent, and the page clears the selection only when the
+  answer arrives. A late answer used to clear the boxes the next step had just
+  ticked, which took that step's action off the bar under the click
+  ("page.click: Timeout 30000ms exceeded").
 - To check a case you fixed, run it repeatedly with the retry off, e.g.
   `for i in $(seq 20); do KB_RETRIES=0 KB_ONLY=TC-55 node ui/staff-kanban.test.mjs || break; done`
   or `UI_RETRIES=0 SCENARIO="Modals" node ui/console-click.test.mjs`.

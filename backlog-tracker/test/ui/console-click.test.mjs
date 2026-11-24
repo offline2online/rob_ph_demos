@@ -2315,6 +2315,48 @@ const scenarios = [
     },
   },
   {
+    name: "Promote: Leads - AWS Partner Central enrichment: the score on the card, the section in the summary, Send again for a test lead (Sandbox)",
+    seed: () => seed({ leads: {
+      pe: { company: { name: "Enriched Grocer", website: "https://grocer.example", industry: "Grocery", countries: ["UK"], storeCount: 120 }, contacts: [{ id: "k1", name: "Jo Bloggs", jobTitle: "CMO", buyingRole: "decision-maker", email: "jo@grocer.example", linkedin: "" }],
+        stage: "hot-lead", source: "website", assignee: "", customerAccount: null, inboundCount: 3, createdAt: t(T0), updatedAt: t(T0),
+        partnerCentral: { status: "done", catalog: "AWS", engagementId: "eng-abcdefghijklmn", finishedAt: t(T0), autoPromotedAt: t(T0),
+          customer: { accountName: "Enriched Grocer", geo: "EMEA", region: "UKIR", country: "GB", industry: "Retail", subIndustry: "Grocery", segment: "Enterprise", companySize: "1000+", eligiblePrograms: ["Greenfield", "Pioneer Credits"], publicProfileSummary: "A UK grocer with 120 stores." },
+          insights: { leadReadiness: "High", marketplaceEngagement: "High", solutionScore: "High", solutionCategory: "Analytics", solutionSubCategory: "Retail media", recommendedChannel: "EMAIL", outreachWindows: [{ day: "TUESDAY", start: "09:00", end: "11:00" }] } } },
+      pt: { company: { name: "Test Shop", website: "", industry: "", countries: [], storeCount: null }, contacts: [], stage: "lead", source: "website", test: true, assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0),
+        partnerCentral: { status: "error", catalog: "Sandbox", reason: "AccessDeniedException: not authorised" } },
+    } }),
+    async run(c) {
+      const posts = [];
+      // Only Send again's call: opening a summary also reads its ACE opportunity (…/leads/{id}/ace, qLIDYPTSvzKqYLLsI8kC).
+      await c.page.route("**/partnerCentral/v1/leads/*/enrich", async (route) => {
+        posts.push(new URL(route.request().url()).pathname);
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, status: "running", catalog: "Sandbox" }) });
+      });
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
+      await c.visible('.lead-lane[data-stage="hot-lead"] .lead-card', "the enriched lead is in Hot Lead");
+      const chip = await c.text('.lead-card[data-lead-id="pe"] .lead-score');
+      assert.strictEqual(chip.trim(), "Score 100", "the card shows the lead score: " + chip);
+      assert.ok(await c.page.locator('.lead-card[data-lead-id="pe"] .lead-score-hot').count() === 1, "a hot score is accented");
+      assert.ok(await c.page.locator('.lead-card[data-lead-id="pt"] .lead-score-pending').count() === 1, "a lead Partner Central has not enriched shows a muted score");
+      await c.page.click('.lead-card[data-lead-id="pe"] .lead-card-name');
+      await c.visible("#lead-sum-pc", "the summary has the AWS Partner Central section");
+      const pc = await c.text("#lead-sum-pc");
+      for (const want of ["AWS Partner Central", "100 of 100", "Enriched by Partner Central", "Lead readiness", "High", "Marketplace engagement", "Analytics › Retail media", "Greenfield", "Pioneer Credits", "Enterprise · 1000+", "Email · Tue 09:00–11:00 UTC", "A UK grocer with 120 stores.", "How the score is made", "Refresh from Partner Central"]) {
+        assert.ok(pc.includes(want), `the section shows ${want}: ${pc}`);
+      }
+      await c.page.keyboard.press("Escape");
+      await c.page.click('.lead-card[data-lead-id="pt"] .lead-card-name');
+      await c.visible("#lead-sum-pc", "the test lead has the section too");
+      const tpc = await c.text("#lead-sum-pc");
+      assert.ok(tpc.includes("Enrichment failed: AccessDeniedException") && /sandbox/i.test(tpc), "a failure and the Sandbox catalogue show: " + tpc);
+      await c.page.click("#lead-pc-send");
+      await until(async () => posts.length === 1, "Send again to call the console's endpoint", 5000);
+      assert.strictEqual(posts[0], "/partnerCentral/v1/leads/pt/enrich");
+      await c.waitText("#lead-sum-status", "Sent to Partner Central", "the drawer says it was sent");
+    },
+  },
+  {
     name: "Promote: Leads - a network operator inquiry shows the industry they want to run and their message; the form saves the industry and an edit keeps the message",
     seed: () => seed({ leads: {
       fg: { leadType: "operator", company: { name: "", website: "", industry: "", countries: [], storeCount: null }, operator: { region: "Leeds, UK", background: "adtech", audience: "team", networkIndustry: "Golf clubs", message: "Hello, please send the pack.", form: "request" },
@@ -2906,6 +2948,34 @@ const scenarios = [
     },
   },
   {
+    name: "Promote: Prospects (TAM) - Missing industries groups every blank company by the industry it needs and filters the grid to them",
+    seed: () => seed({ prospects: {
+      pa: { name: "Alpha Grocer", country: "United Kingdom", industry: "Grocery & Supermarkets", markets: [], vendors: [], campaigns: [], status: "new", leadId: "", createdAt: t(T0), updatedAt: t(T0) },
+      pb: { name: "Beta Electrics", country: "Germany", industry: "Electronics & Technology", subIndustry: "Consumer Electronics", markets: [], vendors: [], campaigns: [], status: "new", leadId: "", createdAt: t(T0), updatedAt: t(T0) },
+      pc: { name: "Gamma Holdings", country: "France", industry: "", markets: [], vendors: [], campaigns: [], status: "new", leadId: "", createdAt: t(T0), updatedAt: t(T0) },
+      pd: { name: "Delta Tools", country: "Australia", industry: "Retail", subIndustry: "Hardware", markets: [], vendors: [], campaigns: [], status: "new", leadId: "", createdAt: t(T0), updatedAt: t(T0) },
+    } }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-prospects-btn", "prospects-page");
+      const rowIds = () => c.page.evaluate(() => [...document.querySelectorAll("#prospects-grid .ag-center-cols-container .ag-row")].map((r) => r.getAttribute("row-id")).sort().join());
+      await until(async () => (await rowIds()) === "pa,pb,pc,pd", "the grid to show all four prospects", 8000);
+      await until(async () => (await c.text("#prospects-gaps-btn")).trim() === "Missing industries (3)", "the button to count the three blank companies", 5000);
+      assert.strictEqual(await c.page.getAttribute("#prospects-gaps-btn", "type"), "button", "a real button (iPad taps)");
+      await c.page.click("#prospects-gaps-btn");
+      await c.visible("#prospect-gaps", "the Missing industries panel");
+      assert.match(await c.text("#prospect-gaps-sub"), /3 of 4 companies have no website industry · 3 industries needed/);
+      const groups = await c.page.evaluate(() => [...document.querySelectorAll("#prospect-gaps-body .prospect-gaps-group")].map((g) => `${g.querySelector("h3 span").textContent}=${[...g.querySelectorAll("li")].map((l) => l.textContent.replace(/\s+/g, " ").trim()).join("|")}`));
+      assert.deepStrictEqual(groups, ["Consumer Electronics=Beta Electrics · Germany", "Hardware & DIY=Delta Tools · Australia", "Unclassified (needs research)=Gamma Holdings · France"], "every blank company is listed once, Unclassified last");
+      await c.page.keyboard.press("Escape");
+      await until(async () => c.page.evaluate(() => document.getElementById("prospect-gaps-backdrop").hidden), "Escape to close the panel", 3000);
+      await c.page.click("#prospects-gaps-btn");
+      await c.page.click("#prospect-gaps-show");
+      await until(async () => (await rowIds()) === "pb,pc,pd", "the grid to show only the blank companies", 5000);
+      assert.ok(await c.page.evaluate(() => document.getElementById("prospect-gaps-backdrop").hidden), "the panel closes");
+    },
+  },
+  {
     name: "Promote: Prospects (TAM) - sits below Leads, filters, status edit, saved filter, convert to lead without duplicating",
     seed: () => seed({ prospects: {
       pa: { name: "Alpha Grocer", country: "United Kingdom", priority: "high", website: "https://alpha.example", industry: "Grocery", hqCountry: "United Kingdom", markets: ["United Kingdom", "Ireland"], awsRegion: "eu-west-2", storeCount: 400, storePresence: "400+ stores", sizeBand: "large", ownership: "Listed", insights: "Strong digital signage appetite.", decisionMakers: "Head of Retail Media", linkedinUrl: "https://www.linkedin.com/company/alpha-grocer/", linkedinOrgId: "1234", linkedinVerified: true, contacts: [{ name: "Jo Bloggs", role: "CMO", lastContact: "May 2026" }], vendors: ["Acme Signage"], campaigns: ["Spring"], status: "new", leadId: "", createdAt: t(T0), updatedAt: t(T0)  },
@@ -3090,6 +3160,7 @@ const scenarios = [
       await until(async () => (await rowIds()) === "pa,pb,pc", "Clear to show everything again", 5000);
       // Columns chooser brings back a hidden column.
       await c.page.click("#prospects-columns-btn");
+      assert.ok(await c.page.evaluate(() => { const r = document.querySelector(".prospects-pop:not([hidden])").getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; }), "the Columns menu stays on screen (a long list scrolls inside it)");
       await c.page.check('[data-pop="col"][data-arg="campaigns"]');
       await c.visible('#prospects-grid .ag-header-cell[col-id="campaigns"]', "Campaigns shows after choosing it");
       await c.page.check('[data-pop="col"][data-arg="insights"]');
@@ -4697,6 +4768,69 @@ const scenarios = [
       assert.strictEqual(await c.page.locator(".pca-approval").count(), 0, "no approval left waiting");
       assert.match(await c.text("#pca-approvals"), /CreateOpportunity: approved by admin@ph\.example/);
       assert.match(await c.text(".pca-text"), /Draft opportunity created \(not submitted\)/);
+    },
+  },
+  {
+    // qLIDYPTSvzKqYLLsI8kC: a Hot Lead whose TAM company runs on AWS shows its ACE opportunity in the
+    // lead summary; an admin drafts it through the Partner Central agent, and the draft waits for approval.
+    name: "Promote › Leads › ACE opportunity: draft a Hot Lead through the agent, score and approval link",
+    seed: () => {
+      const s = seed({ leads: {
+        h1: { company: { name: "Acme Retail", website: "https://acme.example", industry: "Grocery", countries: ["UK"], storeCount: 40 }, contacts: [], stage: "hot-lead", source: "Manual", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
+        o1: { company: { name: "Bravo Stores", website: "", industry: "", countries: ["UK"], storeCount: null }, contacts: [], stage: "post-demo", source: "Manual", assignee: "", customerAccount: null, aceOpportunityId: "O7654321", createdAt: t(T0), updatedAt: t(T0) },
+      } });
+      s.user = { email: "admin@ph.example", role: "admin" };
+      s.docs.consoleUsers = { "admin@ph.example": { email: "admin@ph.example", role: "admin", displayName: "Ada Admin" } };
+      s.leadAce = {
+        h1: { leadId: "h1", eligible: { ok: true, reason: "" }, primaryCloud: "AWS", attachments: [{ title: "Grocery one-pager", kind: "industry-one-pager", url: "" }, { title: "Acme prospect pack", kind: "prospect-pack", url: "" }], draft: null, opportunityId: null, opportunity: null, score: null, targetScore: 60, insights: [] },
+        o1: { leadId: "o1", eligible: { ok: false, reason: "This company already has an ACE opportunity." }, primaryCloud: "AWS", attachments: [], opportunityId: "O7654321",
+          draft: { status: "drafted", catalog: "Sandbox", stageSync: { status: "pending", target: "Technical Validation", fromStage: "post-demo" } },
+          opportunity: { id: "O7654321", stage: "Qualified", score: 48, partnerCentralUrl: "https://partnercentral.example/O7654321" }, score: { value: 48, source: "actual" }, targetScore: 60,
+          insights: [{ key: "past-close", level: "risk", text: "Target close date 2026-10-01 has passed." }, { key: "low-score", level: "risk", text: "Quality score 48 is under 60." }] },
+      };
+      s.aceSyncPending = [{ leadId: "o1", company: "Bravo Stores", opportunityId: "O7654321", target: "Technical Validation" }];
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
+      c.at("a Hot Lead not drafted yet");
+      await c.page.click('.lead-lane[data-stage="hot-lead"] .lead-card .lead-card-name');
+      await c.visible("#lead-sum-ace", "the ACE opportunity group");
+      await c.waitText("#lead-sum-ace", "Not drafted yet", "not drafted yet");
+      assert.match(await c.text("#lead-sum-ace"), /Grocery one-pager, Acme prospect pack/, "the one-pager and prospect pack to attach");
+      assert.strictEqual(c.pcAgentCalls.filter((x) => x.method === "POST").length, 0, "opening the summary sends nothing");
+      await c.click("#lead-sum-ace-draft", "Draft ACE opportunity");
+      await c.waitText("#lead-sum-ace", "Draft waits for approval", "the draft waits for approval");
+      const post = c.pcAgentCalls.find((x) => x.method === "POST");
+      assert.strictEqual(post.path, "/partnerCentral/v1/leads/h1/ace/draft");
+      const ace = await c.text("#lead-sum-ace");
+      assert.match(ace, /64\s*· Predicted · target 60/);
+      assert.strictEqual(await c.page.locator("#lead-sum-ace-draft").count(), 0, "no second draft while one waits for approval");
+      assert.match(ace, /Add the expected monthly spend/);
+      assert.match(ace, /Review the write waiting for approval/);
+      assert.strictEqual(await c.page.getAttribute("#lead-sum-ace a.ap-row-btn", "href"), "#settings/integrations");
+      assert.strictEqual(c.pcAgentCalls.filter((x) => /approvals|ace-sync/.test(x.path)).length, 0, "nothing approved or synced from the lead");
+      await c.click("#lead-sum-close", "close the summary");
+
+      c.at("an opportunity with insights and a queued stage change");
+      await c.page.click('.lead-lane[data-stage="post-demo"] .lead-card .lead-card-name');
+      await c.waitText("#lead-sum-ace", "Target close date 2026-10-01 has passed.", "problems first");
+      const opp = await c.text("#lead-sum-ace");
+      assert.ok(opp.indexOf("has passed") < opp.indexOf("Status"), "insights come before the status");
+      assert.match(opp, /ACE stage\s*Qualified/);
+      assert.match(opp, /Technical Validation · waits to be sent/);
+      assert.match(opp, /48\s*· Partner Central · target 60/);
+      assert.strictEqual(await c.page.locator("#lead-sum-ace-draft").count(), 0, "no draft button once there is an opportunity");
+      await c.click("#lead-sum-close", "close the summary");
+
+      c.at("Settings: send queued ACE stage changes as one bulk update");
+      await c.page.evaluate(() => { location.hash = "#settings/integrations"; });
+      await c.waitText("#pca-sync-status", "1 stage change queued.", "the queued change");
+      await c.click("#pca-sync-send", "Sync ACE stages");
+      await c.waitText("#pca-status", "1 ACE stage change waits for your approval.", "sent for approval");
+      assert.strictEqual(c.pcAgentCalls.filter((x) => x.method === "POST" && x.path === "/partnerCentral/v1/ace-sync").length, 1, "one bulk call");
+      await c.waitText("#pca-sync-status", "No stage changes waiting.", "the queue is empty");
     },
   },
   {

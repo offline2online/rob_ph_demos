@@ -1728,6 +1728,16 @@ html:not([data-console-role="admin"]) [data-admin-only] { display: none !importa
 .pca-params { margin: 0; max-height: 240px; overflow: auto; font-size: 12px; background: var(--surface-2, rgba(127,127,127,.08)); border-radius: 6px; padding: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .pca-approval-actions { display: flex; gap: 8px; }
 .pca-approval-actions button { min-height: 36px; }
+/* Promote › Leads › lead summary → ACE opportunity (ace-draft-view.js) */
+.lead-ace-insight { display: flex; align-items: flex-start; gap: 6px; margin: 0; }
+.lead-ace-insight .material-symbols-outlined { font-size: 16px; line-height: 20px; flex: none; }
+.lead-ace-risk .material-symbols-outlined { color: #faad14; }
+.lead-ace-lost .material-symbols-outlined { color: #ff4d4f; }
+.lead-ace-status, .lead-ace-score { display: inline-flex; align-items: center; gap: 6px; }
+.lead-ace-recs { margin: 4px 0 0; padding-left: 18px; font-size: 13.5px; }
+.lead-ace-recs li { overflow-wrap: anywhere; }
+.lead-ace-message { color: var(--text-muted, rgba(0,0,0,.45)); font-size: 13px; }
+.pca-sync { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .media-key-state { font-size: 12.5px; color: var(--text-muted, #6b7280); margin-top: 2px; }
 .media-key-state .material-symbols-outlined { font-size: 16px; vertical-align: -3px; }
 .media-key-state.is-set .media-key-dot { background: #52c41a; }
@@ -2589,6 +2599,13 @@ body { overflow-x: clip; }
 .prospect-contacts-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .prospect-contacts-table th, .prospect-contacts-table td { padding: 4px 6px; text-align: left; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
 .prospect-insights { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13.5px; }
+/* Prospects (TAM) › Missing industries */
+.prospect-gaps-group { padding: 12px 0; border-top: 1px solid var(--border); }
+.prospect-gaps-group:first-child { border-top: 0; padding-top: 0; }
+.prospect-gaps-group h3 { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 6px; font-size: 14px; font-weight: 500; color: var(--text); }
+.prospect-gaps-count { font-size: 13px; font-weight: 400; color: var(--text-muted); white-space: nowrap; }
+.prospect-gaps-list { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.6; color: var(--text); }
+.prospect-gaps-list .prospect-gaps-country { color: var(--text-muted); }
 .prospects-pop { position: fixed; z-index: 60; min-width: 200px; max-width: min(320px, calc(100vw - 16px)); max-height: 70vh; overflow: auto; padding: 6px; background: #fff; border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, .15); }
 .prospects-pop[hidden] { display: none; }
 .prospects-pop-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; font: inherit; font-size: 14px; text-align: left; background: none; border: 0; border-radius: 6px; cursor: pointer; color: var(--text); }
@@ -2778,6 +2795,14 @@ body { overflow-x: clip; }
 .lead-ind-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--ind-bar, var(--text-muted)); }
 :root[data-theme="dark"] .lead-ind-dot { background: var(--ind-bar-d, var(--text-muted)); }
 .lead-inbound { padding: 0 8px; border-radius: 999px; background: var(--primary-tint); color: var(--primary-text); font-size: 12px; font-weight: 600; line-height: 20px; white-space: nowrap; }
+.lead-score { padding: 0 8px; border-radius: 999px; background: rgba(120, 120, 128, .12); color: var(--text); font-size: 12px; font-weight: 600; line-height: 20px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.lead-score-hot { background: var(--primary-tint); color: var(--primary-text); }
+.lead-score-pending { color: var(--text-muted); font-weight: 500; }
+.lead-pc-level { padding: 0 8px; border-radius: 999px; background: rgba(120, 120, 128, .12); font-size: 12px; font-weight: 600; line-height: 20px; }
+.lead-pc-level-high { background: var(--primary-tint); color: var(--primary-text); }
+.lead-score-parts { margin: 4px 0 0; padding: 0; list-style: none; font-size: 13px; }
+.lead-score-parts li { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; }
+.lead-score-parts li > span:last-child { flex: none; font-variant-numeric: tabular-nums; }
 .lead-test-badge { padding: 0 6px; border-radius: 6px; background: rgba(120, 120, 128, .12); color: var(--text-muted); font-size: 11px; font-weight: 600; line-height: 20px; letter-spacing: .04em; text-transform: uppercase; }
 .lead-card-line { margin: 0; min-width: 0; font-size: 13px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lead-card-detail { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding-top: 8px; border-top: .5px solid var(--ap-divider); font-size: 12px; color: var(--text-muted); }

@@ -37,6 +37,7 @@ import {
   prospectFromInput, prospectKey, prospectIdFor, slugId, INDUSTRY_LABELS, UNASSIGNED_INDUSTRY, COUNTRIES, canonicalCountry, normaliseIndustry, AWS_REGIONS,
   PROPENSITY_BANDS, NOT_SYNCED, propensityLabel, ELIGIBILITY_OPTIONS, eligibilityKey, mappingPropensity, awarenessRanks, isHighPotential, isMappingStale,
   toAccountMappingCsv, parseAccountMappingCsv, planAccountMappingImport, MAPPING_STALE_DAYS,
+  missingIndustriesReport, missingIndustriesCsv,
 } from "./prospects-core.js";
 import { SEED_PROSPECTS, SEED_SOURCE } from "./prospects-seed.js";
 import { mountProspectDetail } from "./prospect-detail.js";
@@ -337,11 +338,18 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
     if (popAnchor === anchor && !pop.hidden) { closePop(); return; }
     closePop();
     popAnchor = anchor; anchor.setAttribute("aria-expanded", "true");
-    pop.innerHTML = html; pop.hidden = false;
-    const r = anchor.getBoundingClientRect(), w = pop.offsetWidth, h = pop.offsetHeight;
+    pop.innerHTML = html; pop.style.maxHeight = ""; pop.hidden = false;
+    const r = anchor.getBoundingClientRect(), w = pop.offsetWidth;
+    // Open below the button, or above it when there is more room there, and never past the
+    // edge of the screen: on a phone a long list (Columns) scrolls inside the menu instead.
+    const below = window.innerHeight - r.bottom - 12, above = r.top - 12;
+    const up = pop.offsetHeight > below && above > below;
+    const room = Math.max(120, up ? above : below);
+    if (pop.offsetHeight > room) pop.style.maxHeight = `${room}px`;
+    const h = pop.offsetHeight;
     pop.style.left = `${Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8))}px`;
     // Below the button, else above it; either way kept inside the viewport (the Columns list is long on a phone).
-    const top = r.bottom + h + 8 > window.innerHeight && r.top > h ? r.top - h - 4 : r.bottom + 4;
+    const top = up ? r.top - h - 4 : r.bottom + 4;
     pop.style.top = `${Math.max(8, Math.min(top, window.innerHeight - h - 8))}px`;
     pop._onItem = onItem;
     const first = pop.querySelector("button, input");
@@ -370,6 +378,9 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
     $("prospects-seed-btn").hidden = total > 0 || !canEdit();
     host.hidden = total === 0;
     $("prospects-tools").hidden = total === 0;
+    const gaps = missingIndustriesReport(rows).unassigned;
+    $("prospects-gaps-btn").textContent = gaps ? `Missing industries (${gaps.toLocaleString("en-GB")})` : "Missing industries";
+    if (!$("prospect-gaps-backdrop").hidden) renderGaps();
     if (!$("prospect-awsmap-backdrop").hidden) renderAwsmap();
   }
   function updateBulk() {
@@ -738,6 +749,57 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
   $("prospect-awsmap-show").addEventListener("click", () => showAws(["awsPropensity", "awarenessRank"], (api) => api.applyColumnState({ state: [{ colId: "awarenessRank", sort: "asc" }], defaultState: { sort: null } })));
   $("prospect-awsmap-greenfield").addEventListener("click", () => showAws(["awsPropensity", "awsGreenfield"], (api) => api.setFilterModel(Object.assign({}, api.getFilterModel() || {}, { awsGreenfield: { values: ["yes"] } }))));
 
+  // ── Missing industries: every company with no website industry, grouped by
+  // the industry it would need (missingIndustriesReport). "Show in grid" sets
+  // the Industry column's Unassigned filter, so new blank companies are easy to spot.
+  const gapsBox = $("prospect-gaps-backdrop");
+  let gapsOpener = null;
+  function renderGaps() {
+    const r = missingIndustriesReport(rows);
+    $("prospect-gaps-sub").textContent = `${r.unassigned.toLocaleString("en-GB")} of ${r.total.toLocaleString("en-GB")} companies have no website industry · ${r.groups.length} ${r.groups.length === 1 ? "industry" : "industries"} needed`;
+    $("prospect-gaps-body").innerHTML = r.groups.length
+      ? r.groups.map((g) => `<section class="prospect-gaps-group"><h3><span>${esc(g.label)}</span><span class="prospect-gaps-count">${g.count} ${g.count === 1 ? "company" : "companies"}</span></h3>`
+        + `<ul class="prospect-gaps-list">${g.companies.map((c) => `<li>${esc(c.name)}${c.country ? ` <span class="prospect-gaps-country">· ${esc(c.country)}</span>` : ""}</li>`).join("")}</ul></section>`).join("")
+      : `<p class="field-hint">Every company has a website industry.</p>`;
+    $("prospect-gaps-show").disabled = !r.unassigned;
+    $("prospect-gaps-export").disabled = !r.unassigned;
+  }
+  function openGaps(opener) {
+    closePop();
+    gapsOpener = opener || null;
+    renderGaps();
+    gapsBox.hidden = false;
+    $("prospect-gaps-close").focus();
+  }
+  function closeGaps(restoreFocus = true) {
+    const opener = gapsOpener;
+    gapsOpener = null; gapsBox.hidden = true;
+    if (restoreFocus && opener && opener.isConnected) opener.focus();
+  }
+  $("prospects-gaps-btn").addEventListener("click", (e) => openGaps(e.currentTarget));
+  $("prospect-gaps-close").addEventListener("click", () => closeGaps());
+  gapsBox.addEventListener("click", (e) => { if (e.target === gapsBox) closeGaps(); });
+  gapsBox.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { e.stopPropagation(); closeGaps(); return; }
+    if (e.key !== "Tab") return; // keep focus inside the panel
+    const f = [...$("prospect-gaps").querySelectorAll("button:not([disabled])")].filter((x) => x.offsetParent !== null);
+    if (!f.length) return;
+    if (e.shiftKey && document.activeElement === f[0]) { e.preventDefault(); f[f.length - 1].focus(); }
+    else if (!e.shiftKey && document.activeElement === f[f.length - 1]) { e.preventDefault(); f[0].focus(); }
+  });
+  $("prospect-gaps-show").addEventListener("click", async () => {
+    const g = await ensureGrid();
+    if (!g) return;
+    const model = Object.assign({}, g.api.getFilterModel() || {}, { industry: { values: [UNASSIGNED] } });
+    g.api.setFilterModel(model);
+    closeGaps(false);
+    $("prospects-gaps-btn").focus();
+  });
+  $("prospect-gaps-export").addEventListener("click", () => {
+    const r = missingIndustriesReport(rows);
+    download(r.groups.flatMap((g) => g.companies), "missing-industries", () => missingIndustriesCsv(r));
+  });
+
   // ── The detail drawer ────────────────────────────────────────────────────
   const drawer = $("prospect-drawer-backdrop");
   let drawerId = null, drawerOpener = null, editing = false;
@@ -1040,7 +1102,7 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
       } else if (rows.length) ensureGrid();
     }, () => { say("Prospects could not be loaded. Reload the page to try again.", true); });
   }
-  function stop() { closePop(); closeDrawer(false); closeAwsmap(false); detailUi.close(); page.classList.remove("is-detail"); contactsUi.stop(); if (unsub) unsub(); unsub = null; started = false; }
+  function stop() { closePop(); closeDrawer(false); closeAwsmap(false); closeGaps(false); detailUi.close(); page.classList.remove("is-detail"); contactsUi.stop(); if (unsub) unsub(); unsub = null; started = false; }
   function render() {
     updateCount();
     contactsUi.refresh();
