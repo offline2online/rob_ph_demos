@@ -632,8 +632,46 @@ export function filterTasks(tasks, f) {
     if (f.label && !(t.labels || []).includes(f.label)) return false;
     if (f.status && (f.status.startsWith("done:") ? "done:" + res(t) !== f.status : t.status !== f.status)) return false;
     if (f.q && !matchesQuery(t, f.q)) return false;
+    if (f.show && !matchesShow(t, f)) return false;
     return true;
   });
+}
+
+// The Dashboard's drill-down filter (uAp6fukjDyNxKusotmcQ): a Staff Kanban
+// count on the Dashboard opens the board with `show` set, and these are the
+// same rules dashboard-core.js kanbanKpi counts with, so the board shows the
+// count's own tasks. Every one of them is open work: not done, not an epic.
+//   open         every open task (with `column`, one of the tile's columns)
+//   overdue      due before today (f.today, the viewer's local YYYY-MM-DD)
+//   unassigned   no assignee
+//   unestimated  no estimate
+//   waiting      in Ready for Testing and assigned to the viewer (f.me)
+// Tasks of an archived console project (f.archived, a Set of ids) are left
+// out, as the tile leaves them out.
+export const SHOW_FILTERS = [
+  { key: "open", label: "Open tasks" },
+  { key: "overdue", label: "Overdue" },
+  { key: "unassigned", label: "Unassigned" },
+  { key: "unestimated", label: "Unestimated" },
+  { key: "waiting", label: "Waiting on you in Testing" },
+];
+export const SHOW_COLUMNS = [
+  { key: "todo", label: "To do", statuses: ["backlog", "ready-for-dev"] },
+  { key: "progress", label: "In progress", statuses: ["in-progress"] },
+  { key: "testing", label: "Testing", statuses: ["ready-for-testing", "approved"] },
+];
+export function matchesShow(t, f) {
+  if (!t || t.status === "done" || t.type === "epic") return false;
+  if (f.archived && f.archived.has(t.project)) return false;
+  const col = f.column && SHOW_COLUMNS.find((c) => c.key === f.column);
+  if (col && !col.statuses.includes(t.status)) return false;
+  switch (f.show) {
+    case "overdue": return !!t.due && String(t.due).slice(0, 10) < String(f.today || isoDay(new Date()));
+    case "unassigned": return !t.assignee;
+    case "unestimated": return !(+t.estimate > 0);
+    case "waiting": return t.status === "ready-for-testing" && !!f.me && String(t.assignee || "").toLowerCase() === String(f.me).toLowerCase();
+    default: return true;
+  }
 }
 
 // ── Release report (KB-REP-1) ─────────────────────────────────────────────

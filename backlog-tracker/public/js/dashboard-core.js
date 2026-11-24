@@ -692,3 +692,137 @@ export function resolvedKpi(tickets, now = Date.now(), inbox = "") {
     allCount: on(every, y).length, byInbox: perInbox(every, (l) => on(l, y).length),
   };
 }
+
+// ── Drill-downs: every count opens its own list (uAp6fukjDyNxKusotmcQ) ─────
+// A count on a tile or in its summary panel opens the list behind it, never
+// just the section. Where the section can be opened filtered to exactly that
+// list, the count goes there: Staff Kanban (#staff-kanban?show=…, kanban-core
+// matchesShow, the same rules as kanbanKpi) and the Support Inbox's Needs a
+// person queue (the AI drafts tile counts every inbox, so it uses a list).
+// Every other count opens the Dashboard's own
+// list (#dashboard?list=<key>&…), whose rows drillRows() picks with the same
+// rules the tile counts with, so the list always holds the count's number.
+// Counts that are not a list of items (website visitors, percentages, hours)
+// are not drill-downs.
+export const DRILL_LISTS = {
+  "delivery-yesterday": "Deployed yesterday",
+  "delivery-week": "Deployed in the last 7 days",
+  "flow-stuck": "Tickets stuck",
+  "leads-new": "New leads, last 7 days",
+  "leads-yesterday": "New leads yesterday",
+  "leads-stage": "Companies at",
+  "leads-stale": "Stale leads: no activity for 7 days",
+  "leads-not-contacted": "Leads not contacted",
+  "funnel-leads": "Website leads, last 7 days",
+  "funnel-opps": "Website leads at Demo or beyond, last 7 days",
+  "drafts": "AI drafts to approve",
+  "drafts-high": "High-confidence AI drafts to approve",
+  "resolved-yesterday": "Resolved yesterday",
+  "resolved-ai": "Resolved yesterday by the AI alone",
+  "faq-gaps": "FAQ gaps, last 30 days",
+};
+const FLOW_KIND_LABELS = { blocked: "blocked", failed: "failed testing", testing: "waiting to test" };
+const LEAD_GROUPS = { source: leadSourceGroup, industry: leadIndustry, market: leadMarket };
+// The Dashboard's list address for a count.
+export function drillHash(list, params = {}) {
+  const q = new URLSearchParams({ list });
+  for (const [k, v] of Object.entries(params)) if (v != null && v !== "") q.set(k, String(v));
+  return `#dashboard?${q.toString()}`;
+}
+// "#dashboard?list=…" → { list, params }, or null for the tiles themselves (or an unknown list).
+export function parseDrill(hash) {
+  const s = String(hash || "");
+  const i = s.indexOf("?");
+  if (!s.startsWith("#dashboard") || i < 0) return null;
+  const params = Object.fromEntries(new URLSearchParams(s.slice(i + 1)));
+  const list = params.list;
+  delete params.list;
+  return list && DRILL_LISTS[list] ? { list, params } : null;
+}
+// A Staff Kanban count's address: the board filtered to that count's tasks.
+// show: open | overdue | unassigned | unestimated | waiting; column: todo |
+// progress | testing; release: the tile's release when it counts one;
+// assignee: one person's tasks (an email, or "none").
+export function kanbanDrillHash({ show = "open", column = "", release = "", assignee = "" } = {}) {
+  const q = new URLSearchParams({ show });
+  if (column) q.set("column", column);
+  if (release) q.set("release", release);
+  if (assignee !== "") q.set("assignee", assignee);
+  return `#staff-kanban?${q.toString()}`;
+}
+// The rows of a Dashboard list. data: { items, projects, leads, support } (the
+// same sources the tiles read; support is normalised supportTickets). Each row
+// is { kind: "ticket" | "lead" | "support", id, title, meta }. Returns
+// { title, rows }, or null for an unknown list.
+export function drillRows(list, params = {}, data = {}, now = Date.now()) {
+  if (!DRILL_LISTS[list]) return null;
+  const p = params || {};
+  const items = data.items || [], projects = data.projects || [];
+  const names = new Map(projects.map((x) => [x.id, x.name || "Untitled project"]));
+  const projectOf = (it) => names.get(it.projectId) || "General";
+  const ticket = (it, meta) => ({ kind: "ticket", id: it.id, title: it.title || "Untitled ticket", meta });
+  const lead = (l) => ({ kind: "lead", id: l.id, title: leadName(l), meta: [stageLabelOf(l), leadSourceGroup(l)].filter(Boolean).join(" · ") });
+  const support = (t, meta) => ({ kind: "support", id: t.id, title: t.subject || "(no subject)", meta: [customerOf(t), meta].filter(Boolean).join(" · ") });
+  let title = DRILL_LISTS[list];
+  let rows = [];
+  if (list === "delivery-yesterday" || list === "delivery-week") {
+    const y = localDayRange(1, now);
+    const week = lastDays(SERIES_DAYS, now);
+    const win = list === "delivery-yesterday" ? y : { from: week[0].from, to: week[week.length - 1].to };
+    const pid = p.project || "";
+    rows = items.filter((it) => inRange(deployedMs(it), win) && (!pid || (it.projectId || "general") === pid))
+      .sort((a, b) => deployedMs(b) - deployedMs(a))
+      .map((it) => ticket(it, `${projectOf(it)} · deployed ${fmtDayLabel(deployedMs(it))}`));
+    if (pid) title += ` · ${names.get(pid) || "General"}`;
+  } else if (list === "flow-stuck") {
+    const kind = FLOW_KIND_LABELS[p.kind] ? p.kind : "";
+    rows = flowKpi(items, projects, now).stuck.filter((s) => !kind || s.kind === kind)
+      .map((s) => ({ kind: "ticket", id: s.id, title: s.title, meta: `${s.project} · ${s.reason}${s.waitedMs == null ? "" : ` · ${fmtWait(s.waitedMs)}`}` }));
+    if (kind) title += `: ${FLOW_KIND_LABELS[kind]}`;
+  } else if (list.startsWith("leads-") || list.startsWith("funnel-")) {
+    const real = (data.leads || []).filter(realLead);
+    const week = lastDays(SERIES_DAYS, now);
+    const win = { from: week[0].from, to: week[week.length - 1].to };
+    const newest = (a, b) => toMillis(b.createdAt) - toMillis(a.createdAt);
+    let picked = [];
+    if (list === "leads-new") {
+      picked = real.filter((l) => inRange(toMillis(l.createdAt), win));
+      const group = LEAD_GROUPS[p.by];
+      if (group && p.group) { picked = picked.filter((l) => group(l) === p.group); title += ` · ${p.group}`; }
+    } else if (list === "leads-yesterday") picked = real.filter((l) => inRange(toMillis(l.createdAt), localDayRange(1, now)));
+    else if (list === "leads-stage") {
+      const stage = PIPELINE.find((s) => s.key === p.stage) || PIPELINE[0];
+      picked = real.filter((l) => l.leadType !== "operator" && (l.stage || "lead") === stage.key);
+      title += ` ${stage.label}`;
+    } else if (list === "leads-stale") picked = real.filter((l) => !CLOSED.has(l.stage) && now - leadLastActivity(l) >= STALE_MS);
+    else if (list === "leads-not-contacted") picked = real.filter((l) => !CLOSED.has(l.stage) && firstStage(l) && !contacted(l));
+    else {
+      picked = real.filter((l) => isWebsiteLead(l) && inRange(toMillis(l.createdAt), win));
+      if (list === "funnel-opps") picked = picked.filter((l) => OPP_STAGES.has(l.stage));
+    }
+    rows = picked.sort(newest).map(lead);
+  } else {
+    // The AI drafts and Resolved tiles can be narrowed to one inbox (their
+    // panel's inbox filter): the list takes the same `inbox` ("" = every inbox).
+    const key = dashInboxKey(p.inbox);
+    const all = data.support || [];
+    const byId = new Map(all.map((t) => [t.id, t]));
+    if (key) title += ` · ${(INBOXES.find((i) => i.key === key) || {}).label || key}`;
+    if (list === "drafts" || list === "drafts-high") {
+      rows = draftsKpi(all, now, key).drafts.filter((d) => list === "drafts" || d.confidence >= 0.8)
+        .map((d) => support(byId.get(d.id), `${Math.round(d.confidence * 100)}% confident`));
+    } else if (list === "faq-gaps") {
+      rows = resolvedKpi(all, now, key).gaps.map((g) => support(byId.get(g.id), fmtDayLabel(g.at)));
+    } else {
+      const y = localDayRange(1, now);
+      rows = all.filter((t) => t.status !== "spam" && (!key || inInbox(t, key)) && t.status === "resolved" && inRange(t.resolvedAt, y) && (list !== "resolved-ai" || (t.resolvedBy === "ai" && !t.humanInvolved)))
+        .sort((a, b) => b.resolvedAt - a.resolvedAt)
+        .map((t) => support(t, t.resolvedBy === "ai" && !t.humanInvolved ? "Resolved by the AI" : "Resolved"));
+    }
+  }
+  return { title, rows };
+}
+const stageLabelOf = (l) => {
+  const s = PIPELINE.find((x) => x.key === (l.stage || "lead"));
+  return l.leadType === "operator" ? "Network operator" : s ? s.label : String(l.stage || "");
+};

@@ -203,6 +203,18 @@ sits in the pinned filter bar between **My tasks** and **Release** (23 Nov 2026)
 so it stays on screen while the board scrolls, and matches key, title,
 description text and labels. (The prototype still shows it in the page header.) **Clear filters** resets all.
 
+**KB-FLT-1a Dashboard filter** (24 Nov 2026, uAp6fukjDyNxKusotmcQ). A Staff
+Kanban count on the console's Dashboard opens the board on exactly that
+count's tasks: `#staff-kanban?show=<open|overdue|unassigned|unestimated|waiting>`,
+with `&column=<todo|progress|testing>`, `&release=<id>` (the tile's release,
+when it counts one) and `&assignee=<email|none>` (one person's row in the
+tile's panel). Opening it clears every other filter. Every `show` is open work
+only (not done, not an epic, not an archived project's task), by the same rules
+the tile counts with (`matchesShow` in `kanban-core.js`): overdue is due before
+today, waiting is in Ready for Testing and assigned to the viewer. A chip in
+the filter bar ("Dashboard: Overdue") says which one is on, and its × (or
+**Clear filters**) removes it; the address keeps it until then.
+
 **KB-FLT-2 Keep position.** Changing any filter keeps the page's scroll
 position (and the phone's current column). A scroll the person makes straight
 after the change is theirs and is never put back.

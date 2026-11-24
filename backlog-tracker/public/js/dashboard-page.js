@@ -6,6 +6,13 @@
 // history, a trend arrow and a status colour. The rules live in
 // dashboard-core.js; this file reads the data and draws the tiles.
 //
+// Every count is a drill-down (uAp6fukjDyNxKusotmcQ): a count on a tile or in
+// its panel opens the list behind it (dashboard-core.js drillRows /
+// kanbanDrillHash) instead of toggling the panel; the click is taken before the
+// tile's own. Staff Kanban and the Needs a person queue open filtered; the other
+// counts open the Dashboard's list view (#dashboard?list=…), whose rows open
+// each ticket. Clicking anywhere else on a tile still only pins its panel.
+//
 // Dashboard v2 (GUI9xPe3CJY3LyMws88m): a tile never navigates. Clicking or
 // tapping it pins its summary panel open, inline and full width directly
 // under the tile's row, until it is closed or another tile is chosen; the
@@ -23,7 +30,7 @@
 // no tile left is not shown either.
 
 import { collection, doc, getDoc, getDocs, limit, orderBy, query, where } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
-import { deliveryKpi, DELIVERY_RANGES, deliveryRange, flowKpi, kanbanKpi, leadsKpi, funnelKpi, needsPersonKpi, draftsKpi, resolvedKpi, dashboardRelease, localDayRange, lastDays, sparklinePoints, trendShort, tileStatus, rowEnd, SERIES_DAYS, fmtCount, fmtEffort, fmtWait, fmtSpan, fmtDayLabel } from "./dashboard-core.js";
+import { deliveryKpi, DELIVERY_RANGES, deliveryRange, flowKpi, kanbanKpi, leadsKpi, funnelKpi, needsPersonKpi, draftsKpi, resolvedKpi, dashboardRelease, localDayRange, lastDays, sparklinePoints, trendShort, tileStatus, rowEnd, SERIES_DAYS, fmtCount, fmtEffort, fmtWait, fmtSpan, fmtDayLabel, drillHash, parseDrill, drillRows, kanbanDrillHash } from "./dashboard-core.js";
 import { ingestStatusView, ingestFailureText, fmtUpdated } from "./funnel-core.js";
 import { normaliseTicket, confidenceBand, pct as confPct, INBOXES, inboxOf, supportHash } from "./support-core.js";
 
@@ -62,7 +69,8 @@ export const GROUPS = [
   { key: "support", label: "Support" },
 ];
 
-// ctx: { root, db, items(), projects(), releases(), canView(section), go(hash), me?(), now?(), attention? }
+// ctx: { root, db, items(), projects(), releases(), canView(section), go(hash), me?(), now?(), attention?, openItem?(id), hash?() }
+// openItem(id): opens an Agent board ticket (a list row); hash(): the address now.
 // me(): the viewer's email, so Staff Kanban can flag Testing tasks waiting on them.
 // attention: the Needs attention strip (app.js draws and wires it). It is kept
 // as the same element, placed below the tile sections, in normal flow, so it
@@ -96,7 +104,8 @@ export function mountDashboard(ctx) {
       <span class="dash-day" id="dash-day"></span>
       <button type="button" class="btn-outline dash-refresh" id="dash-refresh"><span class="material-symbols-outlined" aria-hidden="true">refresh</span>Refresh</button>
     </div>
-    <div class="dash-groups" id="dash-groups"></div>`;
+    <div class="dash-groups" id="dash-groups"></div>
+    <section class="dash-list" id="dash-list" aria-labelledby="dash-list-title" hidden></section>`;
   if (attention) root.querySelector("#dash-groups").after(attention);
   // One summary panel, moved to sit under the pinned tile's row (placePanel).
   const panel = document.createElement("div");
@@ -112,14 +121,22 @@ export function mountDashboard(ctx) {
   root.querySelector("#dash-refresh").addEventListener("click", () => refresh(true));
   root.addEventListener("click", (e) => {
     if (!root.contains(e.target)) return;
+    // A count: open its list. Taken before the tile's own click, so a count
+    // inside a tile never toggles or closes the panel.
+    // (The panel's "Open list" buttons, .dash-tip-open[data-go], go the same way.)
+    const goEl = e.target.closest("[data-go]");
+    if (goEl && root.contains(goEl)) {
+      if (goEl.tagName === "A" && (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1)) return; // a new tab
+      e.preventDefault(); e.stopPropagation(); closeInfos(); ctx.go(goEl.dataset.go); return;
+    }
+    const itemEl = e.target.closest("[data-open-item]");
+    if (itemEl) { e.preventDefault(); if (ctx.openItem) ctx.openItem(itemEl.dataset.openItem); return; }
     const info = e.target.closest(".dash-info");
     if (info) { toggleInfo(info.closest(".dash-tile-wrap")); return; }
     closeInfos();
     if (e.target.closest(".dash-panel-close")) { unpin(true); return; }
     const rangeBtn = e.target.closest("[data-delivery-range]");
     if (rangeBtn) { setDeliveryRange(rangeBtn.dataset.deliveryRange); return; }
-    const goto = e.target.closest(".dash-tip-open[data-go]");
-    if (goto) { ctx.go(goto.dataset.go); return; }
     const pick = e.target.closest("[data-dash-inbox]");
     if (pick && pinned in inboxFilter) {
       const key = pick.dataset.dashInbox;
@@ -266,6 +283,11 @@ export function mountDashboard(ctx) {
   const tipList = (rows, empty) => (rows.length ? `<ul class="dash-tip-list">${rows.join("")}</ul>` : `<p class="dash-tip-empty">${esc(empty)}</p>`);
   const pending = (s) => s.status === "idle" || (s.status === "loading" && !s.data);
 
+  // A count that opens its list. In a tile it is a span (the tile is a button,
+  // which can't hold a link; data-touch-tap makes the iPad tap it, not the tile);
+  // in the panel it is a link, so a keyboard reaches it too.
+  const goSpan = (hash, html, label) => `<span class="dash-go" data-go="${esc(hash)}" data-touch-tap title="${esc(label || "Open the list")}">${html}</span>`;
+  const goLink = (hash, html, label) => `<a class="dash-go" href="${esc(hash)}" data-go="${esc(hash)}"${label ? ` title="${esc(label)}"` : ""}>${html}</a>`;
   function tileBody(t) {
     const n = now();
     const count = (x, one, many = `${one}s`) => `${fmtCount(x)} ${x === 1 ? one : many}`;
@@ -273,36 +295,38 @@ export function mountDashboard(ctx) {
     if (t.key === "delivery") {
       const k = deliveryKpi(ctx.items(), ctx.projects(), n, deliveryRangeKey);
       const per = k.period;
+      // Each count opens its tickets (uAp6fukjDyNxKusotmcQ), for the range shown.
+      const dlist = per.range === "week" ? "delivery-week" : "delivery-yesterday";
       const when = per.range === "week" ? "in the last 7 days" : "yesterday";
       const switcher = `<div class="seg dash-range" role="group" aria-label="Delivery range">${DELIVERY_RANGES.map((r) => {
         const on = r.key === per.range;
         return `<button type="button" data-delivery-range="${r.key}" aria-pressed="${on}"${on ? ' class="active"' : ""}>${esc(r.label)}</button>`;
       }).join("")}</div>`;
       const rows = per.projects.map((p) => `<li data-project="${esc(p.id)}"><strong>${esc(p.name)}</strong><span class="dash-tip-grid dash-delivery-grid">`
-        + `<span>Tickets</span><b>${fmtCount(p.count)}</b>${changeHtml(p.countChange)}`
+        + `<span>Tickets</span><b>${goLink(drillHash(dlist, { project: p.id }), fmtCount(p.count), `${p.name}: deployed ${when}`)}</b>${changeHtml(p.countChange)}`
         + `<span>First-time pass</span><b>${pct(p.firstPassPct)}</b>${changeHtml(p.passChange)}`
         + `<span>Lead time</span><b>${esc(fmtSpan(p.leadTimeMs))}</b><span></span></span></li>`);
       return {
-        metric: per.metric, value: fmtCount(per.count), change: per.countChange, series: k.series, status: tileStatus("delivery", k),
+        metric: per.metric, value: fmtCount(per.count), go: drillHash(dlist), change: per.countChange, series: k.series, status: tileStatus("delivery", k),
         extra: `<span class="dash-sub">First-time pass <b>${pct(per.firstPassPct)}</b> ${changeHtml(per.passChange)}</span><span class="dash-sub">Lead time <b>${esc(fmtSpan(per.leadTimeMs))}</b></span>`,
-        tip: `<div class="dash-tip-wide">${switcher}</div><p class="dash-tip-title">By project · ${count(per.count, "ticket")} deployed ${when}, against ${esc(per.than)}</p>${tipList(rows, `Nothing deployed ${when} or in ${per.than}.`)}`,
+        tip: `<div class="dash-tip-wide">${switcher}</div><p class="dash-tip-title">By project · ${goLink(drillHash(dlist), count(per.count, "ticket"))} deployed ${when}, against ${esc(per.than)}</p>${tipList(rows, `Nothing deployed ${when} or in ${per.than}.`)}`,
       };
     }
     if (t.key === "flow") {
       const k = flowKpi(ctx.items(), ctx.projects(), n);
-      const parts = [[k.blocked, "blocked"], [k.failed, "failed testing"], [k.testing, "waiting to test"]].filter(([x]) => x).map(([x, l]) => `<span class="dash-sub">${x} ${l}</span>`).join("");
-      const rows = k.stuck.map((s) => `<li><span class="dash-tip-row"><strong>${esc(s.title)}</strong><b>${esc(s.waitedMs == null ? "—" : fmtWait(s.waitedMs))}</b></span>`
+      const parts = [[k.blocked, "blocked", "blocked"], [k.failed, "failed testing", "failed"], [k.testing, "waiting to test", "testing"]].filter(([x]) => x).map(([x, l, kind]) => `<span class="dash-sub">${goSpan(drillHash("flow-stuck", { kind }), `${x} ${l}`)}</span>`).join("");
+      const rows = k.stuck.map((s) => `<li><span class="dash-tip-row"><strong>${itemLink(s.id, s.title)}</strong><b>${esc(s.waitedMs == null ? "—" : fmtWait(s.waitedMs))}</b></span>`
         + `<span class="dash-tip-meta">${esc(s.project)} · ${esc(s.reason)}</span></li>`);
       // Retested tickets (0I93kb0fqXL4Qr4qyzwv): beside the stuck count, and
       // listed in the panel with how many times each went back; "Open list"
       // opens the same tickets as the Testing loops page's Retested view.
-      const retestRows = k.retested.map((r) => `<li><span class="dash-tip-row"><strong>${esc(r.title)}</strong><b>Retested ${r.times === 1 ? "once" : `${fmtCount(r.times)} times`}</b></span>`
+      const retestRows = k.retested.map((r) => `<li><span class="dash-tip-row"><strong>${itemLink(r.id, r.title)}</strong><b>Retested ${r.times === 1 ? "once" : `${fmtCount(r.times)} times`}</b></span>`
         + `<span class="dash-tip-meta">${esc(r.project)} · Round ${fmtCount(r.round)}</span></li>`);
-      const retestSub = `<span class="dash-sub">${icon("replay")}<b>${fmtCount(k.retestedCount)}</b> retested</span>`;
+      const retestSub = `<span class="dash-sub">${goSpan(RETESTED_LIST, `${icon("replay")}<b>${fmtCount(k.retestedCount)}</b> retested`, "Tickets that went back through retesting")}</span>`;
       return {
-        metric: "Tickets stuck", value: fmtCount(k.value), status: tileStatus("flow", k), extra: (parts || `<span class="dash-sub">Nothing stuck</span>`) + retestSub,
-        tip: `<p class="dash-tip-title">Stuck now, longest wait first</p>${tipList(rows, "Nothing is blocked, failed or waiting over a day to be tested.")}`
-          + `<div class="dash-tip-head"><p class="dash-tip-title">Went back through retesting (${fmtCount(k.retestedCount)}), most retested first</p>`
+        metric: "Tickets stuck", value: fmtCount(k.value), go: drillHash("flow-stuck"), status: tileStatus("flow", k), extra: (parts || `<span class="dash-sub">Nothing stuck</span>`) + retestSub,
+        tip: `<p class="dash-tip-title">${goLink(drillHash("flow-stuck"), `Stuck now (${k.value})`)}, longest wait first</p>${tipList(rows, "Nothing is blocked, failed or waiting over a day to be tested.")}`
+          + `<div class="dash-tip-head"><p class="dash-tip-title">${goLink(RETESTED_LIST, `Went back through retesting (${fmtCount(k.retestedCount)})`)}, most retested first</p>`
           + `<button type="button" class="dash-tip-open" data-go="${RETESTED_LIST}">Open list${icon("arrow_forward")}</button></div>`
           + tipList(retestRows, "No ticket has been sent back from testing."),
       };
@@ -314,15 +338,17 @@ export function mountDashboard(ctx) {
       const nameOf = (e) => (s.data.names && s.data.names.get(String(e).toLowerCase())) || String(e).split("@")[0];
       const k = kanbanKpi({ release: s.data.release, open: s.data.open, releaseTasks: s.data.releaseTasks, projects: ctx.projects(), me: ctx.me ? ctx.me() : "", now: n }, nameOf);
       const f = k.flags;
-      const flags = [[f.overdue, "overdue"], [f.unassigned, "unassigned"], [f.unestimated, "unestimated"], [f.waitingOnMe, "waiting on you"]]
-        .filter(([x]) => x).map(([x, l]) => `<span class="dash-flag">${icon("warning")}${x} ${l}</span>`).join("");
+      // The board filtered to the tile's own scope: its release, else all open work.
+      const kb = (o) => kanbanDrillHash({ ...o, release: k.allWork || !k.release ? "" : k.release.id });
+      const flags = [[f.overdue, "overdue", "overdue"], [f.unassigned, "unassigned", "unassigned"], [f.unestimated, "unestimated", "unestimated"], [f.waitingOnMe, "waiting on you", "waiting"]]
+        .filter(([x]) => x).map(([x, l, show]) => `<span class="dash-flag">${goSpan(kb({ show }), `${icon("warning")}${x} ${l}`)}</span>`).join("");
       const rows = k.people.map((p) => `<li><span class="dash-tip-row"><strong>${esc(p.name)}</strong><b>${esc(fmtEffort(p.hours))}</b></span>`
-        + `<span class="dash-tip-meta">${count(p.tasks, "task")} open${p.overdue ? ` · ${p.overdue} overdue` : ""}</span>`
-        + (p.unestimated.length ? `<span class="dash-tip-warn">No estimate: ${p.unestimated.map((u) => esc(`${u.key}${u.title ? ` ${u.title}` : ""}`)).join(", ")}</span>` : "")
+        + `<span class="dash-tip-meta">${goLink(kb({ show: "open", assignee: p.id || "none" }), count(p.tasks, "task"), `${p.name}: open tasks`)} open${p.overdue ? ` · ${goLink(kb({ show: "overdue", assignee: p.id || "none" }), `${p.overdue} overdue`, `${p.name}: overdue tasks`)}` : ""}</span>`
+        + (p.unestimated.length ? `<span class="dash-tip-warn">No estimate: ${p.unestimated.map((u) => (u.key ? goLink(`#staff-kanban/ticket/${encodeURIComponent(u.key)}`, esc(`${u.key}${u.title ? ` ${u.title}` : ""}`)) : esc(u.title))).join(", ")}</span>` : "")
         + `</li>`);
       return {
-        metric: "Open tasks", value: fmtCount(k.value), status: tileStatus("kanban", k),
-        mini: `<span class="dash-cols">${k.columns.map((c) => `<span class="dash-col"><b>${fmtCount(c.count)}</b><span>${esc(c.label)}</span></span>`).join("")}</span>`,
+        metric: "Open tasks", value: fmtCount(k.value), go: kb({ show: "open" }), status: tileStatus("kanban", k),
+        mini: `<span class="dash-cols">${k.columns.map((c) => goSpan(kb({ show: "open", column: c.key }), `<b>${fmtCount(c.count)}</b><span>${esc(c.label)}</span>`, `${c.label}: open tasks`).replace('class="dash-go"', 'class="dash-go dash-col"')).join("")}</span>`,
         extra: `<span class="dash-sub">${esc(k.scopeLabel)}${k.progress ? ` · <b>${k.progress.pct}%</b> done` : ""}</span>${flags}`,
         tip: `<p class="dash-tip-title">Workload by person · ${esc(k.scopeLabel)}${k.progress ? ` · ${k.progress.done} of ${k.progress.total} done (${k.progress.pct}%)` : ""} · ${esc(k.effort)} left</p>${tipList(rows, "No open tasks.")}`,
       };
@@ -334,16 +360,16 @@ export function mountDashboard(ctx) {
       const k = leadsKpi(s.data, n);
       const a = k.needsAction;
       const names = (list) => (list.length ? `<ul class="dash-tip-names">${list.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : `<p class="dash-tip-empty">None</p>`);
-      const group = (title, list) => `<div class="dash-tip-col"><p class="dash-tip-title">${esc(title)}</p>${tipList(list.map((g) => `<li><span class="dash-tip-row"><strong>${esc(g.name)}</strong><b>${g.count}</b></span><span class="dash-tip-meta">${esc(g.leads.join(", "))}</span></li>`), "No new leads.")}</div>`;
-      const flags = [[a.stale.length, "stale"], [a.notContacted.length, "not contacted"]].filter(([x]) => x).map(([x, l]) => `<span class="dash-flag">${icon("warning")}${x} ${l}</span>`).join("");
+      const group = (title, by, list) => `<div class="dash-tip-col"><p class="dash-tip-title">${esc(title)}</p>${tipList(list.map((g) => `<li><span class="dash-tip-row"><strong>${esc(g.name)}</strong><b>${goLink(drillHash("leads-new", { by, group: g.name }), g.count, `New leads: ${g.name}`)}</b></span><span class="dash-tip-meta">${esc(g.leads.join(", "))}</span></li>`), "No new leads.")}</div>`;
+      const flags = [[a.stale.length, "stale", "leads-stale"], [a.notContacted.length, "not contacted", "leads-not-contacted"]].filter(([x]) => x).map(([x, l, list]) => `<span class="dash-flag">${goSpan(drillHash(list), `${icon("warning")}${x} ${l}`)}</span>`).join("");
       return {
-        metric: "New leads, 7 days", value: fmtCount(k.value), trend: k.trend, series: k.series, status: tileStatus("leads", k),
+        metric: "New leads, 7 days", value: fmtCount(k.value), go: drillHash("leads-new"), trend: k.trend, series: k.series, status: tileStatus("leads", k),
         mini: pipelineHtml(k.pipeline),
-        extra: `<span class="dash-sub">Yesterday <b>${fmtCount(k.yesterday)}</b></span>${flags}`,
-        tip: group("By source", k.bySource) + group("By industry", k.byIndustry) + group("By market", k.byMarket)
-          + `<div class="dash-tip-col"><p class="dash-tip-title">Pipeline</p><ol class="dash-tip-list">${k.pipeline.map((p) => `<li><span class="dash-tip-row"><span>${esc(p.label)}</span><b>${fmtCount(p.count)}</b></span>${p.conversionPct == null ? "" : `<span class="dash-tip-meta">${p.conversionPct}% reached it from ${esc(k.pipeline[k.pipeline.indexOf(p) - 1].label)}</span>`}</li>`).join("")}</ol></div>`
-          + `<div class="dash-tip-col"><p class="dash-tip-title">Stale: no activity for 7 days (${a.stale.length})</p>${names(a.stale)}`
-          + `<p class="dash-tip-title">Not contacted (${a.notContacted.length})</p>${names(a.notContacted)}</div>`,
+        extra: `<span class="dash-sub">${goSpan(drillHash("leads-yesterday"), `Yesterday <b>${fmtCount(k.yesterday)}</b>`)}</span>${flags}`,
+        tip: group("By source", "source", k.bySource) + group("By industry", "industry", k.byIndustry) + group("By market", "market", k.byMarket)
+          + `<div class="dash-tip-col"><p class="dash-tip-title">Pipeline</p><ol class="dash-tip-list">${k.pipeline.map((p) => `<li><span class="dash-tip-row"><span>${esc(p.label)}</span><b>${goLink(drillHash("leads-stage", { stage: p.key }), fmtCount(p.count), `Companies at ${p.label}`)}</b></span>${p.conversionPct == null ? "" : `<span class="dash-tip-meta">${p.conversionPct}% reached it from ${esc(k.pipeline[k.pipeline.indexOf(p) - 1].label)}</span>`}</li>`).join("")}</ol></div>`
+          + `<div class="dash-tip-col"><p class="dash-tip-title">${goLink(drillHash("leads-stale"), `Stale: no activity for 7 days (${a.stale.length})`)}</p>${names(a.stale)}`
+          + `<p class="dash-tip-title">${goLink(drillHash("leads-not-contacted"), `Not contacted (${a.notContacted.length})`)}</p>${names(a.notContacted)}</div>`,
       };
     }
     if (t.key === "funnel") {
@@ -351,7 +377,9 @@ export function mountDashboard(ctx) {
       if (pending(s)) return loadingBody("Visitors, 7 days");
       if (s.status === "error") return errorBody("Visitors, 7 days", s.error);
       const k = funnelKpi(s.data.rows, s.data.leads, n);
-      const steps = k.steps.map((st) => `<li${st.biggest ? ' class="dash-drop-max"' : ""}><span class="dash-tip-row"><span>${esc(st.label)}</span><b>${fmtCount(st.count)}</b></span>`
+      // Leads and (when they are leads) Opportunities are lists of leads; the visitor steps are GA4 totals.
+      const stepGo = (i) => (i === 3 ? drillHash("funnel-leads") : i === 4 && k.oppsFrom === "leads" ? drillHash("funnel-opps") : "");
+      const steps = k.steps.map((st, i) => `<li${st.biggest ? ' class="dash-drop-max"' : ""}><span class="dash-tip-row"><span>${esc(st.label)}</span><b>${stepGo(i) ? goLink(stepGo(i), fmtCount(st.count), st.label) : fmtCount(st.count)}</b></span>`
         + (st.dropOff == null ? "" : `<span class="dash-tip-meta">Drop-off ${fmtCount(st.dropOff)}${st.dropOffPct == null ? "" : ` (${st.dropOffPct}%)`}${st.biggest ? " · biggest" : ""}</span>`) + `</li>`);
       const change = (x) => (x.change ? ` <span class="dash-tip-change">${x.change > 0 ? "+" : "−"}${fmtCount(Math.abs(x.change))}</span>` : "");
       const rankRows = (list) => list.map((x, i) => `<li><span class="dash-tip-row"><span>${i + 1}. ${esc(x.name)}</span><b>${fmtCount(x.count)}${change(x)}</b></span></li>`);
@@ -363,7 +391,7 @@ export function mountDashboard(ctx) {
         // was last updated. The earlier figures stay.
         metric: "Visitors, 7 days", value: fmtCount(k.value), trend: iv.flagged ? null : k.trend, series: k.series,
         status: tileStatus("funnel", { ...k, dataNotUpdated: iv.flagged }),
-        mini: miniFunnelHtml(k.steps),
+        mini: miniFunnelHtml(k.steps, stepGo),
         extra: (iv.flagged ? `<span class="dash-flag">${icon("error")}Data not updated</span>` : "")
           + `<span class="dash-sub">Visitor to lead <b>${k.conversionPct == null ? "—" : `${k.conversionPct}%`}</b></span>`
           + (movers.length ? `<span class="dash-sub">${icon("trending_up")}${movers.join(" · ")}</span>` : ""),
@@ -386,38 +414,42 @@ export function mountDashboard(ctx) {
     if (t.key === "person") {
       const k = needsPersonKpi(s.data, n);
       const shown = k.tickets.slice(0, SUPPORT_TIP_ROWS);
+      const queue = supportHash({ queue: "needs-person" });
       return {
-        metric, value: fmtCount(k.count), status: tileStatus("person", k),
+        metric, value: fmtCount(k.count), go: queue, status: tileStatus("person", k),
         extra: `<span class="dash-sub">Oldest <b>${k.oldestMs == null ? "None" : esc(fmtWait(k.oldestMs))}</b></span>`,
-        tip: `<p class="dash-tip-title">Waiting for a person (${k.count}), longest first</p>${tipList(shown.map(waitRow), "Nobody is waiting.")}`
-          + (k.tickets.length > shown.length ? `<p class="dash-tip-empty">And ${k.tickets.length - shown.length} more in the Support Inbox.</p>` : ""),
+        tip: `<p class="dash-tip-title">${goLink(queue, `Waiting for a person (${k.count})`)}, longest first</p>${tipList(shown.map(waitRow), "Nobody is waiting.")}`
+          + (k.tickets.length > shown.length ? `<p class="dash-tip-empty">${goLink(queue, `And ${k.tickets.length - shown.length} more in the Support Inbox.`)}</p>` : ""),
       };
     }
     if (t.key === "drafts") {
       const k = draftsKpi(s.data, n, inboxFilter.drafts);
       const shown = k.drafts.slice(0, SUPPORT_TIP_ROWS);
       // With All inboxes, each row names its inbox ("Hello · <subject>").
-      const row = (d) => `<li><span class="dash-tip-row"><strong>${esc(d.customer)}</strong><b class="dash-conf" data-band="${confidenceBand(d.confidence)}">${esc(confPct(d.confidence))}</b></span>`
+      // Each count opens its list, for the inbox the filter shows (uAp6fukjDyNxKusotmcQ).
+      const dl = (list) => drillHash(list, { inbox: k.inbox });
+      const row = (d) => `<li><span class="dash-tip-row"><strong>${supportLink(d.id, d.customer)}</strong><b class="dash-conf" data-band="${confidenceBand(d.confidence)}">${esc(confPct(d.confidence))}</b></span>`
         + `<span class="dash-tip-meta">${esc([k.inbox ? "" : inboxNames(d.inboxes), d.subject, `waiting ${fmtWait(d.waitedMs)}`].filter(Boolean).join(" · "))}</span></li>`;
       return {
-        metric, value: fmtCount(k.count), status: tileStatus("drafts", k),
-        extra: `<span class="dash-sub">High confidence <b>${fmtCount(k.high)}</b></span>${onlyHtml(k.inbox)}`,
+        metric, value: fmtCount(k.count), go: dl("drafts"), status: tileStatus("drafts", k),
+        extra: `<span class="dash-sub">${goSpan(dl("drafts-high"), `High confidence <b>${fmtCount(k.high)}</b>`)}</span>${onlyHtml(k.inbox)}`,
         tip: inboxFilterHtml(k)
-          + `<p class="dash-tip-title">Drafts to approve${k.inbox ? ` in ${esc(inboxOf(k.inbox).label)}` : ""} (${k.count}), most confident first</p>${tipList(shown.map(row), k.inbox ? `No drafts waiting in ${inboxOf(k.inbox).label}.` : "No drafts waiting.")}`
-          + (k.drafts.length > shown.length ? `<p class="dash-tip-empty">And ${k.drafts.length - shown.length} more${k.inbox ? ` in ${esc(inboxOf(k.inbox).label)}` : ""}.</p>` : ""),
+          + `<p class="dash-tip-title">${goLink(dl("drafts"), `Drafts to approve${k.inbox ? ` in ${esc(inboxOf(k.inbox).label)}` : ""} (${k.count})`)}, most confident first</p>${tipList(shown.map(row), k.inbox ? `No drafts waiting in ${inboxOf(k.inbox).label}.` : "No drafts waiting.")}`
+          + (k.drafts.length > shown.length ? `<p class="dash-tip-empty">${goLink(dl("drafts"), `And ${k.drafts.length - shown.length} more${k.inbox ? ` in ${esc(inboxOf(k.inbox).label)}` : ""}.`)}</p>` : ""),
       };
     }
     const k = resolvedKpi(s.data, n, inboxFilter.resolved);
     const where = k.inbox ? ` in ${esc(inboxOf(k.inbox).label)}` : "";
-    const gaps = k.gaps.slice(0, SUPPORT_TIP_ROWS).map((g) => `<li><span class="dash-tip-row"><strong>${esc(g.subject || "(no subject)")}</strong><b>${esc(fmtDayLabel(g.at))}</b></span>`
+    const rl = (list) => drillHash(list, { inbox: k.inbox });
+    const gaps = k.gaps.slice(0, SUPPORT_TIP_ROWS).map((g) => `<li><span class="dash-tip-row"><strong>${supportLink(g.id, g.subject || "(no subject)")}</strong><b>${esc(fmtDayLabel(g.at))}</b></span>`
       + `<span class="dash-tip-meta">${esc([k.inbox ? "" : inboxNames(g.inboxes), g.customer].filter(Boolean).join(" · "))}</span></li>`);
     return {
-      metric, value: fmtCount(k.value), trend: k.trend, status: tileStatus("resolved", k),
-      extra: `<span class="dash-sub">By AI alone <b>${k.aiPct == null ? "—" : `${k.aiPct}%`}</b></span>${onlyHtml(k.inbox)}`,
+      metric, value: fmtCount(k.value), go: rl("resolved-yesterday"), trend: k.trend, status: tileStatus("resolved", k),
+      extra: `<span class="dash-sub">${goSpan(rl("resolved-ai"), `By AI alone <b>${k.aiPct == null ? "—" : `${k.aiPct}%`}</b>`, "Resolved yesterday by the AI alone")}</span>${onlyHtml(k.inbox)}`,
       tip: inboxFilterHtml(k)
-        + `<p class="dash-tip-wide dash-tip-empty">${fmtCount(k.value)} resolved yesterday${where}, ${fmtCount(k.aiCount)} by the AI with no person involved.</p>`
-        + `<p class="dash-tip-title">FAQ gaps: questions the Help Centre couldn't answer${where}, last 30 days (${k.gaps.length})</p>${tipList(gaps, k.inbox ? `No gaps in ${inboxOf(k.inbox).label} in the last 30 days.` : "No gaps in the last 30 days.")}`
-        + (k.gaps.length > gaps.length ? `<p class="dash-tip-empty">And ${k.gaps.length - gaps.length} more.</p>` : ""),
+        + `<p class="dash-tip-wide dash-tip-empty">${goLink(rl("resolved-yesterday"), `${fmtCount(k.value)} resolved yesterday`)}${where}, ${goLink(rl("resolved-ai"), `${fmtCount(k.aiCount)} by the AI`)} with no person involved.</p>`
+        + `<p class="dash-tip-title">${goLink(rl("faq-gaps"), `FAQ gaps: questions the Help Centre couldn't answer${where}, last 30 days (${k.gaps.length})`)}</p>${tipList(gaps, k.inbox ? `No gaps in ${inboxOf(k.inbox).label} in the last 30 days.` : "No gaps in the last 30 days.")}`
+        + (k.gaps.length > gaps.length ? `<p class="dash-tip-empty">${goLink(rl("faq-gaps"), `And ${k.gaps.length - gaps.length} more.`)}</p>` : ""),
     };
   }
   const inboxNames = (keys) => (keys || []).map((key) => inboxOf(key).label).join(", ");
@@ -433,15 +465,18 @@ export function mountDashboard(ctx) {
       return `<button type="button" class="dash-inbox-choice${on ? " active dash-inbox-on" : ""}" data-dash-inbox="${c.key}" aria-pressed="${on}">${esc(c.label)} <span class="dash-inbox-count">${fmtCount(c.n)}</span></button>`;
     }).join("")}</div>`;
   }
-  const waitRow = (w) => `<li><span class="dash-tip-row"><strong>${esc(w.customer)}</strong><b>${esc(fmtWait(w.waitedMs))}</b></span>${w.subject ? `<span class="dash-tip-meta">${esc(w.subject)}</span>` : ""}</li>`;
+  // A row's own ticket: an Agent board ticket opens its modal; a Support ticket its page.
+  const itemLink = (id, text) => `<button type="button" class="link-btn dash-item" data-open-item="${esc(id)}">${esc(text)}</button>`;
+  const supportLink = (id, text) => goLink(supportHash({ view: "ticket", ticketId: id }), esc(text));
+  const waitRow = (w) => `<li><span class="dash-tip-row"><strong>${supportLink(w.id, w.customer)}</strong><b>${esc(fmtWait(w.waitedMs))}</b></span>${w.subject ? `<span class="dash-tip-meta">${esc(w.subject)}</span>` : ""}</li>`;
   // Lead → Closed Won: companies at each stage now, the conversion from the stage before under it.
   function pipelineHtml(pipeline) {
-    return `<span class="dash-pipe" aria-label="Pipeline">${pipeline.map((p) => `<span class="dash-pipe-step"><span class="dash-pipe-label">${esc(p.label)}</span><b>${fmtCount(p.count)}</b>`
+    return `<span class="dash-pipe" aria-label="Pipeline">${pipeline.map((p) => `<span class="dash-go dash-pipe-step" data-go="${esc(drillHash("leads-stage", { stage: p.key }))}" data-touch-tap title="${esc(`Companies at ${p.label}`)}"><span class="dash-pipe-label">${esc(p.label)}</span><b>${fmtCount(p.count)}</b>`
       + `<span class="dash-pipe-conv">${p.conversionPct == null ? "" : `${p.conversionPct}%`}</span></span>`).join("")}</span>`;
   }
   // Visitors → Industry → Engaged → Leads → Opps, the biggest drop-off in amber.
-  function miniFunnelHtml(steps) {
-    return `<span class="dash-mini-funnel">${steps.map((st) => `<span class="dash-mini-step${st.biggest ? " dash-drop-max" : ""}"><span class="dash-pipe-label">${esc(st.short)}</span><b>${fmtCount(st.count)}</b>`
+  function miniFunnelHtml(steps, stepGo = () => "") {
+    return `<span class="dash-mini-funnel">${steps.map((st, i) => `<span class="dash-mini-step${st.biggest ? " dash-drop-max" : ""}${stepGo(i) ? ` dash-go" data-go="${esc(stepGo(i))}" data-touch-tap title="${esc(st.label)}` : ""}"><span class="dash-pipe-label">${esc(st.short)}</span><b>${fmtCount(st.count)}</b>`
       + `<span class="dash-pipe-conv">${st.dropOffPct == null ? "" : `−${st.dropOffPct}%`}</span></span>`).join("")}</span>`;
   }
   function loadingBody(metric) { return { metric, value: "…", extra: "", tip: `<p class="dash-tip-empty">Loading…</p>`, loading: true }; }
@@ -453,7 +488,8 @@ export function mountDashboard(ctx) {
     const b = tileBody(t);
     const st = b.status || null;
     const dot = st ? `<span class="dash-status" data-level="${st.level}" title="${esc(st.reason)}"></span><span class="visually-hidden">${esc(st.reason)}.</span>` : "";
-    const main = `<span class="dash-metric">${esc(b.metric)}</span><span class="dash-figure"><span class="dash-value">${b.value}</span>${b.trend ? trendHtml(b.trend) : b.change ? changeHtml(b.change) : ""}</span>`;
+    const value = b.go ? goSpan(b.go, b.value, `${t.title}: open the list`) : b.value;
+    const main = `<span class="dash-metric">${esc(b.metric)}</span><span class="dash-figure"><span class="dash-value">${value}</span>${b.trend ? trendHtml(b.trend) : b.change ? changeHtml(b.change) : ""}</span>`;
     const spark = b.series ? sparkHtml(b.series) : "";
     const inner = `<span class="dash-tile-head"><span class="dash-tile-icon">${icon(t.icon)}</span><span class="dash-tile-title">${esc(t.title)}</span>${dot}</span>`
       + main
@@ -566,6 +602,12 @@ export function mountDashboard(ctx) {
     const dayText = `Yesterday, ${fmtDayLabel(y.from)}`;
     const dayEl = root.querySelector("#dash-day");
     if (dayEl.textContent !== dayText) dayEl.textContent = dayText;
+    // #dashboard?list=…: a count's list in place of the tiles (renderList).
+    const drill = parseDrill(ctx.hash ? ctx.hash() : window.location.hash);
+    root.classList.toggle("dash-listing", !!drill);
+    root.querySelector("#dash-list").hidden = !drill;
+    if (drill) { renderList(drill); return; }
+    lastList = "";
     const groups = GROUPS.map((g) => ({ g, tiles: TILES.filter((t) => t.group === g.key && allowed(t)) })).filter((x) => x.tiles.length);
     const host = root.querySelector("#dash-groups");
     if (pinned && !groups.some((x) => x.tiles.some((t) => t.key === pinned))) { pinned = null; panel.hidden = true; }
@@ -589,6 +631,34 @@ export function mountDashboard(ctx) {
     lastPanel = { key: null, body: null };
     if (pinned) fillPanel(written.get(pinned));
     placePanel();
+  }
+  // ── A count's list (#dashboard?list=<key>&…) ────────────────────────────
+  // The rows are dashboard-core.js drillRows(): the same rules the tile counts
+  // with, read from the same sources, so the list has the count's number.
+  // Agent board tickets open their modal; Support tickets their page.
+  let lastList = "";
+  const LIST_TILE = (list) => (list.startsWith("delivery") ? "delivery" : list === "flow-stuck" ? "flow" : list.startsWith("leads") ? "leads"
+    : list.startsWith("funnel") ? "funnel" : list.startsWith("drafts") ? "drafts" : "resolved");
+  function renderList(drill) {
+    const el = root.querySelector("#dash-list");
+    const tile = TILES.find((t) => t.key === LIST_TILE(drill.list));
+    const back = `<a class="dash-go dash-list-back" href="#dashboard" data-go="#dashboard">${icon("arrow_back")}Dashboard</a>`;
+    let html;
+    const s = tile.src === "items" ? { status: "ok" } : src[tile.src === "funnel" ? "leads" : tile.src];
+    if (!allowed(tile)) html = `${back}<p class="promote-empty">Your role doesn't include this list.</p>`;
+    else if (pending(s) || (s.status === "loading" && !s.data)) html = `${back}<p class="dash-tip-empty">Loading…</p>`;
+    else if (s.status === "error") html = `${back}<p class="dash-tip-empty">Couldn't load: ${esc(s.error)}</p>`;
+    else {
+      const out = drillRows(drill.list, drill.params, { items: ctx.items(), projects: ctx.projects(), leads: src.leads.data || [], support: src.support.data || [] }, now());
+      const noun = (n, kind) => (kind === "lead" ? (n === 1 ? "lead" : "leads") : (n === 1 ? "ticket" : "tickets"));
+      const kind = drill.list.startsWith("leads") || drill.list.startsWith("funnel") ? "lead" : "ticket";
+      const row = (r) => `<li><span class="dash-tip-row"><strong>${r.kind === "ticket" ? itemLink(r.id, r.title) : r.kind === "support" ? supportLink(r.id, r.title) : esc(r.title)}</strong></span>`
+        + (r.meta ? `<span class="dash-tip-meta">${esc(r.meta)}</span>` : "") + `</li>`;
+      html = `${back}<div class="dash-list-head"><span class="dash-tile-icon">${icon(tile.icon)}</span><h3 class="dash-list-title" id="dash-list-title">${esc(out.title)}</h3></div>`
+        + `<p class="dash-list-count"><b>${fmtCount(out.rows.length)}</b> ${noun(out.rows.length, kind)}</p>`
+        + (out.rows.length ? `<ul class="dash-tip-list dash-list-rows">${out.rows.map(row).join("")}</ul>` : `<p class="dash-tip-empty">Nothing in this list now.</p>`);
+    }
+    if (html !== lastList) { el.innerHTML = html; lastList = html; }
   }
   function patchTile(host, t, parts) {
     const wrap = host.querySelector(`.dash-tile-wrap[data-tile="${t.key}"]`);

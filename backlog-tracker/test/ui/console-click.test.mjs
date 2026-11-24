@@ -3565,7 +3565,7 @@ const scenarios = [
       assert.strictEqual(await c.page.$eval(`${tile} .dash-status`, (el) => el.dataset.level), "alert", "the tile's status is red while a source failed");
       // The tile's summary panel says what failed and when the data was last updated.
       await c.page.mouse.move(2, 2);
-      await c.click(`${tile} .dash-tile`, "pin the funnel tile");
+      await c.click(`${tile} .dash-tile .dash-tile-head`, "pin the funnel tile");
       await c.visible("#dash-panel");
       const tipText = await c.text("#dash-panel");
       assert.ok(tipText.includes("GA4 didn't update") && tipText.includes("401") && tipText.includes("Updated"), `the panel says what failed and when the data was last updated: ${tipText}`);
@@ -3858,7 +3858,7 @@ const scenarios = [
         if (Math.abs(pr.width - host.width) > 2) return `panel ${pr.width}px wide, the grid ${host.width}px`;
         return "ok";
       }, k);
-      const pinTile = async (k) => { await c.click(`.dash-tile-wrap[data-tile="${k}"] .dash-tile`, `pin the ${k} tile`); await c.visible(panel); };
+      const pinTile = async (k) => { await c.click(`.dash-tile-wrap[data-tile="${k}"] .dash-tile .dash-tile-head`, `pin the ${k} tile`); await c.visible(panel); };
       await c.page.mouse.move(2, 2);
       await pinTile("kanban");
       assert.strictEqual(new URL(c.page.url()).hash, "#dashboard", "a tile never navigates");
@@ -3942,9 +3942,9 @@ const scenarios = [
       await c.click("#dash-panel .dash-panel-close", "Close");
       await c.hidden(panel);
       assert.strictEqual(await c.page.evaluate(() => document.activeElement && document.activeElement.closest(".dash-tile-wrap")?.dataset.tile), "resolved", "focus returns to the tile");
-      await c.click('.dash-tile-wrap[data-tile="leads"] .dash-tile', "pin leads again");
+      await c.click('.dash-tile-wrap[data-tile="leads"] .dash-tile .dash-tile-head', "pin leads again");
       await c.visible(panel);
-      await c.click('.dash-tile-wrap[data-tile="leads"] .dash-tile', "the pinned tile again closes it");
+      await c.click('.dash-tile-wrap[data-tile="leads"] .dash-tile .dash-tile-head', "the pinned tile again closes it");
       await c.hidden(panel);
       assert.strictEqual(new URL(c.page.url()).hash, "#dashboard", "still on the Dashboard");
 
@@ -3969,7 +3969,7 @@ const scenarios = [
         await settle(1180, 3, "funnel");
         await c.page.setViewportSize({ width: 820, height: 900 });
         await settle(820, 2, "funnel");
-        await c.click('.dash-tile-wrap[data-tile="funnel"] .dash-tile', "close the funnel panel");
+        await c.click('.dash-tile-wrap[data-tile="funnel"] .dash-tile .dash-tile-head', "close the funnel panel");
         await c.hidden(panel);
       }
 
@@ -4024,6 +4024,61 @@ const scenarios = [
       await c.boardReady();
       assert.strictEqual(new URL(c.page.url()).hash, "#board", "the Agent Board keeps an address of its own");
       assert.ok(await c.page.locator("#dashboard-page").isHidden(), "the Dashboard closed");
+      c.at("every count opens its own filtered list, and never just closes the overview (uAp6fukjDyNxKusotmcQ)");
+      await openFromNav(c, "build", "dashboard-btn", "dashboard-page");
+      await until(async () => (await c.page.locator('.dash-tile-wrap[data-tile="kanban"] .dash-value').first().innerText()) !== "…", "Staff Kanban to load", 8000);
+      await pinTile("kanban");
+      await c.click('.dash-tile-wrap[data-tile="kanban"] .dash-flag .dash-go[data-go*="show=waiting"]', "1 waiting on you, inside the pinned tile");
+      await c.visible("#staff-kanban-page", "the count opens Staff Kanban");
+      assert.ok(new URL(c.page.url()).hash.startsWith("#staff-kanban?show=waiting"), `the board's address keeps the filter: ${c.page.url()}`);
+      await until(async () => (await c.page.$$eval("#staff-kanban-page .kb-card", (els) => els.map((e) => e.dataset.key))).join() === "PH-4", "the board shows only the one task waiting on you", 8000);
+      assert.ok((await c.text("#kb-show-chip")).includes("Waiting on you in Testing"), "the board says which Dashboard filter it shows");
+      await c.click("#kb-show-clear", "clear the Dashboard filter");
+      await until(async () => (await c.page.locator("#staff-kanban-page .kb-card").count()) > 1, "the board shows every task again", 8000);
+      await openFromNav(c, "build", "dashboard-btn", "dashboard-page");
+      await c.page.evaluate(() => document.activeElement && document.activeElement.blur());
+      await c.click('.dash-tile-wrap[data-tile="kanban"] .dash-col[data-go*="column=todo"]', "the To do count");
+      await until(async () => (await c.page.$$eval("#staff-kanban-page .kb-card", (els) => els.map((e) => e.dataset.key).sort())).join() === "PH-1,PH-3", "To do shows its two open tasks", 8000);
+      await openFromNav(c, "build", "dashboard-btn", "dashboard-page");
+      const stuckCount = await c.page.locator('.dash-tile-wrap[data-tile="flow"] .dash-value').first().innerText();
+      await c.click('.dash-tile-wrap[data-tile="flow"] .dash-value .dash-go', "the Tickets stuck count");
+      await c.visible("#dash-list", "the count opens its list on the Dashboard");
+      assert.strictEqual(new URL(c.page.url()).hash, "#dashboard?list=flow-stuck");
+      assert.ok(await c.page.locator("#dash-panel").isHidden(), "the overview did not open");
+      assert.ok(await c.page.locator("#dash-groups").isHidden(), "the list replaces the tiles");
+      assert.strictEqual(await c.page.locator("#dash-list .dash-list-rows > li").count(), Number(stuckCount), "the list holds the count's tickets");
+      assert.strictEqual(await c.text("#dash-list .dash-list-count b"), stuckCount);
+      await c.click("#dash-list .dash-item", "open the stuck ticket");
+      await c.visible("#ei-backdrop", "a row opens its ticket");
+      await c.page.keyboard.press("Escape");
+      await c.hidden("#ei-backdrop");
+      await c.click("#dash-list .dash-list-back", "back to the Dashboard");
+      await c.visible("#dash-groups .dash-tile");
+      assert.strictEqual(new URL(c.page.url()).hash, "#dashboard");
+      await pinTile("leads");
+      const won = await c.page.locator('#dash-panel .dash-go[data-go*="stage=hot-lead"]').first().innerText();
+      await c.click('#dash-panel .dash-go[data-go*="stage=hot-lead"]', "Hot Lead in the panel's pipeline");
+      await c.visible("#dash-list");
+      assert.ok(await c.page.locator("#dash-panel").isHidden(), "a panel count opens the list, not the overview");
+      assert.strictEqual(String(await c.page.locator("#dash-list .dash-list-rows > li").count()), won, "the list holds the stage's companies");
+      assert.ok((await c.text("#dash-list")).includes("Old Grocer"));
+      await c.page.goBack();
+      await c.visible("#dash-groups .dash-tile", "Back returns to the tiles");
+      await pinTile("resolved");
+      await c.click('#dash-panel .dash-go[data-go*="list=faq-gaps"]', "the FAQ gaps count");
+      await c.visible("#dash-list");
+      assert.ok((await c.text("#dash-list")).includes("Custom fonts?"), "the FAQ gap is listed");
+      await c.click("#dash-list .dash-list-rows a.dash-go", "open the Support ticket");
+      await c.visible("#support-page");
+      assert.strictEqual(new URL(c.page.url()).hash, "#support/ticket/s6", "a Support row opens its ticket");
+      await openFromNav(c, "build", "dashboard-btn", "dashboard-page");
+      await c.click('.dash-tile-wrap[data-tile="person"] .dash-value .dash-go', "the Needs a person count");
+      await c.visible("#support-page");
+      assert.strictEqual(new URL(c.page.url()).hash, "#support", "Needs a person opens its queue, the Support Inbox's first");
+      await openFromNav(c, "build", "dashboard-btn", "dashboard-page");
+      await pinTile("delivery");
+      await c.click("#dash-panel .dash-panel-open", "Open section for Delivery");
+      await c.boardReady();
       c.at("a reload on the board stays on the board");
       await c.page.reload({ waitUntil: "domcontentloaded" });
       await c.boardReady();
@@ -4093,7 +4148,7 @@ const scenarios = [
       await until(async () => (await c.page.locator(`${tile} .dash-value`).first().innerText()) === "2", "two open tasks across active projects", 8000);
       const text = await c.text(`${tile} .dash-tile`);
       assert.ok(text.includes("All open work") && /1\s*To do/.test(text) && /1\s*In progress/.test(text), `all open work, by column: ${text}`);
-      await c.click(`${tile} .dash-tile`, "pin the Staff Kanban tile");
+      await c.click(`${tile} .dash-tile .dash-tile-head`, "pin the Staff Kanban tile");
       await c.visible("#dash-panel");
       assert.ok((await c.text("#dash-panel")).includes("16h (2d)"), "workload in hours with days at 8h a day");
     },

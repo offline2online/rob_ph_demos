@@ -8504,11 +8504,47 @@ shows is in the table above (cMyA3FMlUUrSjGtPkLZC, eight tiles).
   open at a time; the tile shows it is pinned (`aria-expanded`). The panel
   has an **Open section** link to the tile's section; the tile itself never
   navigates (people use the sidebar for that). Hover does not preview the
-  panel.
+  panel. A **count** on the tile is the exception (24 Nov 2026, below): it
+  opens its list, so the tile's own pin target is everywhere else on it (its
+  head, labels and spaces).
 - **Redraws keep the panel.** A backlogItems snapshot updates the figures
   in place: a focused tile keeps its focus, and a pinned panel stays open and
   shows the new figures. Only the panel moves when the row breaks change (a
   resize or rotation), never a tile.
+
+### Every count opens its filtered list (24 Nov 2026)
+
+Ticket uAp6fukjDyNxKusotmcQ. Every count on a tile or in its summary panel is
+a drill-down: clicking it opens the list behind that number, never just the
+section, and never toggles or closes the panel (the click is taken before the
+tile's own). In a tile a count is a span (a tile is a button), underlined on
+hover; in the panel it is a link, so a keyboard reaches it.
+
+- **Staff Kanban** opens filtered: `#staff-kanban?show=…` (kanban-staff-board
+  REQUIREMENTS.md → KB-FLT-1a). Open tasks, each column, overdue, unassigned,
+  unestimated and waiting on you, each scoped to the tile's release; in the
+  panel, a person's open and overdue tasks, and a task without an estimate
+  opens that task.
+- **Needs a person** opens its Support Inbox queue (`#support`), which counts
+  the same tickets. **AI drafts to approve** and **Resolved & automation** count
+  the inbox their panel's filter shows (every inbox by default), so their
+  counts open the Dashboard's list for that inbox (`&inbox=<key>`).
+- **Every other count opens the Dashboard's list view**,
+  `#dashboard?list=<key>&…` (`drillRows` in `dashboard-core.js`, picked by the
+  same rules the tile counts with, so the list holds the count's number). It
+  replaces the tiles and Needs attention, with a back link to the Dashboard, a
+  title and a count line; a ticket row opens the ticket over the Dashboard, a
+  Support row its ticket page; a lead row is its name, stage and source. The
+  lists: Delivery (deployed yesterday and in the last 7 days, all or one
+  project), Flow & blockers (stuck, or one kind: blocked, failed testing,
+  waiting to test; each stuck row in the panel opens its ticket), Leads (new
+  in 7 days, yesterday, a pipeline stage, stale, not contacted, a source,
+  industry or market group), Conversion funnel (its Lead step, and its
+  Opportunity step when that counts website leads), AI drafts (high
+  confidence), Resolved & automation (resolved yesterday, by the AI alone, FAQ
+  gaps), each for the inbox the tile's filter shows.
+- **Not drill-downs:** figures that are not a list of items: website visitors
+  and the funnel's GA4 steps, percentages, hours, lead time, the trend.
 
 Code: `public/js/dashboard-core.js` (rules, no DOM) and
 `public/js/dashboard-page.js` (reads and rendering); routing in `app.js`

@@ -12295,6 +12295,8 @@ function ensureDashboardUi() {
         canView: (key) => sectionAllowed(key),
         me: () => normEmail(auth.currentUser && auth.currentUser.email),
         go: (hash) => { setRouteHash(hash); applyRouteFromHash(); },
+        // A list row opens its Agent board ticket over the Dashboard.
+        openItem: (id) => openEditItemModal(id),
       });
       return dashboardUi;
     }).catch((err) => { dashboardUiLoading = null; throw err; });
@@ -12307,14 +12309,14 @@ function renderDashboardIfOpen() {
   const page = document.getElementById("dashboard-page");
   if (dashboardUi && page && !page.hidden) dashboardUi.render();
 }
-function openDashboardPage() {
+function openDashboardPage(hash) {
   const page = document.getElementById("dashboard-page");
   if (!page) return;
   if (page.hidden) closeAllSubPages();
   document.getElementById("projects-root").hidden = true;
   document.getElementById("board-page-header").hidden = true;
   page.hidden = false;
-  setRouteHash("#dashboard");
+  setRouteHash(typeof hash === "string" && hash.startsWith("#dashboard") ? hash : "#dashboard");
   updateTopbarTitle();
   ensureDashboardUi().then((ui) => { if (!page.hidden) ui.refresh(); })
     .catch((err) => showPageLoadError(page, "Dashboard", err, () => { pageRetries.dashboard = (pageRetries.dashboard || 0) + 1; openDashboardPage(); }));
@@ -14131,7 +14133,8 @@ function openDocsRouteFromHash(hash) {
 }
 function applyRouteFromHash() {
   const hash = window.location.hash;
-  if (hash === "#dashboard") { const d = document.getElementById("dashboard-page"); if (d && d.hidden) openDashboardPage(); }
+  // "#dashboard?list=…" is a count's list on the Dashboard (dashboard-page.js renderList).
+  if (hash === "#dashboard" || hash.startsWith("#dashboard?")) { const d = document.getElementById("dashboard-page"); if (d && d.hidden) openDashboardPage(hash); else renderDashboardIfOpen(); }
   else if (hash === "#board") { if (anySubPageOpen()) returnToBoard(); }
   else if (hash === "#faq-management" || hash.startsWith("#faq-management?")) openFaqArticlesPage(faqFilterFromHash(hash));
   else if (legacyUserManagementHash(hash)) { setRouteHash(legacyUserManagementHash(hash), { replace: true }); applyRouteFromHash(); }

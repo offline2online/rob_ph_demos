@@ -4039,7 +4039,10 @@ a 7-day sparkline where it has a daily history, a trend arrow and a green / ambe
 red status dot, with its explanation in an info tooltip. A tile never
 navigates: a click or tap pins its summary panel open, full width under its
 row, until it is closed or another tile is chosen; the panel's "Open section"
-goes to the section. Below the tiles sits **Needs attention**, which is on the
+goes to the section. Every count on a tile or in its panel opens its own
+list (24 Nov 2026): Staff Kanban filtered (`#staff-kanban?show=…`), the
+Needs a person queue, or the Dashboard's list view (`#dashboard?list=…`), each with
+the count's own items. Below the tiles sits **Needs attention**, which is on the
 Dashboard only (not the Agent Board or any other page). The Agent Board's own address is now `#board`. Rules in
 `public/js/dashboard-core.js`, page in `public/js/dashboard-page.js`; full
 spec in `REQUIREMENTS.md` → "Dashboard — the console's landing page". Tests:
