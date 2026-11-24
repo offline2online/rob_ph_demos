@@ -385,4 +385,22 @@ t("needs more work (KB-BOARD-5a): sent back from testing with a stamp, drawn fir
   assert.deepEqual(k.dropNeighbours(list, 0, { priority: "high" }), { prev: null, next: list[3] });
   assert.deepEqual(k.dropNeighbours(list, 4, { priority: "high", needsMoreWork: { reason: "z" } }), { prev: list[0], next: null });
 });
+t("Ready for Testing order (KB-BOARD-3b): bugs, then tasks, then epics, each by priority then rank; other columns unchanged", () => {
+  const rft = (key, type, priority, rank) => ({ key, type, priority, rank, status: "ready-for-testing" });
+  const list = [
+    rft("E1", "epic", "highest", 1), rft("T1", "task", "low", 2), rft("B1", "bug", "low", 3), rft("T2", "task", "highest", 4),
+    rft("B2", "bug", "high", 9), rft("B3", "bug", "high", 5), rft("E2", "epic", "", 0), rft("X", "", "high", 6),
+  ].sort(k.byBoardOrder);
+  assert.deepEqual(list.map((x) => x.key), ["B3", "B2", "B1", "T2", "X", "T1", "E1", "E2"]);
+  assert.equal(k.typeBand({ status: "ready-for-testing", type: "bug" }), 0);
+  assert.equal(k.typeBand({ status: "ready-for-testing", type: "toString" }), 1);
+  assert.equal(k.typeBand({ status: "in-progress", type: "epic" }), 0);
+  // in any other column type plays no part: priority, then rank
+  const ip = list.map((x) => ({ ...x, status: "in-progress" })).sort(k.byBoardOrder);
+  assert.deepEqual(ip.map((x) => x.key), ["E1", "T2", "B3", "X", "B2", "E2", "T1", "B1"]);
+  // a drag ranks a ticket among its own type and priority: a High task dropped at the top lands before X
+  assert.deepEqual(k.dropNeighbours(list, 0, { type: "task", priority: "high", status: "ready-for-testing" }), { prev: null, next: list[4] });
+  // a High bug dropped at the bottom lands after B2, the last High bug
+  assert.deepEqual(k.dropNeighbours(list, list.length, { type: "bug", priority: "high", status: "ready-for-testing" }), { prev: list[1], next: null });
+});
 console.log(`\n${n} passed`);

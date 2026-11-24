@@ -348,15 +348,16 @@ export function mountStaffKanban(ctx) {
   function moveTaskTo(key, status, beforeKey, lane, resolution, tester, extra = {}) {
     const task = taskByKey(key);
     if (!task || !canWrite()) return;
-    // The column as drawn (Needs more work first, then priority, then rank); the
-    // rank comes from the nearest tickets of the same band either side of the
-    // drop (KB-BOARD-3, KB-BOARD-5a), judged as the ticket will be after the move.
+    // The column as drawn (Needs more work first, then type in Ready for Testing,
+    // then priority, then rank); the rank comes from the nearest tickets of the
+    // same band either side of the drop (KB-BOARD-3, KB-BOARD-3b, KB-BOARD-5a),
+    // judged as the ticket will be after the move.
     const list = state.tasks.filter((t) => t.status === status && t !== task).sort(byBoardOrder);
     let idx = beforeKey ? list.findIndex((t) => t.key === beforeKey) : -1;
     if (idx < 0) idx = list.length;
     const stampAfter = extra.needsMoreWork && task.status === "ready-for-testing" && NEEDS_WORK_BACK.includes(status) ? normNeedsWork(extra.needsMoreWork)
       : NEEDS_WORK_BACK.includes(status) ? task.needsMoreWork || null : null;
-    const { prev, next } = dropNeighbours(list, idx, { ...task, needsMoreWork: stampAfter });
+    const { prev, next } = dropNeighbours(list, idx, { ...task, status, needsMoreWork: stampAfter });
     const patch = { rank: rankBetween(prev ? prev.rank : null, next ? next.rank : null) };
     const activity = [];
     const toAssignee = lane === undefined ? task.assignee : lane === "none" ? "" : lane;

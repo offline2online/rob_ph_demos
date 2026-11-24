@@ -139,6 +139,7 @@ or the board scrolls under a held finger, so a card lands where it was last
 shown.
 
 **KB-BOARD-3a Priority order** (24 Nov 2026). Every column lists its tickets
+(Ready for Testing grouped by type first, KB-BOARD-3b)
 from the highest priority down to the lowest: Highest, High, Medium, Low,
 Lowest (a ticket with no priority counts as Medium), and by rank (the manual
 drag order) within one priority. The same order applies on the plain board
@@ -152,6 +153,19 @@ another band). AC: on the unfiltered board and in a swimlane, a Highest ticket
 ranked last in its column is drawn first; two tickets of the same priority
 keep their drag order. `kanban-core.js` `byBoardOrder` / `dropNeighbours`,
 `kanban-core.test.mjs`, `staff-kanban.test.mjs` ("KB-PRIO-ORDER").
+
+**KB-BOARD-3b Ready for Testing by type** (24 Nov 2026). The Ready for
+Testing column groups its tickets by type before priority: **bugs at the
+top, then tasks, then epics at the bottom** (a ticket of any other type sits
+with the tasks). Within each group KB-BOARD-3a applies unchanged: Highest
+down to Lowest (none = Medium), then rank. The same order applies on the
+plain board, in each staff swimlane and with any filter on, before paging.
+A drag in Ready for Testing changes a ticket's place only among tickets of
+its own type and priority. Every other column keeps KB-BOARD-3a's order
+(type plays no part there). AC: in Ready for Testing a Low bug is drawn
+above a Highest task, and a Highest epic below a Low task.
+`kanban-core.js` `typeBand` / `byBoardOrder`, `kanban-core.test.mjs`,
+`staff-kanban.test.mjs` ("KB-TESTING-ORDER").
 
 **KB-BOARD-4 Closing targets.** While any card is dragged, the Completed /
 Withdrawn column's cards hide and two large drop targets fill the visible

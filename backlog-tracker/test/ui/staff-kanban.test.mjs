@@ -519,6 +519,34 @@ T("KB-PRIO-ORDER", "columns list tickets by priority, Highest first, then rank, 
   await p.done();
 });
 
+// Ready for Testing order (IhCe2GWsVMkO0Zc4UsPT, KB-BOARD-3b): bugs first by priority, then tasks, then epics
+// at the bottom, on the plain board and in a staff swimlane; other columns stay priority then rank.
+T("KB-TESTING-ORDER", "Ready for Testing lists bugs first, then tasks, then epics, each by priority", { on: on.desktop }, async (prof) => {
+  const seed = kanbanSeed();
+  const base = Object.values(KB.kanbanTasks).find((t) => t.open && t.type === "task");
+  const extraTasks = {}, extraCards = {};
+  // Ranked so rank order alone would put the epics first and the bugs last.
+  [["epic", "highest", 1], ["epic", "low", 2], ["task", "low", 3], ["task", "highest", 4], ["bug", "low", 5], ["bug", "high", 6], ["bug", "highest", 7]].forEach(([type, priority, r], i) => {
+    const key = `PH-${2100 + i}`;
+    const t = { ...base, key, number: 2100 + i, type, title: `Testing order ${i}`, status: "ready-for-testing", open: true, rank: -1000 + r, priority, assignee: LINH, resolution: null, labels: [], epic: "", links: [], attachments: [], flagged: false, needsMoreWork: null };
+    delete t.closedAt;
+    extraTasks[key] = t; extraCards[key] = cardOfTask(t);
+  });
+  seed.docs.kanbanTasks = { ...seed.docs.kanbanTasks, ...extraTasks };
+  seed.docs.kanbanCards = { ...seed.docs.kanbanCards, ...extraCards };
+  const p = await open(prof, "#staff-kanban", { seed, height: 2000 });
+  const want = ["PH-2106", "PH-2105", "PH-2104", "PH-2103", "PH-2102", "PH-2100", "PH-2101"];
+  const ours = async (sel) => (await p.$$eval(sel, (e) => e.map((x) => x.dataset.key))).filter((k) => /^PH-21\d\d$/.test(k));
+  assert.deepEqual(await ours('.kb-col[data-status="ready-for-testing"] .kb-card'), want, "plain board: bugs (Highest, High, Low), tasks, epics");
+  // every bug in the column is above every task, and every task above every epic
+  const types = await p.evaluate(() => Object.fromEntries([...globalThis.__fbStub.col("kanbanTasks").values()].map((t) => [t.key, t.type])));
+  const all = (await p.$$eval('.kb-col[data-status="ready-for-testing"] .kb-card', (e) => e.map((x) => x.dataset.key))).map((k) => ({ bug: 0, epic: 2 }[types[k]] ?? 1));
+  assert.deepEqual(all, [...all].sort((a, b) => a - b), "the column is grouped bug, task, epic");
+  await press(p, `.kb-person-chip[data-person="${LINH}"]`);
+  assert.deepEqual(await ours(`.kb-lane-cell[data-lane="${LINH}"][data-status="ready-for-testing"] .kb-card`), want, "swimlane: same order");
+  await p.done();
+});
+
 // Needs more work (DHtgfhGz2t1gcKX8adz0, KB-BOARD-5a): a ticket in Ready for Testing that didn't pass goes
 // back to Ready for Dev and its developer with a red stamp and the reason, drawn above every other ticket.
 T("KB-NEEDS-WORK", "Needs more work sends a tested ticket back to Ready for Dev, stamped and first in the column", { on: on.desktop }, async (prof) => {
