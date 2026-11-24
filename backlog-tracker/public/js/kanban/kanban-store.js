@@ -31,7 +31,7 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gsta
 import {
   searchTokens, htmlToText, mentionsIn, keyOf, keyNumber, normaliseSettings, queryToken,
   cardOf, cardPatchOf, externaliseInlineImages, dataUriParts, decodeCriteria, encodeCriteria, acCounts, linkChanges, inverseOf,
-  setPersonAliases,
+  setPersonAliases, normNeedsWork,
 } from "./kanban-core.js";
 
 export const CLOSED_LIMIT = 300;
@@ -75,6 +75,7 @@ export function taskFromDoc(id, d) {
     epic: d.epic || "",
     links: Array.isArray(d.links) ? d.links : [],
     flagged: !!d.flagged,
+    needsMoreWork: normNeedsWork(d.needsMoreWork),
     watchers: Array.isArray(d.watchers) ? d.watchers : [],
     attachments: Array.isArray(d.attachments) ? d.attachments : [],
     acceptanceCriteria: decodeCriteria(d.acceptanceCriteria),
@@ -103,7 +104,7 @@ export function derivedFields(t) {
 const DERIVED_FROM = ["title", "description", "labels"];
 
 // The fields of a task that are stored as they are.
-export const STORED_FIELDS = ["type", "title", "description", "status", "resolution", "rank", "assignee", "previousAssignee", "reporter", "release", "sprint", "project", "estimate", "logged", "priority", "due", "labels", "epic", "links", "flagged", "attachments", "acceptanceCriteria", "watchers"];
+export const STORED_FIELDS = ["type", "title", "description", "status", "resolution", "rank", "assignee", "previousAssignee", "reporter", "release", "sprint", "project", "estimate", "logged", "priority", "due", "labels", "epic", "links", "flagged", "attachments", "acceptanceCriteria", "watchers", "needsMoreWork"];
 
 // backfill: asks the server to fill kanbanCards from kanbanTasks (idempotent).
 export function createStore({ db, storage, me, backfill = null, onChange = () => {}, onError = () => {} }) {

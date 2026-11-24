@@ -349,4 +349,40 @@ t("board order: priority Highest to Lowest (none = Medium), then rank; a drop ra
   // a priority with no tickets in the column: no neighbours, the first rank
   assert.deepEqual(k.dropNeighbours([{ key: "X", priority: "low", rank: 4 }], 0, { priority: "high" }), { prev: null, next: null });
 });
+t("needs more work (KB-BOARD-5a): sent back from testing with a stamp, drawn first, cleared on the way back to testing", () => {
+  const first = (e) => (e || "").split("@")[0];
+  const stamp = { reason: "  Save button still greys out  ", by: "rob@x", at: "2026-11-24T03:30:00.000Z" };
+  const back = k.statusChange({ status: "ready-for-testing", assignee: "rob@x", previousAssignee: "duc@x" }, "ready-for-dev", { firstName: first, needsMoreWork: stamp });
+  assert.deepEqual(back.patch.needsMoreWork, { reason: "Save button still greys out", by: "rob@x", at: "2026-11-24T03:30:00.000Z" });
+  assert.equal(back.patch.assignee, "duc@x");
+  assert.equal(back.activity, "Ready for Testing → Ready for Dev · returned to duc");
+  assert.equal(back.stampLine, "marked Needs more work: Save button still greys out");
+  // the move line still reads as a hand-off back to the developer
+  assert.equal(k.parseActivity(back.activity).handoffTo, "duc");
+  // only from Ready for Testing, and only backwards
+  assert.equal(k.statusChange({ status: "in-progress" }, "ready-for-dev", { needsMoreWork: stamp }).patch.needsMoreWork, undefined);
+  assert.equal(k.statusChange({ status: "ready-for-testing" }, "approved", { needsMoreWork: stamp }).patch.needsMoreWork, undefined);
+  // kept while it is worked on, cleared once it is back in testing (or approved or closed)
+  const stamped = { status: "ready-for-dev", needsMoreWork: back.patch.needsMoreWork };
+  const ip = k.statusChange(stamped, "in-progress", {});
+  assert.equal("needsMoreWork" in ip.patch, false); assert.equal(ip.stampLine, "");
+  for (const to of ["ready-for-testing", "approved", "done"]) {
+    const ch = k.statusChange({ ...stamped, status: "in-progress" }, to, {});
+    assert.equal(ch.patch.needsMoreWork, null); assert.equal(ch.stampLine, "cleared Needs more work");
+  }
+  // the card carries it, normalised
+  assert.ok(k.CARD_FIELDS.includes("needsMoreWork"));
+  assert.deepEqual(k.cardOf({ key: "PH-1", title: "x", needsMoreWork: { reason: "r", by: "a@x", at: "t", junk: 1 } }).needsMoreWork, { reason: "r", by: "a@x", at: "t" });
+  assert.equal(k.cardOf({ key: "PH-1", title: "x" }).needsMoreWork, null);
+  assert.equal(k.cardPatchOf({ needsMoreWork: null }).needsMoreWork, null);
+  // drawn above everything else in its column, Highest included; then priority and rank as usual
+  const list = [
+    { key: "A", priority: "highest", rank: 1 }, { key: "B", priority: "low", rank: 9, needsMoreWork: { reason: "x" } },
+    { key: "C", priority: "high", rank: 2 }, { key: "D", priority: "high", rank: 5, needsMoreWork: { reason: "y" } },
+  ].sort(k.byBoardOrder);
+  assert.deepEqual(list.map((x) => x.key), ["D", "B", "A", "C"]);
+  // a drag ranks a stamped ticket among stamped ones of its priority, an unstamped one among its own
+  assert.deepEqual(k.dropNeighbours(list, 0, { priority: "high" }), { prev: null, next: list[3] });
+  assert.deepEqual(k.dropNeighbours(list, 4, { priority: "high", needsMoreWork: { reason: "z" } }), { prev: list[0], next: null });
+});
 console.log(`\n${n} passed`);
