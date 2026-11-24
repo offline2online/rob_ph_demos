@@ -1288,13 +1288,12 @@ test('+ Add token above every headline field lists the available tokens and inse
   await page.click(add);
   assert.equal(await page.getAttribute(add, 'aria-expanded'), 'true');
   assert.deepEqual(await page.$$eval(`${menu} button .tok-l`, (l) => l.map((e) => e.textContent)),
-    ['Store name', 'Suburb', 'Store code', 'State', 'Phone number', 'Languages spoken by store staff', 'Localised copy']);
+    ['Store name', 'Suburb', 'Store code', 'State', 'Phone number']);
   assert.deepEqual(await page.$$eval(`${menu} button code`, (l) => l.map((e) => e.textContent)),
-    ['${StoreName}', '${Suburb}', '${StoreCode}', '${State}', '${Phone}', '${LanguagesSpoken}', '${LocalisedCopy}']);
-  // Brand name and Website are gone, and nothing in the menu says "From Personalisation Hub".
-  assert.doesNotMatch(await page.textContent(menu), /Brand name|Website|Personalisation Hub/);
-  assert.deepEqual(await page.$$eval(`${menu} button .tok-s`, (l) => l.map((e) => e.textContent)),
-    ['Pharmacy name', 'Set in Settings → Tokens', 'Set in Settings → Tokens']);
+    ['${StoreName}', '${Suburb}', '${StoreCode}', '${State}', '${Phone}']);
+  // Brand name, Website, Languages spoken and Localised copy are gone, and nothing says "From Personalisation Hub".
+  assert.doesNotMatch(await page.textContent(menu), /Brand name|Website|Languages spoken|Localised copy|Personalisation Hub/);
+  assert.deepEqual(await page.$$eval(`${menu} button .tok-s`, (l) => l.map((e) => e.textContent)), ['Pharmacy name']);
   // Escape and a click elsewhere close it without inserting anything.
   await page.keyboard.press('Escape');
   assert.equal(await page.isVisible(menu), false);

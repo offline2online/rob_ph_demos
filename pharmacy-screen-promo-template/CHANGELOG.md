@@ -26,6 +26,9 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Changed
 
+- **+ Add token: Languages spoken and Localised copy removed.** The menu above every headline field now lists the
+  store's data only: Store name, Suburb, Store code, State and Phone number. Copy that already uses
+  `${LanguagesSpoken}` or `${LocalisedCopy}` still shows a value set for it in Settings → Tokens.
 - **+ Add token: Brand name and Website removed, and no "From Personalisation Hub" line.** The menu above every
   headline field now lists Store name, Suburb, Store code, State, Phone number, Languages spoken by store staff and
   Localised copy. The store-data entries no longer carry the "From Personalisation Hub" sub-line (all of a user's

@@ -131,10 +131,9 @@ Service copy needs TGA advertising review before go-live.
 
 - Headlines are rich text: bold, italic, regular weight, accent colour and line breaks.
 - **+ Add token**, on the right of each headline's label, lists the tokens you can use: Store name, Suburb, Store
-  code, State, Phone number, Languages spoken by store staff and Localised copy. Pick one to insert it where the
-  cursor is (e.g. `${StoreCode}`). Store name, Suburb, Store code, State and Phone number come from the pharmacy's
-  store data; Languages spoken and Localised copy show the value set for the pharmacy in **Settings → Tokens**,
-  and nothing until one is set.
+  code, State and Phone number. Pick one to insert it where the cursor is (e.g. `${StoreCode}`). They come from the
+  pharmacy's store data. Copy that already uses `${LanguagesSpoken}` or `${LocalisedCopy}` still shows the value set
+  for the pharmacy in **Settings → Tokens**, and nothing until one is set.
 - `${Suburb}` becomes the store's suburb from Personalisation Hub. If a store has no suburb it disappears with
   the comma or line break before it.
 - Bar messages use `${CloseTime}` and `${OpenTime}` (worked out in the store's time zone), e.g. "Open today until
