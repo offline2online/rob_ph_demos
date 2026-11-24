@@ -6387,6 +6387,34 @@ submits, accepts or rejects). The IAM role needs the `LeadEnrichmentAndProspecti
   blank, never a new industry. It runs on read (`normaliseProspect`), on every
   write (`prospectFromInput`, so `upsert_prospects`) and on the industry filter
   of `list_prospects`. Stored legacy values are rewritten when a record is next saved.
+- **Missing industries (24 Nov 2026, ticket ulDiLF4v0qHFgFu3aQKS).** Every TAM
+  company was matched once by hand to one of the nine, or left blank where none
+  fits (334 records: 213 matched, 121 blank). A blank company's free-text
+  `subIndustry` says which industry it would need; `proposeIndustry`
+  (`prospects-core.js`) reads it against a fixed list of proposals
+  (`PROPOSED_INDUSTRIES`: Consumer Electronics, Home, Furniture & Homewares,
+  Hardware & DIY, Automotive, Sporting Goods & Outdoor, Jewellery, Beauty &
+  Cosmetics, Liquor Retail, Pet Retail, Books, Stationery & Office, Baby & Kids,
+  Variety & Discount Stores, Airlines & Travel, Shopping Centres & Property,
+  Consumer Goods Brands, Healthcare & Life Sciences, Technology & Consulting,
+  Diversified Retail Groups, Wholesale & Distribution, Education, Lotteries &
+  Gaming, Industry Bodies), exact label first, else the first pattern that
+  matches, else **Unclassified (needs research)**. A proposal is never stored
+  as an industry, and no proposal label normalises to one of the nine.
+  `missingIndustriesReport` groups every blank company under its proposal
+  (biggest first, Unclassified last); the group counts always add up to the
+  blank count. On the page, **Missing industries (N)** in the toolbar opens a
+  panel with that report ("N of M companies have no website industry · K
+  industries needed", then each industry with its count and companies),
+  **Show in grid** sets the Industry column's Unassigned filter, and **Export
+  CSV** downloads it (Proposed industry, Companies needing it, Company,
+  Country). When a website industry page is added, add it to `INDUSTRIES` and
+  move the matching companies across; the report shrinks by itself. The button
+  sits last in the toolbar, after Export for LinkedIn, so the other buttons keep
+  their places on a phone. The toolbar's menus (Saved filters, Columns, a row's
+  actions) open below their button, or above it when there is more room there,
+  and never run past the edge of the screen: a long list such as Columns
+  scrolls inside the menu.
 
 ### Prospects (TAM): Contacts tab and the LinkedIn extension (17 Nov 2026)
 
