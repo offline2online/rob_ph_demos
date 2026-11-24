@@ -3512,3 +3512,23 @@ html:has(.modal-backdrop:not([hidden]), .cmdk-backdrop:not([hidden])) .aidan-pan
   html.aidan-chat-open .aidan-launcher { display: none; }
   .aidan-msg { max-width: 90%; }
 }
+
+/* Promote › License Manager (#licences-page, js/licences-page.js). Reuses the ACE grid,
+   status dot, pill and alert; these are its own pieces. */
+#licences-page { --ace-muted: #5f6368; }
+:root[data-theme="dark"] #licences-page { --ace-muted: rgba(235, 235, 245, .72); }
+.licences-tab-count { font-weight: 400; }
+.licences-contact, .licences-tam { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
+.licences-unlink { flex: none; min-height: 28px; padding: 0 8px; font-size: 12px; }
+.licences-review-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.licences-review-item { display: flex; flex-direction: column; gap: 6px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; min-width: 0; }
+.licences-review-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.licences-review-company { font-size: 16px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+.licences-review-who { font-size: 14px; color: var(--text); overflow-wrap: anywhere; }
+.licences-review-facts { font-size: 13px; color: var(--ace-muted); overflow-wrap: anywhere; }
+.licences-review-error { font-size: 13px; color: #b71c1c; overflow-wrap: anywhere; }
+:root[data-theme="dark"] .licences-review-error { color: #ff7875; }
+.licences-suggest { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.licences-suggest-label { font-size: 13px; color: var(--ace-muted); }
+.licences-pick { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.licences-pick select { flex: 1 1 220px; min-width: 0; max-width: 420px; min-height: 36px; }

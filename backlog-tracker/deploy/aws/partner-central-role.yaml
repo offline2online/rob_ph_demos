@@ -76,6 +76,18 @@ Resources:
                 Action:
                   - partnercentral:UseSession
                 Resource: "*"
+        # Promote › License Manager (functions/marketplace-agreements.js): read the
+        # Marketplace agreements PH sells and each one's buyer contacts. Read-only.
+        - PolicyName: MarketplaceAgreementsRead
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - aws-marketplace:SearchAgreements
+                  - aws-marketplace:DescribeAgreement
+                  - aws-marketplace:GetAgreementContacts
+                Resource: "*"
   # Read-only access to the Partner Central data export bucket, and nothing else in S3.
   ExportReadPolicy:
     Type: AWS::IAM::Policy

@@ -38,6 +38,16 @@ The Conversion Funnel's Revenue stage reads Partner Central's single-step S3 dat
 
 Until step 4 the funnel's Revenue row reads **Not set up yet**. It does not show as a failure.
 
+## License Manager (AWS Marketplace agreements)
+
+The same role also reads PH's AWS Marketplace agreements and their buyer contacts for Promote ›
+License Manager (`functions/marketplace-agreements.js`): `SearchAgreements` and
+`GetAgreementContacts` on `agreement-marketplace.us-east-1.amazonaws.com` (signing name
+`aws-marketplace`, target `AWSMPCommerceService_v20200301`), read-only, under the
+`MarketplaceAgreementsRead` policy in `partner-central-role.yaml`. Re-deploy the stack to add it.
+Untested live: confirm on the first **Sync from AWS Marketplace** that the call succeeds and that
+the stored `contactsRaw` carries the buyer's name, email, company and country.
+
 ## Safety
 
 * Catalogue is **Sandbox** until an admin switches to **AWS** (live) in Settings and types `LIVE`.

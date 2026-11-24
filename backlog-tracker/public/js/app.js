@@ -12044,6 +12044,7 @@ const promotePage = document.getElementById("promote-page");
 const leadsPage = document.getElementById("leads-page");
 const prospectsPage = document.getElementById("prospects-page");
 const funnelPage = document.getElementById("funnel-page");
+const licencesPage = document.getElementById("licences-page");
 const supportPage = document.getElementById("support-page");
 const documentationPage = document.getElementById("documentation-page");
 let promotePageKey = "";
@@ -12091,6 +12092,7 @@ const LAZY_PROMOTE = {
   leads: { label: "Leads", page: () => leadsPage, reset: () => { leadsUiLoading = null; }, ensure: () => ensureLeadsUi() },
   prospects: { label: "Prospects (TAM)", page: () => prospectsPage, reset: () => { prospectsUiLoading = null; }, ensure: () => ensureProspectsUi() },
   "conversion-funnel": { label: "Conversion Funnel", page: () => funnelPage, reset: () => { funnelUiLoading = null; }, ensure: () => ensureFunnelUi() },
+  "license-manager": { label: "License Manager", page: () => licencesPage, reset: () => { licencesUiLoading = null; }, ensure: () => ensureLicencesUi() },
 };
 function openLazyPromotePage(key) {
   const lp = LAZY_PROMOTE[key];
@@ -12138,6 +12140,19 @@ function ensureFunnelUi() {
     });
   }
   return funnelUiLoading;
+}
+// Promote › License Manager (licences-page.js): mounted the first time the page opens.
+let licencesUi = null;
+let licencesUiLoading = null;
+function ensureLicencesUi() {
+  if (licencesUi) return Promise.resolve(licencesUi);
+  if (!licencesUiLoading) {
+    licencesUiLoading = import(`./licences-page.js${pageRetrySuffix("license-manager")}`).then(({ mountLicencesPage }) => {
+      licencesUi = mountLicencesPage({ db, canEdit: () => canEditSection("license-manager"), apiHeaders: consoleApiHeaders, openLead: (id) => { openPromotePage("leads"); ensureLeadsUi().then((ui) => ui.open(id)).catch((err) => console.warn("backlog-tracker: open lead", err)); } });
+      return licencesUi;
+    });
+  }
+  return licencesUiLoading;
 }
 // Promote › Leads (leads-page.js): mounted the first time the page opens.
 let leadsUi = null;
@@ -12226,7 +12241,7 @@ function renderBrandPickers(partners, markets) {
 document.getElementById("promote-partner-select").addEventListener("change", (e) => openPromotePage("brand-guidelines", e.target.value, ""));
 document.getElementById("promote-market-select").addEventListener("change", (e) => openPromotePage("brand-guidelines", "", e.target.value));
 function openPromotePage(key = PROMOTE_PAGES[0].key, partnerSlug = "", marketSlug = "") {
-  if (!pageAllowed(key === "prospects" || key === "conversion-funnel" ? key : "promote")) return;
+  if (!pageAllowed(key === "prospects" || key === "conversion-funnel" || key === "license-manager" ? key : "promote")) return;
   closeAllSubPages();
   ensureLazy("projectDocs");
   document.getElementById("projects-root").hidden = true;
@@ -12245,8 +12260,9 @@ function openPromotePage(key = PROMOTE_PAGES[0].key, partnerSlug = "", marketSlu
   renderPromotePage();
 }
 function closePromotePage() {
-  if (promotePage.hidden && leadsPage.hidden && prospectsPage.hidden && funnelPage.hidden) return;
+  if (promotePage.hidden && leadsPage.hidden && prospectsPage.hidden && funnelPage.hidden && licencesPage.hidden) return;
   funnelPage.hidden = true;
+  licencesPage.hidden = true;
   promotePage.hidden = true;
   leadsPage.hidden = true;
   prospectsPage.hidden = true;
@@ -13971,6 +13987,7 @@ const ROUTE_TITLES = {
   "#promote/leads": "Promote: Leads",
   "#promote/prospects": "Promote: Prospects (TAM)",
   "#promote/conversion-funnel": "Promote: Conversion Funnel",
+  "#promote/license-manager": "Promote: License Manager",
   "#settings/projects": "Settings: Projects",
   "#settings/releases": "Settings: Releases",
   "#settings/skills": "Settings: Skills & phase bindings",
@@ -14128,7 +14145,7 @@ function applyRouteFromHash() {
     if (faqSettingsPage.hidden) openFaqSettingsPage(k, um && um.tab);
     else if (k !== settingsPage || (um && um.tab !== umTab)) showSettingsPage(k, um && um.tab);
   }
-  else if (promotePageFromHash(hash)) { const k = promotePageFromHash(hash); const ps = promotePartnerFromHash(hash) || ""; const ms = promoteMarketFromHash(hash) || ""; if (promotePageKey !== k || promotePartnerSlug !== ps || promoteMarketSlug !== ms || (k === "leads" ? leadsPage.hidden : k === "prospects" ? prospectsPage.hidden : k === "conversion-funnel" ? funnelPage.hidden : promotePage.hidden)) openPromotePage(k, ps, ms); }
+  else if (promotePageFromHash(hash)) { const k = promotePageFromHash(hash); const ps = promotePartnerFromHash(hash) || ""; const ms = promoteMarketFromHash(hash) || ""; if (promotePageKey !== k || promotePartnerSlug !== ps || promoteMarketSlug !== ms || (k === "leads" ? leadsPage.hidden : k === "prospects" ? prospectsPage.hidden : k === "conversion-funnel" ? funnelPage.hidden : k === "license-manager" ? licencesPage.hidden : promotePage.hidden)) openPromotePage(k, ps, ms); }
   else if (supportRoute(hash)) openSupportPage(supportRoute(hash));
   else if (hash === "#documentation" || hash.startsWith("#documentation?")) { if (!documentationPage || documentationPage.hidden) openDocumentationPage(); }
   else if (hash.startsWith("#doc/")) openDocRouteFromHash(hash);
@@ -14147,7 +14164,7 @@ function applyRouteFromHash() {
 }
 function anySubPageOpen() {
   const dash = document.getElementById("dashboard-page");
-  return !faqArticlesPage.hidden || !faqSettingsPage.hidden || !rolePage.hidden || !promotePage.hidden || !leadsPage.hidden || !prospectsPage.hidden || !funnelPage.hidden || (supportPage && !supportPage.hidden) || (documentationPage && !documentationPage.hidden) || (docReaderPage && !docReaderPage.hidden) || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden || (dash && !dash.hidden);
+  return !faqArticlesPage.hidden || !faqSettingsPage.hidden || !rolePage.hidden || !promotePage.hidden || !leadsPage.hidden || !prospectsPage.hidden || !funnelPage.hidden || !licencesPage.hidden || (supportPage && !supportPage.hidden) || (documentationPage && !documentationPage.hidden) || (docReaderPage && !docReaderPage.hidden) || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden || (dash && !dash.hidden);
 }
 // popstate (back/forward) and hashchange (a typed-in or pasted #hash) both
 // need to re-sync the visible page — pushState/replaceState above never

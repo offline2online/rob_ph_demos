@@ -40,8 +40,12 @@
 //   POST  /v1/agent/sessions/{id}          re-read a session from AWS (getSession)
 //   POST  /v1/agent/sessions/{id}/approvals/{toolUseId} {decision: approve|reject, message?}
 //                                          answer a write the agent is holding for approval
+//   POST  /v1/licences/sync  POST /v1/licences/link   Promote › License Manager (editors; the
+//                                          AWS Marketplace agreements and their buyer contacts, read-only
+//                                          on the AWS side; marketplace-agreements.js has its own closed list)
 
 const crypto = require("crypto");
+const { createLicenceSync } = require("./marketplace-agreements");
 
 const DEFAULT_ROLE_ARN = "arn:aws:iam::817173160653:role/PH-Console-PartnerCentral";
 const REGION = "us-east-1"; // Partner Central APIs are served from us-east-1 only
@@ -427,6 +431,13 @@ function createPartnerCentralApi({
   // person's click in Partner Central.
   const createBenefitDraft = (application, ctx) => callAws("CreateBenefitApplication", { ClientToken: crypto.randomUUID(), ...application }, ctx);
 
+  // Promote › License Manager: AWS Marketplace agreements and their buyer
+  // contacts, through the same short-lived credentials and audit log.
+  const licences = createLicenceSync({
+    db, sign: signRequest, fetch: fetchImpl, now, logger, audit,
+    credentials: async () => assumeRole((await loadConfig()).roleArn),
+  });
+
   async function status() {
     const cfg = await loadConfig();
     const s = (await ref(STATE_DOC).get());
@@ -681,13 +692,13 @@ function createPartnerCentralApi({
     try { decoded = await verifyIdToken(idToken); } catch { return { ok: false, status: 401, error: "invalid sign-in" }; }
     const user = await resolveConsoleUser(decoded.email);
     if (!user) return { ok: false, status: 403, error: "not on the console user list" };
-    if ((ROLE_RANK[user.role] || 0) < ROLE_RANK[min]) return { ok: false, status: 403, error: min === "admin" ? "only an admin can use the Partner Central connection" : "only an editor or admin can see the ACE opportunities" };
+    if ((ROLE_RANK[user.role] || 0) < ROLE_RANK[min]) return { ok: false, status: 403, error: min === "admin" ? "only an admin can use the Partner Central connection" : /^\/v1\/licences/.test(String(req.path || req.url || "").replace(/^\/partnerCentral/, "")) ? "only an editor or admin can sync or link licences" : "only an editor or admin can see the ACE opportunities" };
     return { ok: true, user };
   }
 
   async function handle(req, res) {
     const path = String((req.path || req.url || "/").split("?")[0]).replace(/^\/partnerCentral(?=\/|$)/, "").replace(/\/+$/, "") || "/";
-    const who = await requireAdmin(req, /^\/v1\/ace(\/|$)/.test(path) ? "editor" : "admin");
+    const who = await requireAdmin(req, /^\/v1\/(ace|licences)(\/|$)/.test(path) ? "editor" : "admin");
     if (!who.ok) return send(res, who.status, { error: who.error });
     const ctx = { by: who.user.email };
     const body = req.body || {};
@@ -726,6 +737,10 @@ function createPartnerCentralApi({
       if (m && req.method === "GET") return send(res, 200, await getOpportunity(m[1], ctx));
       if (m && req.method === "PATCH") return send(res, 200, await updateOpportunity(m[1], body, ctx));
       if (path === "/v1/benefits/drafts" && req.method === "POST") return send(res, 200, await createBenefitDraft(body, ctx));
+      if (path.startsWith("/v1/licences/")) {
+        const out = await licences.handle(path, req, ctx);
+        if (out) return send(res, 200, out);
+      }
       return send(res, 404, { error: "not found" });
     } catch (err) {
       return send(res, err.status || 500, { error: String(err.message || err).slice(0, 300) });
@@ -735,7 +750,7 @@ function createPartnerCentralApi({
   // The role's short-lived credentials, for the S3 export reader (pc-export.js). Never sent to a browser.
   const awsCredentials = async () => assumeRole((await loadConfig()).roleArn);
 
-  return { handle, status, awsCredentials, agentMessage, agentRefresh, agentDecide, agentOverview, callAgent, aceOpportunities, aceCreate, aceUpdate, aceOne, callAws, listOpportunities, getOpportunity, createOpportunity, updateOpportunity, createBenefitDraft };
+  return { handle, status, licences, awsCredentials, agentMessage, agentRefresh, agentDecide, agentOverview, callAgent, aceOpportunities, aceCreate, aceUpdate, aceOne, callAws, listOpportunities, getOpportunity, createOpportunity, updateOpportunity, createBenefitDraft };
 }
 
 module.exports = { createPartnerCentralApi, parseAgentResult, parseMcpBody, AGENT_MCP, AGENT_TOOLS, AGENT_SESSIONS, sanitiseAceInput, buildUpdate, buildCreate, EDITABLE, describeNetworkError, normaliseOpportunity, signRequest, OPERATIONS, SERVICES, CATALOGS, AUDIT, DEFAULT_ROLE_ARN };

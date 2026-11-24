@@ -1977,7 +1977,7 @@ const scenarios = [
       assert.strictEqual(await c.page.locator(".perm-table").count(), 0, "there is no permissions matrix");
       await c.visible("#role-permissions .role-perm-row", "the permissions render");
       const rows = await c.page.evaluate(() => [...document.querySelectorAll("#role-permissions .role-perm-row label")].map((e) => e.textContent.trim()));
-      assert.deepStrictEqual(rows, ["Agent Board", "Staff Kanban", "Concepts", "Whiteboard", "Brand Guidelines", "Leads", "Prospects (TAM)", "Conversion Funnel", "Support Inbox", "Help Centre", "Documentation", "Settings", "Settings > User Management", "Releases", "Skills & phase bindings", "Project docs"]);
+      assert.deepStrictEqual(rows, ["Agent Board", "Staff Kanban", "Concepts", "Whiteboard", "Brand Guidelines", "Leads", "Prospects (TAM)", "Conversion Funnel", "License Manager", "Support Inbox", "Help Centre", "Documentation", "Settings", "Settings > User Management", "Releases", "Skills & phase bindings", "Project docs"]);
       await c.page.selectOption("#role-perm-concepts", "none");
       await c.click("#role-save", "Save role");
       await until(async () => (await c.page.evaluate(() => (globalThis.__fbStub.col("roles").get("rEng").permissions || {}).concepts)) === "none", "the change to persist", 5000);
@@ -3429,6 +3429,56 @@ const scenarios = [
       await c.page.check("#funnel-compare");
       await until(async () => (await c.page.locator(".funnel-delta").count()) === 10, "a change per stage when comparing", 5000);
       assert.ok((await c.text('[data-stage="impressions"] .funnel-delta')).includes("+1,100"), "change against the previous period");
+    },
+  },
+  {
+    // suRWbzW1CX0TSvHMNDr3: Promote › License Manager. Each Marketplace agreement shows the buyer's company and
+    // contact (GetAgreementContacts, stored raw by the sync), linked to the TAM company and its lead; a partial match
+    // waits in the review queue; a won lead with no agreement yet is listed.
+    name: "Promote: License Manager - licence shows company and contact, linked to TAM and lead, review queue links by hand, sync",
+    seed: () => seed({
+      prospects: {
+        "acme-united-kingdom": { name: "Acme Retail", country: "United Kingdom", website: "https://acme-retail.example", industry: "Grocery", hqCountry: "United Kingdom", markets: ["United Kingdom"], status: "converted", leadId: "prospect-acme-united-kingdom", createdAt: t(T0), updatedAt: t(T0) },
+        "globex-australia": { name: "Globex", country: "Australia", website: "globex.example", industry: "QSR", hqCountry: "Australia", markets: ["Australia"], status: "new", leadId: "", createdAt: t(T0), updatedAt: t(T0) },
+      },
+      leads: {
+        "prospect-acme-united-kingdom": { company: { name: "Acme Retail", countries: ["United Kingdom"] }, stage: "closed-won", prospectId: "acme-united-kingdom", contacts: [{ id: "c1", name: "Ann Smith", email: "ann@acme-retail.example" }], createdAt: t(T0), updatedAt: t(T0) },
+        "prospect-hooli": { company: { name: "Hooli", countries: ["United States"] }, stage: "closed-won", contacts: [{ id: "c2", name: "Hal", email: "hal@hooli.example" }], createdAt: t(T0), updatedAt: t(T0) },
+      },
+      licences: {
+        "agmt-acme": { agreementId: "agmt-acme", awsAccountId: "123456789012", status: "ACTIVE", contactsRaw: JSON.stringify({ agreementContacts: [{ name: "Ann Smith", emailAddress: "ann@acme-retail.example", companyName: "Acme Retail", country: "United Kingdom" }] }) },
+        "agmt-globex": { agreementId: "agmt-globex", awsAccountId: "210987654321", status: "ACTIVE", contactsRaw: JSON.stringify({ agreementContacts: [{ name: "Gus", emailAddress: "gus@gmail.com", companyName: "Globex", country: "Australia" }] }) },
+      },
+      consoleConfig: { licenceSync: { lastSyncAt: t(T0), count: 2, contactErrors: 0 } },
+    }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-licences-btn", "licences-page");
+      assert.strictEqual(new URL(c.page.url()).hash, "#promote/license-manager", "the page has its own URL");
+      const order = await c.page.evaluate(() => document.getElementById("promote-funnel-btn").nextElementSibling === document.getElementById("promote-licences-btn"));
+      assert.ok(order, "License Manager sits directly below the Conversion Funnel");
+      await until(async () => (await c.page.locator("#licences-grid .ag-row").count()) === 3, "two licences and one won lead awaiting an agreement", 8000);
+      const acme = c.page.locator('#licences-grid .ag-center-cols-container .ag-row[row-id="agmt-acme"]');
+      const acmeText = await acme.innerText();
+      for (const want of ["Acme Retail", "Ann Smith", "United Kingdom", "123456789012", "Linked", "Ready for onboarding"]) assert.ok(acmeText.includes(want), `the licence shows ${want}: ${acmeText}`);
+      assert.ok((await c.text("#licences-count")).includes("1 linked"), "the count line says how many are linked");
+      assert.ok((await c.text("#licences-count")).includes("1 to review"), "and how many wait for review");
+      const awaiting = await c.page.locator('#licences-grid .ag-center-cols-container .ag-row[row-id="lead:prospect-hooli"]').innerText();
+      assert.ok(awaiting.includes("Awaiting agreement"), "a won lead without an agreement is listed");
+      assert.ok((await c.page.getAttribute("#licences-info", "title")).length > 20, "help is an info tooltip");
+      await c.click("#licences-tab-review", "open the review queue");
+      await c.visible("#licences-review .licences-review-item", "the partial match waits for review");
+      assert.strictEqual(await c.page.locator("#licences-review .licences-review-item").count(), 1);
+      assert.ok((await c.text("#licences-review")).includes("Company name only"), "it says why it wasn't linked");
+      await c.click('#licences-review [data-link="agmt-globex"][data-prospect="globex-australia"]', "link the suggested TAM company");
+      await until(() => c.aceWrites.some((w) => w.path === "/partnerCentral/v1/licences/link"), "the link is sent to the server", 5000);
+      assert.deepStrictEqual(c.aceWrites.find((w) => w.path === "/partnerCentral/v1/licences/link").body, { agreementId: "agmt-globex", prospectId: "globex-australia" });
+      await until(async () => (await c.text("#licences-status")).includes("Linked to Globex"), "the page confirms the link", 5000);
+      await c.click("#licences-sync-btn", "sync from AWS Marketplace");
+      await until(() => c.aceWrites.some((w) => w.path === "/partnerCentral/v1/licences/sync"), "the sync is requested", 5000);
+      await until(async () => (await c.text("#licences-status")).includes("Synced 2 agreements"), "the page says what the sync did", 5000);
+      const overflow = await c.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      assert.ok(overflow <= 1, `no sideways page scroll (${overflow}px)`);
     },
   },
   {

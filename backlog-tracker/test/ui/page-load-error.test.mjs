@@ -17,6 +17,7 @@ try {
     ["leads-page.js", "Leads", "promote-leads-btn", "#leads-page .lead-lane"],
     ["prospects-page.js", "Prospects (TAM)", "promote-prospects-btn", "#prospects-page .ag-row"],
     ["funnel-page.js", "Conversion Funnel", "promote-funnel-btn", "#funnel-page #funnel-filters [data-preset]"],
+    ["licences-page.js", "License Manager", "promote-licences-btn", "#licences-page #licences-count b"],
   ]) {
     const o = await h.open({ seed, width: 1180, height: 820, contextOptions: { hasTouch: true, isMobile: true } });
     const { page } = o;

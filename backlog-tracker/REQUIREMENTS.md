@@ -6613,6 +6613,65 @@ overlay. Presentation only: every field, action and datum is still there.
   summary panel carries the same text; the earlier figures stay.
 - **Times:** days and dates are the viewer's local time, never UTC.
 
+## Promote section: License Manager (24 Nov 2026)
+
+- **Promote › License Manager** (`#promote/license-manager`, nav item directly below
+  Conversion Funnel; `public/js/licences-page.js`, rules in `public/js/licences-core.js`,
+  sync in `functions/marketplace-agreements.js`). Its own permission section
+  (`license-manager`, inherits Prospects (TAM)). Each AWS Marketplace subscription
+  (agreement) shows the buyer's company and contact, linked to the matching Prospects
+  (TAM) company and its lead, so a licence is no longer known by its AWS account ID only.
+- **Data**: `licences/{agreementId}`, written only by the server (members read, nobody
+  writes from a browser): `agreementId`, `awsAccountId` (the buyer's account), `status`,
+  `agreementType`, `offerId`, `productIds[]`, `startTime`, `endTime`, `contactsRaw` (the
+  GetAgreementContacts answer as JSON text), `contactsError`, `syncedAt`, `syncedBy` and
+  `manualLink {prospectId, by, at}` | null. The sync's status is
+  `consoleConfig/licenceSync` (`lastSyncAt`, `count`, `contactErrors`, `lastError`,
+  `lastErrorAt`).
+- **Sync** (`POST /partnerCentral/v1/licences/sync`, editors and admins; the header's
+  **Sync from AWS Marketplace** button): `SearchAgreements` (PH as proposer, purchase
+  agreements, 50 a page, up to 10 pages), then `GetAgreementContacts` for each agreement
+  (buyer name, email, company, country). Same keyless access as Partner Central, but its
+  own closed, read-only operation list (`LICENCE_OPERATIONS`) and its own IAM policy
+  statement (`MarketplaceAgreementsRead` in `deploy/aws/partner-central-role.yaml`); every
+  call is in `partnerCentralAudit`. A contacts call that fails keeps that licence's earlier
+  contacts and records the error; a failed sync is shown at the top of the page.
+  "After each subscription" is a manual or repeated sync for now: no Marketplace
+  subscription event reaches the console yet.
+- **Untested live**: the Agreements endpoint, signing name and target prefix follow the
+  published API, and GetAgreementContacts' request is assumed to be `{agreementId}`. Its
+  answer is stored raw and read defensively (`normaliseAgreementContacts`: a list under
+  `contacts`, `agreementContacts`, `items` or similar, camelCase or PascalCase fields), so a
+  different shape is a change to that function only, with no re-sync. Verify on the first
+  real sync, like the Partner Central link (`deploy/aws/README.md`).
+- **Linking** (worked out on the page from the current TAM records, so a TAM record added
+  or corrected later links the licence with no re-sync), strongest first: (1) a person's
+  manual link; (2) the buyer's AWS account ID on a TAM record, a TAM contact or a lead;
+  (3) the buyer's company name **and** business email domain, where the domain is the
+  record's website or an email format on the company's profile
+  (`prospectCompanies/{id}.profile.emailFormats`). The buyer's country picks that
+  country's record. The AWS record is never a customer. The lead is the TAM record's lead.
+- **Review queue** (the second tab, with its count): a licence matched by name only, by
+  domain only, or not at all. Each item shows the company, contact, country, AWS account
+  and agreement, why it wasn't linked, up to three suggested TAM companies (one click
+  links) and a picker of every TAM company with **Link**
+  (`POST /partnerCentral/v1/licences/link {agreementId, prospectId}`, editors; the server
+  records who and when). A manual link shows **Unlink** in the grid.
+- **Grid** (the console's AG Grid pattern, as ACE opportunities): Company, Contact (name
+  and email icon), Country, AWS account ID, Status (Linked / Needs review / Awaiting
+  agreement; the reason in a tooltip), TAM company, Lead (opens the lead card), Onboarding,
+  Agreement. The count line: licences, linked, to review, ready for onboarding, won leads
+  awaiting an agreement.
+- **Won leads**: every Closed Won lead (test and archived ones left out) appears — on its
+  licence's row once one links to it, otherwise as its own "Awaiting agreement" row.
+- **Onboarding**: a linked licence with a buyer email is **Ready for onboarding** (that
+  contact is who the onboarding and registration go to); linked without one is **No buyer
+  contact**. The console has no install wizard yet, so nothing is sent from here: starting
+  the RevOps install wizard from a ready licence is a follow-up.
+- Tests: `test/licences.test.mjs` (contacts, matching, rows), `test/marketplace-agreements.test.js`
+  (sync and link routes, stubbed AWS), the "Promote: License Manager" click-through scenario,
+  `test/permissions.test.mjs`, `test/promote-section.test.mjs`.
+
 ## PH Agent Context (19 Nov 2026)
 
 A unified search and topic-context layer over the console

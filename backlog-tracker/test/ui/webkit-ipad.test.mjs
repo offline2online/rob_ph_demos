@@ -49,6 +49,7 @@ const MENU = [
   ["promote-leads-btn", "#promote/leads", "#leads-page"],
   ["promote-prospects-btn", "#promote/prospects", "#prospects-page"],
   ["promote-funnel-btn", "#promote/conversion-funnel", "#funnel-page"],
+  ["promote-licences-btn", "#promote/license-manager", "#licences-page"],
   ["support-inbox-btn", "#support", "#support-page"],
   ["faq-articles-btn", "#faq-management", "#faq-articles-page"],
   ["faq-settings-btn", "#settings", "#faq-settings-page"],

@@ -182,6 +182,13 @@ export async function startHarness() {
           }
           return json({ session: { ...base, status: "complete", lastReply: "Session read.", approvals: [] } });
         }
+        // License Manager (functions/marketplace-agreements.js): sync and link are answered OK and
+        // returned to the test in aceWrites, like the ACE writes.
+        if (url.pathname.startsWith("/partnerCentral/v1/licences/")) {
+          const input = JSON.parse(route.request().postData() || "{}"); aceWrites.push({ method: route.request().method(), path: url.pathname, body: input });
+          const body = url.pathname.endsWith("/sync") ? { ok: true, count: 2, contactErrors: 0, truncated: false } : { ok: true, agreementId: input.agreementId, prospectId: input.prospectId };
+          return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+        }
         if (url.pathname.startsWith("/partnerCentral/")) {
           const body = url.pathname.endsWith("/audit") ? { entries: [] } : { state: "not-linked", catalog: "Sandbox", roleArn: "arn:aws:iam::817173160653:role/PH-Console-PartnerCentral", lastSuccessAt: null, lastError: null, note: "Not linked yet" };
           return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });

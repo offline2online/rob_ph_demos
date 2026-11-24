@@ -811,6 +811,13 @@ service cloud.firestore {
       allow read: if isBoardReader();
       allow write: if false;
     }
+    // Promote › License Manager: AWS Marketplace agreements and their buyer contacts,
+    // written only by the server sync and the manual-link route
+    // (functions/marketplace-agreements.js, through the partnerCentral function). Members read.
+    match /licences/{licenceId} {
+      allow read: if isBoardReader();
+      allow write: if false;
+    }
     match /prospects/{prospectId} {
       allow read: if isBoardReader();
       // A new record names its country; older ones without one still update (they read as their first market).
