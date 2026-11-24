@@ -762,6 +762,45 @@ T("TC-18", "modal: pinned action bar, collapsible details column remembered", { 
   await p.done();
 });
 
+T("KB-C40", "modal: the details column is frozen — the ticket scrolls under it, and every edit control on the right stays inside the modal above the Save bar (KB-MOD-8)", async (prof) => {
+  const p = await open(prof);
+  await press(p, '.kb-card[data-key="PH-20"]');
+  await p.waitForSelector('#task-backdrop:not([hidden]) #kb-task-side [data-field="status"]');
+  // Enough comments that the ticket is always longer than the modal, whatever the window.
+  await p.$eval("#f-comments", (ul) => { for (let i = 0; i < 40; i++) { const li = document.createElement("li"); li.className = "kb-test-filler"; li.style.height = "40px"; li.textContent = `filler ${i}`; ul.appendChild(li); } });
+  const frozen = prof.width > 760 && prof.height >= 520;
+  const measure = () => p.evaluate(() => {
+    const r = (el) => el.getBoundingClientRect();
+    const pn = document.querySelector(".kb-task-panel"), side = document.getElementById("kb-task-side");
+    return { panel: r(pn), head: r(pn.querySelector(".modal-header")), side: r(side), bar: r(document.querySelector(".kb-form-actions")), desc: r(document.querySelector('[data-field="description"]')), sticky: getComputedStyle(side).position, max: pn.scrollHeight - pn.clientHeight,
+      fields: [...side.querySelectorAll(".kb-field:not([hidden])")].map((f) => f.dataset.field) };
+  });
+  const start = await measure();
+  if (!frozen) {
+    // A phone stacks the details under the ticket, as before: nothing is pinned.
+    assert.notEqual(start.sticky, "sticky", "below 761 px the details column is not pinned");
+    await p.done();
+    return;
+  }
+  assert.equal(start.sticky, "sticky", "the details column is pinned beside the ticket");
+  assert.ok(start.max > 200, `the ticket is longer than the modal (${start.max} px to scroll)`);
+  for (const pos of [0, Math.round(start.max / 2), 99999]) {
+    await p.$eval(".kb-task-panel", (el, y) => { el.scrollTop = y; }, pos);
+    await p.waitForTimeout(50);
+    const m = await measure();
+    assert.ok(m.side.top >= m.head.bottom - 1, `scrolled to ${pos}: the column's top (${Math.round(m.side.top)}) is below the modal's header (${Math.round(m.head.bottom)}), not under it`);
+    assert.ok(m.side.bottom <= m.bar.top + 1, `scrolled to ${pos}: the column ends (${Math.round(m.side.bottom)}) above the Save bar (${Math.round(m.bar.top)})`);
+    if (pos) assert.ok(m.desc.top < start.desc.top - 100, "the ticket's own details scrolled up under the column");
+  }
+  // Every field in the column can be reached inside the column itself, and the page stays put.
+  for (const f of start.fields) {
+    await p.$eval(`#kb-task-side [data-field="${f}"]`, (el) => el.scrollIntoView({ block: "nearest" }));
+    const ok = await p.evaluate((k) => { const s = document.getElementById("kb-task-side").getBoundingClientRect(), b = document.querySelector(`#kb-task-side [data-field="${k}"]`).getBoundingClientRect(); return b.top >= s.top - 1 && b.bottom <= s.bottom + 1; }, f);
+    assert.ok(ok, `${f} can be shown inside the details column`);
+  }
+  await p.done();
+});
+
 T("TC-19", "settings: hide or require an optional field", async (prof) => {
   const p = await open(prof, "#staff-kanban/settings");
   await press(p, '[data-show="sprint"]'); await p.waitForTimeout(100);

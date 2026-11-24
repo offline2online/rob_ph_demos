@@ -640,9 +640,21 @@ Shared with the console's other mics: `backlog-tracker/public/js/dictation-resul
 `backlog-tracker/test/dictation-results.test.mjs`.
 
 **KB-MOD-5 Layout.** Delete / Cancel / primary button are pinned to the bottom
-of the modal. The details column runs the full height of the modal and folds away to the right (the button at the top of the column or the
+of the modal. The details column runs down the right of the modal (pinned while the ticket scrolls, KB-MOD-8) and folds away to the right (the button at the top of the column or the
 "Details" tab) so the description gets the full width; the choice is
 remembered and the column reopens if a required field in it is empty.
+
+**KB-MOD-8 The details column stays put (24 Nov 2026).** Wherever the details
+column sits beside the ticket (wider than 760 px, in a window at least 520 px
+tall), it is frozen in the modal: scrolling moves only the ticket itself (title,
+description, criteria, links, attachments, comments, "N more fields" and the
+Created line), and every control down the right (Priority, Type, Parent, people,
+Release, estimate and time, Sprint, Project, Due date, Labels, Status) stays on
+screen, pinned under the modal's header. The column is never taller than the modal
+can show above the pinned Save bar; a column longer than that scrolls on its own,
+inside the modal, without moving the ticket. On a phone the details still stack
+under the ticket as before. Tested by KB-C40 in
+`backlog-tracker/test/ui/staff-kanban.test.mjs`.
 
 **KB-MOD-6 Validation.** Required fields (per settings) are marked and
 checked on save; estimate and time logged accept `1d 4h`, `6h`, `30m`.

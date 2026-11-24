@@ -689,6 +689,24 @@ body.kb-drag-active .kb-col[data-status="done"] .kb-res-split { visibility: hidd
 .kb-side-collapsed .kb-side-tab:hover { background: var(--surface-2); color: var(--text); }
 .kb-side-tab span:last-child { writing-mode: vertical-rl; letter-spacing: .06em; text-transform: uppercase; font-size: 11px; }
 .kb-side-tab .material-symbols-outlined { font-size: 20px; }
+/* KB-MOD-8 Frozen details column: wherever the details sit beside the ticket (wider
+   than 760 px, and a window tall enough to hold a useful column), the column stays
+   put while the ticket scrolls under it. Only the left side (title, description,
+   criteria, comments…) moves; every edit control on the right stays on screen, and
+   the column is never taller than the modal can show above its pinned Save bar
+   (header + panel padding + action bar, 170 px with touch-sized buttons). A column longer than that scrolls
+   on its own, inside the modal. */
+@media (min-width: 761px) and (min-height: 520px) {
+  /* Pinned just under the modal's own sticky header (apple.css .ap-sheet: 16 px + its 36 px
+     controls + 12 px, 20 px of it above the content edge), with an 8 px gap; on touch the
+     header's × is 44 px, so 8 px lower. */
+  .kb-task-side, .kb-side-collapsed .kb-side-tab { position: sticky; top: 52px; z-index: 2; }
+  .kb-task-side { max-height: calc(90vh - 170px); max-height: calc(90dvh - 170px); overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: thin; }
+  .kb-side-collapsed .kb-side-tab { align-self: start; }
+}
+@media (min-width: 761px) and (min-height: 520px) and (pointer: coarse) {
+  .kb-task-side, .kb-side-collapsed .kb-side-tab { top: 60px; }
+}
 @media (max-width: 760px) {
   .kb-task-grid.kb-side-collapsed { grid-template-columns: minmax(0, 1fr); }
   .kb-side-collapsed .kb-side-tab { flex-direction: row; justify-content: center; min-height: 44px; width: 100%; }

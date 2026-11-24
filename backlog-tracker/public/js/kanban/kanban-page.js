@@ -2190,16 +2190,19 @@ export function mountStaffKanban(ctx) {
     const visible = (k) => k === "voice" || k === "children" || k === "criteria" || k === "interface" || k === "agents" || CORE_FIELDS.some((f) => f.key === k) || fieldOn(k);
     const hidden = OPTIONAL_FIELDS.map((f) => f.key).filter((k) => k !== "flag" && !fieldOn(k) && !(draftIsNew && k === "comments"));
     // On an existing ticket, hidden fields stay editable below; a new task shows only the configured form.
+    // "More fields" and the Created line close the left column, so the details column stays pinned beside
+    // the ticket right down to its last line (KB-MOD-8).
     form.innerHTML = `
       ${!draftIsNew && needsWork(draft) ? needsWorkHTML(draft, "kb-needs-work-modal") : ""}
       ${!draftIsNew && draft.status === "ready-for-testing" && canWrite() ? `<div class="kb-needs-work-bar"><button type="button" class="kb-needs-work-btn" id="f-needs-work"><span class="material-symbols-outlined" aria-hidden="true">undo</span>Needs more work</button></div>` : ""}
       <div class="kb-task-grid${sideCollapsed ? " kb-side-collapsed" : ""}">
-        <div class="kb-task-main">${main.filter(visible).map(fieldHTML).join("")}</div>
+        <div class="kb-task-main">${main.filter(visible).map(fieldHTML).join("")}
+          ${!draftIsNew && hidden.length ? `<details class="kb-more"><summary>${hidden.length} more field${hidden.length > 1 ? "s" : ""}<span class="kb-more-names">${hidden.map((k) => esc(FIELD_LABEL[k])).join(", ")}</span></summary><div class="kb-more-body">${hidden.map(fieldHTML).join("")}</div></details>` : ""}
+          ${draftIsNew ? "" : `<p class="kb-created">Created by ${esc(fullName(draft.reporter))} · ${fmtDate(draft.created, { day: "numeric", month: "short", year: "numeric" })}</p>`}
+        </div>
         ${sideHTML(side.filter(visible))}
         <button type="button" class="kb-side-tab" id="kb-side-tab" aria-controls="kb-task-side" aria-expanded="false" title="Show details"><span class="material-symbols-outlined" aria-hidden="true">left_panel_open</span><span>Details</span></button>
       </div>
-      ${!draftIsNew && hidden.length ? `<details class="kb-more"><summary>${hidden.length} more field${hidden.length > 1 ? "s" : ""}<span class="kb-more-names">${hidden.map((k) => esc(FIELD_LABEL[k])).join(", ")}</span></summary><div class="kb-more-body">${hidden.map(fieldHTML).join("")}</div></details>` : ""}
-      ${draftIsNew ? "" : `<p class="kb-created">Created by ${esc(fullName(draft.reporter))} · ${fmtDate(draft.created, { day: "numeric", month: "short", year: "numeric" })}</p>`}
       <p class="tm-error" id="f-error" hidden></p>
       <div class="form-row kb-form-actions">
         ${draftIsNew || !canWrite() ? "<span></span>" : '<button type="button" class="btn-ghost fa-actions-delete" id="f-delete" aria-label="Delete ticket" title="Delete ticket"><span class="material-symbols-outlined" aria-hidden="true">delete</span></button>'}
