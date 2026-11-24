@@ -629,6 +629,7 @@ export function defineNewCases(E) {
 
   T("TC-48", "reorder within a column (top, middle, bottom); the order is kept", { timeout: 300000 }, async (prof) => {
     const p = await open(prof, E.hash("kanban"));
+    if (E.samePriority) await E.samePriority(p); // the console sorts by priority first (KB-BOARD-3a)
     const col = "ready-for-dev";
     const input = prof.touch ? "touch" : "mouse";
     const order = () => columnKeys(p, col);
@@ -672,6 +673,7 @@ export function defineNewCases(E) {
 
   T("TC-49", "drop into an empty column, and at the very bottom of a tall column", { timeout: 300000 }, async (prof) => {
     const p = await open(prof, E.hash("kanban"));
+    if (E.samePriority) await E.samePriority(p); // the console sorts by priority first (KB-BOARD-3a)
     const input = prof.touch ? "touch" : "mouse";
     // empty Approved for Deployment
     for (const k of await columnKeys(p, "approved")) await statusMove(p, k, "completed");
@@ -692,6 +694,7 @@ export function defineNewCases(E) {
 
   T("TC-50", "a cancelled drag (Esc, dropped outside the board, dropped on its own place) changes nothing and the closing targets disappear", { timeout: 300000 }, async (prof) => {
     const p = await open(prof, E.hash("kanban"));
+    if (E.samePriority) await E.samePriority(p); // PH-34 at the top of Backlog: the console sorts by priority first (KB-BOARD-3a)
     const input = prof.touch ? "touch" : "mouse";
     const key = "PH-34"; // top of Backlog: on a phone it sits above the closing targets
     const state0 = JSON.stringify(await Promise.all(COLS.map((c) => columnKeys(p, c))));
@@ -738,6 +741,7 @@ export function defineNewCases(E) {
 
   T("TC-51", "dragging near an edge scrolls the page, and the board sideways where it overflows", { timeout: 300000 }, async (prof) => {
     const p = await open(prof, E.hash("kanban"));
+    if (E.samePriority) await E.samePriority(p); // PH-34 at the top of Backlog: the console sorts by priority first (KB-BOARD-3a)
     const input = prof.touch ? "touch" : "mouse";
     const P = await pickUp(p, "PH-34", input);
     const c = { x: P.at.x - 44, y: P.at.y - 30 };

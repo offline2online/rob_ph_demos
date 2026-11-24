@@ -216,6 +216,23 @@ function rankBetween(prev, next) {
   return (prev + next) / 2;
 }
 
+// KB-BOARD-3: every column, on the plain board and in each staff swimlane,
+// lists its tickets by priority, Highest first (a ticket with no priority
+// counts as Medium), then by rank: the manual drag order within one priority.
+const prioRank = (t) => { const i = PRIORITIES.findIndex((p) => p.key === (t && t.priority)); return i < 0 ? 2 : i; };
+const byBoardOrder = (a, b) => prioRank(a) - prioRank(b) || (Number(a.rank) || 0) - (Number(b.rank) || 0);
+// A drop at position idx of a column in board order (the dragged ticket left
+// out) takes its rank from the nearest tickets of its own priority on each
+// side, so a drop among another priority lands at the edge of its own: a drag
+// never changes a ticket's priority, and the column stays sorted.
+function dropNeighbours(list, idx, task) {
+  const p = prioRank(task);
+  let prev = null, next = null;
+  for (let i = Math.min(idx, list.length) - 1; i >= 0; i--) if (prioRank(list[i]) === p) { prev = list[i]; break; }
+  for (let i = Math.max(idx, 0); i < list.length; i++) if (prioRank(list[i]) === p) { next = list[i]; break; }
+  return { prev, next };
+}
+
 // ── People: one person, several sign-in addresses ────────────────────────
 // An alias is a second address the same person signs in with. The board
 // never lists it as a person of its own: anything that names it (assignee,
@@ -1152,4 +1169,4 @@ function dataUriParts(uri) {
   return m ? { contentType: m[1], base64: m[2].replace(/\s+/g, "") } : null;
 }
 
-module.exports = { STATUSES, STATUS_KEYS, STATUS_LABEL, RESOLUTIONS, TYPES, PRIORITIES, LINK_TYPES, INVERSE_LINK, linkChanges, inverseOf, CORE_FIELDS, OPTIONAL_FIELDS, FIELD_LABEL, FIELD_KEYS, defaultFields, currentReleaseId, normaliseSettings, res, statusLabel, statusShort, typeOf, prioOf, remaining, keyNumber, keyOf, ticketSub, ticketHash, ticketFromSub, fmtH, parseDur, isoDay, fmtDate, daysBetween, workingDaysUntil, rankBetween, PERSON_ALIASES, setPersonAliases, canonicalEmail, isAliasEmail, statusChange, parseActivity, fmtAge, ticketHistory, soundAlikes, matchSpokenNames, MAX_LEVELS, LEVEL_NAMES, levelName, ancestorsOf, levelOf, heightOf, parentProblem, canHaveChildren, isFinished, rollup, parentsToAdvance, fold, MAX_TOKENS, searchTokens, queryToken, searchTickets, PICK_LIMIT, matchesQuery, filterTasks, SHOW_FILTERS, SHOW_COLUMNS, matchesShow, CAPACITY_HOURS_PER_DAY, releaseReport, AGENT_LABELS, agentDraft, htmlToText, mentionsIn, AC_MAX_ITEMS, AC_MAX_TEXT, newCriterionId, encodeCriteria, decodeCriteria, acCounts, cleanCriteria, diffCriteria, cleanTaskFields, editActivity, CARD_FIELDS, cardOf, AGENT_MAX_TICKETS, AGENT_DESC_MAX, AGENT_BUILT, AGENT_STATUS_LABEL, agentBuilt, agentRollup, canSendToAgent, cleanAgentSplit, agentTicketDesc, cardPatchOf, hasInlineImages, externaliseInlineImages, dataUriParts };
+module.exports = { STATUSES, STATUS_KEYS, STATUS_LABEL, RESOLUTIONS, TYPES, PRIORITIES, LINK_TYPES, INVERSE_LINK, linkChanges, inverseOf, CORE_FIELDS, OPTIONAL_FIELDS, FIELD_LABEL, FIELD_KEYS, defaultFields, currentReleaseId, normaliseSettings, res, statusLabel, statusShort, typeOf, prioOf, remaining, keyNumber, keyOf, ticketSub, ticketHash, ticketFromSub, fmtH, parseDur, isoDay, fmtDate, daysBetween, workingDaysUntil, rankBetween, prioRank, byBoardOrder, dropNeighbours, PERSON_ALIASES, setPersonAliases, canonicalEmail, isAliasEmail, statusChange, parseActivity, fmtAge, ticketHistory, soundAlikes, matchSpokenNames, MAX_LEVELS, LEVEL_NAMES, levelName, ancestorsOf, levelOf, heightOf, parentProblem, canHaveChildren, isFinished, rollup, parentsToAdvance, fold, MAX_TOKENS, searchTokens, queryToken, searchTickets, PICK_LIMIT, matchesQuery, filterTasks, SHOW_FILTERS, SHOW_COLUMNS, matchesShow, CAPACITY_HOURS_PER_DAY, releaseReport, AGENT_LABELS, agentDraft, htmlToText, mentionsIn, AC_MAX_ITEMS, AC_MAX_TEXT, newCriterionId, encodeCriteria, decodeCriteria, acCounts, cleanCriteria, diffCriteria, cleanTaskFields, editActivity, CARD_FIELDS, cardOf, AGENT_MAX_TICKETS, AGENT_DESC_MAX, AGENT_BUILT, AGENT_STATUS_LABEL, agentBuilt, agentRollup, canSendToAgent, cleanAgentSplit, agentTicketDesc, cardPatchOf, hasInlineImages, externaliseInlineImages, dataUriParts };

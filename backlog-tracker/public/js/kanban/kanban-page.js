@@ -13,7 +13,7 @@ import { ATTACHMENT_ACCEPT, MAX_ATTACHMENT_BYTES, attachmentContentType, isAllow
 import {
   STATUSES, STATUS_LABEL, RESOLUTIONS, TYPES, PRIORITIES, LINK_TYPES, CORE_FIELDS, OPTIONAL_FIELDS, FIELD_LABEL,
   res, statusLabel, statusShort, typeOf, prioOf, remaining, fmtH, parseDur, fmtDate, daysBetween, workingDaysUntil,
-  statusChange, currentReleaseId, rankBetween, fold, searchTickets, hasInlineImages, PICK_LIMIT, filterTasks, SHOW_FILTERS, SHOW_COLUMNS, agentDraft, keyNumber, isoDay,
+  statusChange, currentReleaseId, rankBetween, byBoardOrder, dropNeighbours, fold, searchTickets, hasInlineImages, PICK_LIMIT, filterTasks, SHOW_FILTERS, SHOW_COLUMNS, agentDraft, keyNumber, isoDay,
   canonicalEmail, isAliasEmail, newCriterionId, AC_MAX_ITEMS, AC_MAX_TEXT, editActivity, ticketHash, ticketFromSub,
   MAX_LEVELS, LEVEL_NAMES, levelName, ancestorsOf, levelOf, heightOf, parentProblem, rollup, parentsToAdvance,
   AGENT_MAX_TICKETS, AGENT_STATUS_LABEL, agentBuilt, agentRollup, canSendToAgent, cleanAgentSplit,
@@ -347,10 +347,12 @@ export function mountStaffKanban(ctx) {
   function moveTaskTo(key, status, beforeKey, lane, resolution, tester) {
     const task = taskByKey(key);
     if (!task || !canWrite()) return;
-    const list = state.tasks.filter((t) => t.status === status && t !== task).sort((a, b) => a.rank - b.rank);
+    // The column as drawn (priority, then rank); the rank comes from the
+    // nearest tickets of the same priority either side of the drop (KB-BOARD-3).
+    const list = state.tasks.filter((t) => t.status === status && t !== task).sort(byBoardOrder);
     let idx = beforeKey ? list.findIndex((t) => t.key === beforeKey) : -1;
     if (idx < 0) idx = list.length;
-    const prev = list[idx - 1], next = list[idx];
+    const { prev, next } = dropNeighbours(list, idx, task);
     const patch = { rank: rankBetween(prev ? prev.rank : null, next ? next.rank : null) };
     const activity = [];
     const toAssignee = lane === undefined ? task.assignee : lane === "none" ? "" : lane;
@@ -976,7 +978,7 @@ export function mountStaffKanban(ctx) {
     const byStatus = new Map(STATUSES.map((s) => [s.key, []]));
     for (const t of tasks) { const l = byStatus.get(t.status); if (l) l.push(t); }
     for (const s of STATUSES) {
-      const list = byStatus.get(s.key).sort((a, b) => a.rank - b.rank);
+      const list = byStatus.get(s.key).sort(byBoardOrder);
       const col = $(`.kb-col[data-status="${s.key}"]`, el);
       col.classList.toggle("column-collapsed", collapsedCols.has(s.key));
       setMeta($(".kb-col-head", col), colMeta(list, s));
@@ -1008,7 +1010,7 @@ export function mountStaffKanban(ctx) {
     el.classList.toggle("kb-board-lanes", !!lanes);
     el.dataset.col = STATUSES[phoneCol].key;
     drawPager(tasks);
-    const sorted = (list, k) => list.filter((t) => t.status === k).sort((a, b) => a.rank - b.rank);
+    const sorted = (list, k) => list.filter((t) => t.status === k).sort(byBoardOrder);
     if (lanes) {
       el.dataset.mode = "lanes";
       $("#kb-lanes-head").innerHTML = STATUSES.map((s) => `<div class="col-head kb-col-head kb-lanes-head kb-col-${s.key}"><span class="kb-col-title">${esc(s.label)}</span>${colMeta(sorted(tasks, s.key), s)}</div>`).join("");
