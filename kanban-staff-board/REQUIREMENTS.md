@@ -183,11 +183,15 @@ labels, linked/unlinked tickets); status moves keep their own line.
 that doesn't pass testing is sent back with a **Needs more work** stamp: the
 red **Needs more work** button at the top of the open ticket (shown while it is
 in Ready for Testing, to anyone who can edit) asks what still needs doing (required, up to 500
-characters) and moves it to **Ready for Dev**, returning it to its developer as
+characters, with a count under the box; typed, or **dictated** with the mic
+inside the box, the same mic as the description and comment boxes, and
+editable before sending) and moves it to **Ready for Dev**, returning it to its developer as
 KB-BOARD-5 does. The ticket and its card carry `needsMoreWork` `{reason, by,
-at}`. While stamped, the card has a red outline and a full-width red "Needs
-more work" banner with the reason across its top, the open ticket shows the
-banner with who sent it back and when, and the ticket is drawn **above every
+at}`. While stamped, the card has a thin red left edge and a full-width
+"Needs more work" note across its top in the platform's quiet alert style
+(light red fill, small sentence-case red heading, the reason in body text;
+toned down from a solid red banner on 24 Nov 2026), the open ticket shows the
+note with who sent it back and when, and the ticket is drawn **above every
 other ticket in its column**, Highest priority included (KB-BOARD-3a applies
 among stamped tickets), in Ready for Dev and still in In Progress or Backlog if
 the developer moves it there, so a pushed-back ticket is seen and fixed
@@ -197,8 +201,9 @@ activity line ("marked Needs more work: <reason>", "cleared Needs more work").
 A plain drag back out of Ready for Testing does not stamp a ticket. Over MCP,
 `kanban_move_task` takes `needsMoreWork` (the reason) with status `backlog`,
 `ready-for-dev` or `in-progress` on a ticket in Ready for Testing. AC: send a
-Ready for Testing ticket back with a reason; it is first in Ready for Dev,
-above a Highest ticket, with the red banner and reason, assigned to its
+Ready for Testing ticket back with a reason (dictated or typed); it is first
+in Ready for Dev, above a Highest ticket, with the light "Needs more work" note
+and reason, assigned to its
 developer; move it to In Progress and it is still stamped and first; move it to
 Ready for Testing and the stamp is gone. `kanban-core.js` `statusChange` /
 `byBoardOrder`, `kanban-core.test.mjs`, `kanban-mcp.test.js`,

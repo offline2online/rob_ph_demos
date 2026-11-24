@@ -529,7 +529,8 @@ T("KB-NEEDS-WORK", "Needs more work sends a tested ticket back to Ready for Dev,
   const top = mk("PH-3001", 3001, { title: "Highest in Ready for Dev", status: "ready-for-dev", priority: "highest", rank: -5000, assignee: HUY, previousAssignee: "" });
   seed.docs.kanbanTasks = { ...seed.docs.kanbanTasks, [tested.key]: tested, [top.key]: top };
   seed.docs.kanbanCards = { ...seed.docs.kanbanCards, [tested.key]: cardOfTask(tested), [top.key]: cardOfTask(top) };
-  const p = await open(prof, "#staff-kanban", { seed, height: 2000 });
+  // The reason is dictated (syB6fGiu5wIc1UBksHGa): the prompt's mic talks into the box, like the comment box's.
+  const p = await open(prof, "#staff-kanban", { seed, height: 2000, init: speechStub("save button still greys out on the iPad") });
   const devKeys = () => p.$$eval('.kb-col[data-status="ready-for-dev"] .kb-card', (e) => e.map((x) => x.dataset.key));
   // A ticket outside Ready for Testing has no such action.
   await press(p, '.kb-card[data-key="PH-3001"] .card-title');
@@ -542,16 +543,27 @@ T("KB-NEEDS-WORK", "Needs more work sends a tested ticket back to Ready for Dev,
   await press(p, "#f-needs-work");
   await until(async () => !!(await p.$("#kb-needs-work-reason")), "the reason prompt");
   assert.equal(await p.$eval("#kb-needs-work-ok", (b) => b.disabled), true, "a reason is required");
-  await p.fill("#kb-needs-work-reason", "Save button still greys out on the iPad");
+  await press(p, "#kb-needs-work-mic");
+  await eventually(async () => assert.equal(await p.$eval("#kb-needs-work-reason", (t) => t.value), "Save button still greys out on the iPad", "the words said land in the box"));
+  assert.equal(await p.textContent("#kb-needs-work-mic"), "stop", "the mic shows it is listening");
+  await press(p, "#kb-needs-work-mic");
+  await eventually(async () => assert.equal(await p.textContent("#kb-needs-work-mic"), "mic"));
+  assert.equal(await p.$eval("#kb-needs-work-ok", (b) => b.disabled), false, "a dictated reason can be sent");
+  assert.match(await p.textContent("#kb-needs-work-count"), /^39 \/ 500/);
   await press(p, "#kb-needs-work-ok");
   await eventually(async () => assert.equal((await devKeys())[0], "PH-3000", "first in Ready for Dev, above the Highest ticket"));
   const card = '.kb-col[data-status="ready-for-dev"] .kb-card[data-key="PH-3000"]';
   assert.ok(await p.$eval(card, (c) => c.classList.contains("kb-card-needs-work")), "the card is marked");
   assert.match(await p.$eval(`${card} .kb-needs-work`, (e) => e.innerText), /Needs more work/i);
   assert.match(await p.$eval(`${card} .kb-needs-work-reason`, (e) => e.textContent), /Save button still greys out on the iPad/);
-  const banner = await p.$eval(`${card} .kb-needs-work`, (e) => { const r = e.getBoundingClientRect(), c = e.closest(".kb-card").getBoundingClientRect(); return { w: r.width, cw: c.width, bg: getComputedStyle(e).backgroundColor }; });
+  const banner = await p.$eval(`${card} .kb-needs-work`, (e) => { const r = e.getBoundingClientRect(), c = e.closest(".kb-card").getBoundingClientRect(), h = e.querySelector(".kb-needs-work-head"); return { w: r.width, cw: c.width, bg: getComputedStyle(e).backgroundColor, caps: getComputedStyle(h).textTransform, size: parseFloat(getComputedStyle(h).fontSize) }; });
   assert.ok(banner.w > banner.cw * 0.8, "the stamp runs across the card");
   assert.notEqual(banner.bg, "rgba(0, 0, 0, 0)", "the stamp is filled");
+  // A quiet alert, not a siren: a light fill, sentence case, no bigger than the card's own text.
+  const [r, g, b] = banner.bg.match(/\d+/g).map(Number);
+  assert.ok(r > 240 && g > 220 && b > 220, `the stamp's fill is light, not solid red (${banner.bg})`);
+  assert.equal(banner.caps, "none", "the heading is not shouted in capitals");
+  assert.ok(banner.size <= 12, "the heading is small");
   const stored = await p.evaluate(() => globalThis.__fbStub.col("kanbanTasks").get("PH-3000"));
   assert.equal(stored.status, "ready-for-dev");
   assert.equal(stored.assignee, HUY, "back with its developer");

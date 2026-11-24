@@ -385,18 +385,28 @@ export function mountStaffKanban(ctx) {
     return new Promise((resolve) => {
       const wrap = document.createElement("div");
       wrap.className = "modal-backdrop"; wrap.id = "kb-needs-work-backdrop";
-      wrap.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="kb-needs-work-h" style="max-width:460px"><div class="modal-body"><h3 id="kb-needs-work-h">${esc(task.key)} needs more work</h3><p class="kb-none">It goes back to Ready for Dev${task.previousAssignee ? ` and to ${esc(fullName(task.previousAssignee))}` : ""}, stamped Needs more work at the top of the column.</p><label class="field-label" for="kb-needs-work-reason">What still needs doing?</label><textarea id="kb-needs-work-reason" class="kb-input" rows="3" maxlength="500" placeholder="What didn't pass testing"></textarea></div><div class="modal-footer"><button type="button" class="btn-ghost" id="kb-needs-work-cancel">Cancel</button><button type="button" class="btn-primary kb-needs-work-ok" id="kb-needs-work-ok" disabled>Send back to Ready for Dev</button></div></div>`;
+      wrap.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="kb-needs-work-h" style="max-width:460px"><div class="modal-body"><h3 id="kb-needs-work-h">${esc(task.key)} needs more work</h3><p class="kb-none">It goes back to Ready for Dev${task.previousAssignee ? ` and to ${esc(fullName(task.previousAssignee))}` : ""}, stamped Needs more work at the top of the column.</p><label class="field-label" for="kb-needs-work-reason">What still needs doing?</label><div class="desc-wrap kb-needs-work-wrap"><textarea id="kb-needs-work-reason" class="kb-input" rows="4" maxlength="${NEEDS_WORK_MAX}" placeholder="What didn't pass testing. Type it, or tap the mic and talk"></textarea>${micBtn("kb-needs-work-mic", "Dictate what still needs doing")}</div><p class="mic-error" id="kb-needs-work-mic-error"></p><p class="kb-needs-work-count" id="kb-needs-work-count" aria-live="polite">0 / ${NEEDS_WORK_MAX}</p></div><div class="modal-footer"><button type="button" class="btn-ghost" id="kb-needs-work-cancel">Cancel</button><button type="button" class="btn-primary" id="kb-needs-work-ok" disabled>Send back to Ready for Dev</button></div></div>`;
       document.body.appendChild(wrap);
-      const txt = wrap.querySelector("#kb-needs-work-reason"), ok = wrap.querySelector("#kb-needs-work-ok");
-      const done = (v) => { wrap.remove(); resolve(v); };
-      txt.addEventListener("input", () => { ok.disabled = !txt.value.trim(); });
-      ok.addEventListener("click", () => txt.value.trim() && done(txt.value.trim()));
+      const txt = wrap.querySelector("#kb-needs-work-reason"), ok = wrap.querySelector("#kb-needs-work-ok"), count = wrap.querySelector("#kb-needs-work-count");
+      // Dictation writes the box directly, past maxlength, so the count says when it is too long to send.
+      const sync = () => {
+        const n = txt.value.trim().length, over = n > NEEDS_WORK_MAX;
+        ok.disabled = !n || over;
+        count.textContent = `${n} / ${NEEDS_WORK_MAX}${over ? " · too long, shorten it to send" : ""}`;
+        count.classList.toggle("over", over);
+      };
+      const done = (v) => { if (activeMic && activeMic.id === "kb-needs-work-mic") { haltMic(); activeMic = null; } wrap.remove(); resolve(v); };
+      txt.addEventListener("input", sync);
+      ok.addEventListener("click", () => { const v = txt.value.trim(); if (v && v.length <= NEEDS_WORK_MAX) done(v); });
+      // Talk instead of typing (the description and comment boxes' mic): the words land in the box, editable before sending.
+      bindMic("kb-needs-work-mic", "kb-needs-work-reason", "kb-needs-work-mic-error");
       wrap.querySelector("#kb-needs-work-cancel").addEventListener("click", () => done(null));
       wrap.addEventListener("click", (e) => { if (e.target === wrap) done(null); });
       wrap.addEventListener("keydown", (e) => { if (e.key === "Escape") done(null); });
       txt.focus();
     });
   }
+  const NEEDS_WORK_MAX = 500; // normNeedsWork keeps at most this many characters of the reason
   function sendBackNeedsWork(key) {
     const task = taskByKey(key);
     if (!task || !canWrite() || task.status !== "ready-for-testing") return;
