@@ -3249,7 +3249,9 @@ Context"; the requirements are CTX-1 to CTX-24 in `REQUIREMENTS.md`.
 
 - `search_console`: ranked hits across tickets (every project, archived
   ones, comments), Staff Kanban, projects, concepts and critiques, the help
-  centre, leads, prospects, Support threads, project documents and skills.
+  centre, leads, prospects, Support threads, project documents, the
+  documentation library (Support › Documentation, every page migrated from
+  Confluence) and skills.
 - `get_topic_context`: a compact pack on one topic (a summary, the key
   records per source with links, open items, blockers, decisions, what
   changed, related topics), cached.
