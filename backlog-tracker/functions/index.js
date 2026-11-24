@@ -2889,10 +2889,26 @@ function getPcLeadEnrich() {
   return pcLeadEnrich;
 }
 // 180 s: the Partner Central agent (MCP) can take up to two minutes on a multi-step answer.
+// Promote › Leads: Hot Lead → ACE opportunity draft (ace-draft.js). A company lead
+// moving to Hot Lead whose TAM company runs on AWS is drafted through the
+// Partner Central agent (held for an admin's approval); later stage moves are
+// queued for one bulk "Sync ACE stages". Its routes (/v1/leads/{id}/ace…,
+// /v1/ace-sync) are answered before the admin routes.
+const { createAceDraft } = require("./ace-draft");
+let aceDraftApi = null;
+function getAceDraft() {
+  if (!aceDraftApi) aceDraftApi = createAceDraft({ db: getFirestore(), partnerCentral: getPartnerCentralApi(), logger });
+  return aceDraftApi;
+}
 exports.partnerCentral = onRequest({ cors: false, timeoutSeconds: 180, maxInstances: 3 }, async (req, res) => {
   if (await getPcLeadEnrich().handle(req, res)) return;
+  if (await getAceDraft().handle(req, res)) return;
   return getPartnerCentralApi().handle(req, res);
 });
+exports.aceDraftOnLeadWrite = onDocumentWritten({ document: "leads/{leadId}", timeoutSeconds: 300, maxInstances: 5 },
+  (event) => getAceDraft().onLeadWrite(event));
+exports.aceDraftOnSessionWrite = onDocumentWritten({ document: "partnerCentralAgentSessions/{sessionId}", timeoutSeconds: 60, maxInstances: 5 },
+  (event) => getAceDraft().onSessionWrite(event));
 exports.partnerCentralLeadOnWrite = onDocumentWritten({ document: "leads/{leadId}", timeoutSeconds: 540, maxInstances: 5 },
   (event) => getPcLeadEnrich().onLeadWrite(event));
 

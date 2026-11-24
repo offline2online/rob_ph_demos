@@ -85,6 +85,10 @@ export async function startHarness() {
     const routineWrites = [];
     let routineBound = !!(seed.routineBinding && seed.routineBinding.hasRoutineBinding);
     const aceStore = (seed.aceOpportunities || []).map((o) => ({ ...o }));
+    // Hot Lead → ACE opportunity draft (functions/ace-draft.js): seed.leadAce[leadId] is what
+    // GET /partnerCentral/v1/leads/{id}/ace answers; seed.aceSyncPending is the queued stage changes.
+    const leadAce = JSON.parse(JSON.stringify(seed.leadAce || {}));
+    let aceSync = (seed.aceSyncPending || []).map((x) => ({ ...x }));
     const addProblem = (p) => problems.push(p);
     await context.addInitScript((s) => { window.__FB_SEED = s; }, seed);
     if (init) await context.addInitScript(init.fn, init.arg);
@@ -160,6 +164,28 @@ export async function startHarness() {
         if (url.pathname === "/partnerCentral/v1/ace") {
           if (seed.aceStatus && seed.aceStatus !== 200) return route.fulfill({ status: seed.aceStatus, contentType: "application/json", body: JSON.stringify({ error: seed.aceError || "Server error" }) });
           return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ catalog: "Sandbox", truncated: false, opportunities: aceStore }) });
+        }
+        // Hot Lead → ACE opportunity draft: the lead summary's read (not recorded), Draft (a create held
+        // for approval, predicted score 64) and Sync ACE stages (one call); writes go in pcAgentCalls.
+        const aceLead = /^\/partnerCentral\/v1\/leads\/([^/]+)\/ace(\/draft)?$/.exec(url.pathname);
+        if (aceLead || url.pathname === "/partnerCentral/v1/ace-sync") {
+          const method = route.request().method();
+          const json = (b) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(b) });
+          if (method !== "GET") pcAgentCalls.push({ method, path: url.pathname, body: JSON.parse(route.request().postData() || "{}") });
+          if (!aceLead) {
+            if (method === "GET") return json({ pending: aceSync });
+            const n = aceSync.filter((x) => x.opportunityId).length;
+            aceSync = aceSync.filter((x) => !x.opportunityId);
+            const session = { sessionId: "sess-sync-1", catalog: "Sandbox", status: "requires_approval", lastReply: "I will update the stages. Approve to continue.", createdAt: "2026-11-24T10:00:00Z", updatedAt: "2026-11-24T10:00:00Z", expiresAt: "2026-11-26T10:00:00Z", leadId: null, leadName: null, opportunityId: null, approvals: [{ toolUseId: "tu-sync-1", toolName: "UpdateOpportunity", parameters: { Identifier: "O7654321", LifeCycle: { Stage: "Technical Validation" } }, state: "pending" }] };
+            return json({ sent: n, waiting: aceSync.length, session, message: `${n} ACE stage ${n === 1 ? "change waits" : "changes wait"} for your approval.` });
+          }
+          const id = decodeURIComponent(aceLead[1]);
+          const cur = leadAce[id] || { leadId: id, eligible: { ok: false, reason: "No Prospects (TAM) company record for this company, so its primary cloud is not known." }, primaryCloud: null, attachments: [], draft: null, opportunityId: null, opportunity: null, score: null, targetScore: 60, insights: [] };
+          if (aceLead[2]) {
+            leadAce[id] = { ...cur, draft: { status: "awaiting-approval", reason: "", catalog: "Sandbox", sessionId: "sess-ace-1", predictedScore: 64, recommendations: ["Add the expected monthly spend", "Name the AWS account manager"], pendingApprovals: 1, aceStage: null, stageSync: null, at: "2026-11-24T10:00:00Z", by: "admin@ph.example", auto: false }, score: { value: 64, source: "predicted" } };
+            return json({ ok: true, status: "awaiting-approval", reason: "", ace: leadAce[id] });
+          }
+          return json(cur);
         }
         // Partner Central agent (functions/partner-central.js /v1/agent/*). A message that mentions "draft"
         // comes back holding one write for approval; an approval decides it. Calls are returned as pcAgentCalls.

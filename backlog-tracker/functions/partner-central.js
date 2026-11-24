@@ -46,6 +46,9 @@
 //   POST  /v1/funding/{leadId}/poc-approved {amount?, currency?, reference?, clear?}  POC approved: claim sign-off due
 //   POST  /v1/leads/{id}/enrich             send a lead to lead enrichment again (editors;
 //                                          answered by pc-lead-enrich.js, wired in index.js)
+//   GET   /v1/leads/{id}/ace  POST /v1/leads/{id}/ace/draft  GET|POST /v1/ace-sync
+//                                          Hot Lead → ACE opportunity draft and queued ACE stages
+//                                          (answered by ace-draft.js, wired in index.js; through agentMessage)
 //   POST  /v1/licences/sync  POST /v1/licences/link   Promote › License Manager (editors; the
 //                                          AWS Marketplace agreements and their buyer contacts, read-only
 //                                          on the AWS side; marketplace-agreements.js has its own closed list)

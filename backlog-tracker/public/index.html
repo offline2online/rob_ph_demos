@@ -1952,6 +1952,13 @@
                 </div>
                 <div id="pca-approvals"></div>
                 <div id="pca-reply"></div>
+                <!-- Lead stage moves queued for ACE (functions/ace-draft.js → /v1/ace-sync):
+                     one agent message for all of them, each write still waits above. -->
+                <div class="pca-sync" id="pca-sync">
+                  <span class="field-label">ACE stages</span>
+                  <span class="pca-status" id="pca-sync-status" role="status" aria-live="polite">Loading…</span>
+                  <button type="button" class="btn-ghost" id="pca-sync-send" hidden>Sync ACE stages</button>
+                </div>
               </div>
               <div id="partner-central-audit"></div>
             </div>

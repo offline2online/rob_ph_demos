@@ -47,6 +47,7 @@ import { leadIndustryEntry, industryChipText, industryStyle } from "./industry-p
 import { researchGroupsHTML, enrichmentRunning, enrichmentSkipped, enrichButtonLabel, enrichmentStatus, logoHTML, wireLogoFallback } from "./enrichment-view.js";
 import { group, row, stackRow, lineRow, iconLink, linkedinLink, pill, tip } from "./ap-components.js";
 import { normaliseFunding, fundingSuggestion, programView, claimDue, fundingMoney, CLAIM_SKILL } from "./funding-core.js";
+import { aceGroupHTML } from "./ace-draft-view.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 // Addresses come from Firestore, which an agent can write: http(s) only.
@@ -64,6 +65,9 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
   let unsubAws = null;
   let unsubFunding = null;
   const funding = new Map(); // leadId -> its AWS funding check (leadFunding, written only by the partnerCentral function)
+  // leadId -> { stage, data, busy }: the lead summary's ACE opportunity group, read from
+  // GET /partnerCentral/v1/leads/{id}/ace (functions/ace-draft.js) when the summary opens or the stage moves.
+  const aceViews = new Map();
   let openId = null;          // the lead in the form, null for a new one
   let draft = { contacts: [] }; // contact rows held in memory while the form is open
   let started = false;
@@ -511,6 +515,44 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     const aside = f && f.catalog === "Sandbox" ? '<span class="lead-test-badge">Sandbox</span>' : "";
     return group("AWS funding", rows.join(""), { id: "lead-sum-funding", aside, tipText: "Eligibility, agent estimates and budget from AWS Partner Central for POC funding, Innovation Sandbox credits, MAP and other programmes. The agent drafts the POC and Innovation Sandbox requests; an admin approves each draft, and the account lead submits it in Partner Central. Nothing is submitted from the console." });
   }
+  // ACE opportunity (ticket qLIDYPTSvzKqYLLsI8kC): a Hot Lead whose TAM company runs on AWS is drafted through the
+  // Partner Central agent; the create waits for an admin's approval in Settings. Read when the summary opens.
+  function aceHTML(l) {
+    const v = aceViews.get(l.id);
+    return v && v.data ? aceGroupHTML(v.data, { busy: v.busy }) : "";
+  }
+  async function loadLeadAce(id, stage, delayMs = 0) {
+    const cur = aceViews.get(id);
+    aceViews.set(id, { ...(cur || {}), stage, loading: true });
+    if (delayMs) await new Promise((r) => setTimeout(r, delayMs)); // a stage move: let the trigger record it first
+    try {
+      const resp = await fetch(`/partnerCentral/v1/leads/${encodeURIComponent(id)}/ace`, { headers: await apiHeaders() });
+      const body = await resp.json().catch(() => ({}));
+      const prev = aceViews.get(id) || {};
+      aceViews.set(id, { ...prev, loading: false, data: resp.ok && body && body.leadId === id ? body : null });
+    } catch {
+      aceViews.set(id, { ...(aceViews.get(id) || {}), loading: false });
+    }
+    if (summaryId === id && !sumBackdrop.hidden) renderSummary();
+  }
+  async function draftLeadAce(id) {
+    const status = $("lead-sum-status");
+    aceViews.set(id, { ...(aceViews.get(id) || {}), busy: true });
+    renderSummary();
+    status.textContent = "Drafting the ACE opportunity through the Partner Central agent… this can take a minute.";
+    try {
+      const resp = await fetch(`/partnerCentral/v1/leads/${encodeURIComponent(id)}/ace/draft`, { method: "POST", headers: await apiHeaders(), body: "{}" });
+      const body = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(body.error || `HTTP ${resp.status}`);
+      const prev = aceViews.get(id) || {};
+      aceViews.set(id, { ...prev, busy: false, data: body.ace && body.ace.leadId === id ? body.ace : prev.data });
+      status.textContent = body.status === "awaiting-approval" ? "Drafted. The create waits for an admin's approval; nothing was written to Partner Central." : body.reason ? `Not drafted: ${body.reason}` : "Done.";
+    } catch (err) {
+      aceViews.set(id, { ...(aceViews.get(id) || {}), busy: false });
+      status.textContent = `Couldn't draft the ACE opportunity: ${err && err.message ? err.message : err}`;
+    }
+    if (summaryId === id) renderSummary();
+  }
   async function runFunding(id, act) {
     const status = $("lead-sum-status");
     const path = { "run-check": "/check", "re-read": "/refresh" }[act] || "/poc-approved"; // leading "/": a bare quoted word reads as an icon name to test/icon-font.test.mjs
@@ -608,6 +650,8 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     const l = leads.find((x) => x.id === summaryId);
     if (!l) { closeSummary(); return; }
     if (isOperator(l)) { renderOperatorSummary(l); return; }
+    const av = aceViews.get(l.id);
+    if (av && !av.loading && !av.busy && av.stage !== l.stage) loadLeadAce(l.id, l.stage, 2500);
     $("lead-sum-enrich").hidden = !canEdit();
     $("lead-summary-panel").dataset.leadType = "company";
     const entry = leadIndustryEntry(l);
@@ -627,6 +671,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
       ${awsHTML(l)}
       ${partnerCentralHTML(l)}
       ${fundingHTML(l)}
+      ${aceHTML(l)}
       <div id="lead-sum-research">${researchGroupsHTML(e)}</div>
       ${group("Lead", [
         row("Stage", `<select id="lead-sum-stage" class="lead-sum-stage" aria-label="Stage" data-editor-only>${stageOptions}</select><span class="lead-sum-stage-ro">${esc(stageLabel(l.stage))}</span>`),
@@ -663,6 +708,8 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     if (!leads.some((x) => x.id === id)) return;
     summaryId = id;
     $("lead-sum-status").textContent = "";
+    const l0 = leads.find((x) => x.id === id);
+    if (l0 && !isOperator(l0)) loadLeadAce(id, l0.stage);
     renderSummary();
     sumBackdrop.hidden = false;
     $("lead-sum-close").focus();
@@ -689,6 +736,8 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
       try { $("lead-sum-status").textContent = await sendToPartnerCentral(summaryId); } catch (err) { $("lead-sum-status").textContent = `Couldn't send: ${err && err.message ? err.message : err}`; pcBtn.disabled = false; }
       return;
     }
+    const aceBtn = e.target.closest && e.target.closest("#lead-sum-ace-draft");
+    if (aceBtn && summaryId && !aceBtn.disabled) { draftLeadAce(summaryId); return; }
     const fund = e.target.closest && e.target.closest("[data-funding]");
     if (fund && summaryId && !fund.disabled) { runFunding(summaryId, fund.dataset.funding); return; }
     const prio = e.target.closest && e.target.closest(".lead-prio-btn");

@@ -2327,7 +2327,8 @@ const scenarios = [
     } }),
     async run(c) {
       const posts = [];
-      await c.page.route("**/partnerCentral/v1/leads/**", async (route) => {
+      // Only Send again's call: opening a summary also reads its ACE opportunity (…/leads/{id}/ace, qLIDYPTSvzKqYLLsI8kC).
+      await c.page.route("**/partnerCentral/v1/leads/*/enrich", async (route) => {
         posts.push(new URL(route.request().url()).pathname);
         await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, status: "running", catalog: "Sandbox" }) });
       });
@@ -4767,6 +4768,69 @@ const scenarios = [
       assert.strictEqual(await c.page.locator(".pca-approval").count(), 0, "no approval left waiting");
       assert.match(await c.text("#pca-approvals"), /CreateOpportunity: approved by admin@ph\.example/);
       assert.match(await c.text(".pca-text"), /Draft opportunity created \(not submitted\)/);
+    },
+  },
+  {
+    // qLIDYPTSvzKqYLLsI8kC: a Hot Lead whose TAM company runs on AWS shows its ACE opportunity in the
+    // lead summary; an admin drafts it through the Partner Central agent, and the draft waits for approval.
+    name: "Promote › Leads › ACE opportunity: draft a Hot Lead through the agent, score and approval link",
+    seed: () => {
+      const s = seed({ leads: {
+        h1: { company: { name: "Acme Retail", website: "https://acme.example", industry: "Grocery", countries: ["UK"], storeCount: 40 }, contacts: [], stage: "hot-lead", source: "Manual", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
+        o1: { company: { name: "Bravo Stores", website: "", industry: "", countries: ["UK"], storeCount: null }, contacts: [], stage: "post-demo", source: "Manual", assignee: "", customerAccount: null, aceOpportunityId: "O7654321", createdAt: t(T0), updatedAt: t(T0) },
+      } });
+      s.user = { email: "admin@ph.example", role: "admin" };
+      s.docs.consoleUsers = { "admin@ph.example": { email: "admin@ph.example", role: "admin", displayName: "Ada Admin" } };
+      s.leadAce = {
+        h1: { leadId: "h1", eligible: { ok: true, reason: "" }, primaryCloud: "AWS", attachments: [{ title: "Grocery one-pager", kind: "industry-one-pager", url: "" }, { title: "Acme prospect pack", kind: "prospect-pack", url: "" }], draft: null, opportunityId: null, opportunity: null, score: null, targetScore: 60, insights: [] },
+        o1: { leadId: "o1", eligible: { ok: false, reason: "This company already has an ACE opportunity." }, primaryCloud: "AWS", attachments: [], opportunityId: "O7654321",
+          draft: { status: "drafted", catalog: "Sandbox", stageSync: { status: "pending", target: "Technical Validation", fromStage: "post-demo" } },
+          opportunity: { id: "O7654321", stage: "Qualified", score: 48, partnerCentralUrl: "https://partnercentral.example/O7654321" }, score: { value: 48, source: "actual" }, targetScore: 60,
+          insights: [{ key: "past-close", level: "risk", text: "Target close date 2026-10-01 has passed." }, { key: "low-score", level: "risk", text: "Quality score 48 is under 60." }] },
+      };
+      s.aceSyncPending = [{ leadId: "o1", company: "Bravo Stores", opportunityId: "O7654321", target: "Technical Validation" }];
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
+      c.at("a Hot Lead not drafted yet");
+      await c.page.click('.lead-lane[data-stage="hot-lead"] .lead-card .lead-card-name');
+      await c.visible("#lead-sum-ace", "the ACE opportunity group");
+      await c.waitText("#lead-sum-ace", "Not drafted yet", "not drafted yet");
+      assert.match(await c.text("#lead-sum-ace"), /Grocery one-pager, Acme prospect pack/, "the one-pager and prospect pack to attach");
+      assert.strictEqual(c.pcAgentCalls.filter((x) => x.method === "POST").length, 0, "opening the summary sends nothing");
+      await c.click("#lead-sum-ace-draft", "Draft ACE opportunity");
+      await c.waitText("#lead-sum-ace", "Draft waits for approval", "the draft waits for approval");
+      const post = c.pcAgentCalls.find((x) => x.method === "POST");
+      assert.strictEqual(post.path, "/partnerCentral/v1/leads/h1/ace/draft");
+      const ace = await c.text("#lead-sum-ace");
+      assert.match(ace, /64\s*· Predicted · target 60/);
+      assert.strictEqual(await c.page.locator("#lead-sum-ace-draft").count(), 0, "no second draft while one waits for approval");
+      assert.match(ace, /Add the expected monthly spend/);
+      assert.match(ace, /Review the write waiting for approval/);
+      assert.strictEqual(await c.page.getAttribute("#lead-sum-ace a.ap-row-btn", "href"), "#settings/integrations");
+      assert.strictEqual(c.pcAgentCalls.filter((x) => /approvals|ace-sync/.test(x.path)).length, 0, "nothing approved or synced from the lead");
+      await c.click("#lead-sum-close", "close the summary");
+
+      c.at("an opportunity with insights and a queued stage change");
+      await c.page.click('.lead-lane[data-stage="post-demo"] .lead-card .lead-card-name');
+      await c.waitText("#lead-sum-ace", "Target close date 2026-10-01 has passed.", "problems first");
+      const opp = await c.text("#lead-sum-ace");
+      assert.ok(opp.indexOf("has passed") < opp.indexOf("Status"), "insights come before the status");
+      assert.match(opp, /ACE stage\s*Qualified/);
+      assert.match(opp, /Technical Validation · waits to be sent/);
+      assert.match(opp, /48\s*· Partner Central · target 60/);
+      assert.strictEqual(await c.page.locator("#lead-sum-ace-draft").count(), 0, "no draft button once there is an opportunity");
+      await c.click("#lead-sum-close", "close the summary");
+
+      c.at("Settings: send queued ACE stage changes as one bulk update");
+      await c.page.evaluate(() => { location.hash = "#settings/integrations"; });
+      await c.waitText("#pca-sync-status", "1 stage change queued.", "the queued change");
+      await c.click("#pca-sync-send", "Sync ACE stages");
+      await c.waitText("#pca-status", "1 ACE stage change waits for your approval.", "sent for approval");
+      assert.strictEqual(c.pcAgentCalls.filter((x) => x.method === "POST" && x.path === "/partnerCentral/v1/ace-sync").length, 1, "one bulk call");
+      await c.waitText("#pca-sync-status", "No stage changes waiting.", "the queue is empty");
     },
   },
   {

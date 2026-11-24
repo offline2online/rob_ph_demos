@@ -2132,6 +2132,24 @@ submits. Results are in `leadFunding/{leadId}` (server-written, member-readable)
 
 **Lead enrichment and prospecting (24 Nov 2026).** Every new company lead in Promote › Leads is sent to Partner Central's lead enrichment by itself (`functions/pc-lead-enrich.js`, the write trigger `partnerCentralLeadOnWrite`): an engagement with a Lead context, then a prospecting task the trigger follows until AWS answers (no Cloud Scheduler). What AWS says (lead readiness, AWS Marketplace engagement, solution fit, eligible AWS programs such as Greenfield, segment and geography) is kept on `leads/{id}.partnerCentral`, shown in the lead summary's AWS Partner Central section, and feeds the lead score on each card (`leadScore` in `public/js/leads-core.js`). A live result scoring 70 or more moves a lead from Lead to Hot Lead once (off switch: `autoPromote: false` on `partnerCentralState/config`). Test leads always use the Sandbox catalogue with placeholder contact details; deleting a lead deletes only the console record (Partner Central cannot delete an engagement). Redeploy `deploy/aws/partner-central-role.yaml` first (new `LeadEnrichmentAndProspecting` policy). Test: `node test/pc-lead-enrich.test.js`. See REQUIREMENTS.md → "Leads: AWS Partner Central lead enrichment, the lead score and Hot Lead promotion".
 
+**Hot lead → ACE opportunity draft (24 Nov 2026).** `functions/ace-draft.js`
+(triggers `aceDraftOnLeadWrite` on `leads/{id}` and `aceDraftOnSessionWrite` on
+`partnerCentralAgentSessions/{id}`; routes `/partnerCentral/v1/leads/{id}/ace`,
+`…/ace/draft` and `/v1/ace-sync`). When a company lead moves to **Hot Lead** and
+its Prospects (TAM) company's primary cloud is AWS, the console asks the Partner
+Central agent to draft the ACE opportunity from the lead record, the company's
+industry one-pager and prospect pack, and the lead's notes, applying the co-sell
+recommendations and aiming for a quality score of 60+. The create waits as an
+approval card in Settings; nothing is written to Partner Central until an admin
+approves it. State is kept in `leadAce/{leadId}` (server-only). The lead summary
+shows an **ACE opportunity** group (status, predicted or Partner Central score,
+attachments, open recommendations, ACE stage, at-risk / closed-lost insights,
+and **Draft ACE opportunity** for admins, `public/js/ace-draft-view.js`). Later
+lead stage moves queue the ACE stage; Settings → **Sync ACE stages** sends them
+all as one bulk agent message (also held for approval), and a move backwards is
+flagged, never sent. See `REQUIREMENTS.md` → "Hot lead → ACE opportunity draft".
+Test: `node test/ace-draft.test.js`.
+
 **ACE stages → GA4 (9 Nov 2026).** `functions/ace-ga4.js`, the HTTP function `aceToGa4`, run hourly by `.github/workflows/ace-ga4.yml` (POST with `X-Board-Key`; not Cloud Scheduler, which this project deliberately has none of — the deploy account can't create scheduler jobs): website leads now carry the visitor's GA4 client_id (`leads/{id}.gaClientIds`, from the website's PH GA4 snippet via `leadIngest`), and the job sends `ace_opportunity_qualified` / `_launched` / `_won` once each to GA4 by Measurement Protocol, keyed on that client_id, with `ace_stage`, `company_name`, `industry`, `lead_source` and the original `session_id`. *won* is the console lead reaching Closed Won (ACE has no won stage). It sends for real only while the Partner Central catalogue is "AWS"; in Sandbox it only calls GA4's validation endpoint. What was sent is in `aceGa4Sync/{opportunityId}` (server-only), so nothing is sent twice. Secret: `GA4_MP_API_SECRET` (repo secret, synced by the deploy). Test: `node test/ace-ga4.test.js`. Full GA4 setup: `docs/ga4-industry-attribution.md`.
 
 **ACE opportunities in the console (7 Nov 2026).** Promote › Leads lists Customer, Opportunity, stage, review status, Score, revenue, Expected delivery date, Created and Last updated. Clicking an opportunity opens `public/js/ace-detail.js`: edit and **Save to ACE** (`PATCH /partnerCentral/v1/ace/{id}`, read-merge-write `UpdateOpportunity`, score re-read), **New opportunity** (`POST /partnerCentral/v1/ace`), and documents in Storage `ace/{id}/` (`public/js/ace-docs.js`, `storage.rules`; not sent to AWS). Live sync needs the role link in `deploy/aws/README.md`. See REQUIREMENTS.md → "ACE opportunities managed in the console".

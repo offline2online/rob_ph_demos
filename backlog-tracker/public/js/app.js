@@ -13040,6 +13040,7 @@ function pcaFillSessions(selected) {
 }
 async function loadPartnerCentralAgent() {
   if (!document.getElementById("pca")) return;
+  loadPcaSync();
   try {
     const out = await partnerCentralCall("agent", { method: "GET" });
     pca.sessions = out.sessions || [];
@@ -13052,6 +13053,38 @@ async function loadPartnerCentralAgent() {
     pcaSetStatus(`Couldn't load the agent sessions: ${err.message}`, true);
   }
 }
+// Queued lead → ACE stage changes (functions/ace-draft.js), sent as one bulk agent message.
+async function loadPcaSync() {
+  const status = document.getElementById("pca-sync-status");
+  const btn = document.getElementById("pca-sync-send");
+  if (!status || !btn) return;
+  try {
+    const out = await partnerCentralCall("ace-sync", { method: "GET" });
+    const pending = out.pending || [];
+    const ready = pending.filter((x) => x.opportunityId).length;
+    status.classList.remove("is-bad");
+    status.textContent = !pending.length ? "No stage changes waiting." : `${pending.length} ${pending.length === 1 ? "stage change" : "stage changes"} queued${ready < pending.length ? `, ${pending.length - ready} waiting for the opportunity to be approved` : ""}.`;
+    btn.hidden = !ready;
+  } catch (err) {
+    status.textContent = `Couldn't load the queued stage changes: ${err.message}`;
+    status.classList.add("is-bad");
+    btn.hidden = true;
+  }
+}
+document.getElementById("pca-sync-send")?.addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  pcaSetStatus("Sending the ACE stage changes to the agent…");
+  try {
+    const out = await partnerCentralCall("ace-sync", { method: "POST", body: "{}" });
+    if (out.session) pcaApply({ session: out.session });
+    pcaSetStatus(out.message || "Done.");
+  } catch (err) {
+    pcaSetStatus(err.message, true);
+  }
+  btn.disabled = false;
+  loadPcaSync();
+});
 document.getElementById("pca-session")?.addEventListener("change", (e) => {
   const s = pca.sessions.find((x) => x.sessionId === e.target.value) || null;
   pcaRenderSession(s);
