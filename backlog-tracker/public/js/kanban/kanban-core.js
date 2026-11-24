@@ -213,6 +213,23 @@ export function rankBetween(prev, next) {
   return (prev + next) / 2;
 }
 
+// KB-BOARD-3: every column, on the plain board and in each staff swimlane,
+// lists its tickets by priority, Highest first (a ticket with no priority
+// counts as Medium), then by rank: the manual drag order within one priority.
+export const prioRank = (t) => { const i = PRIORITIES.findIndex((p) => p.key === (t && t.priority)); return i < 0 ? 2 : i; };
+export const byBoardOrder = (a, b) => prioRank(a) - prioRank(b) || (Number(a.rank) || 0) - (Number(b.rank) || 0);
+// A drop at position idx of a column in board order (the dragged ticket left
+// out) takes its rank from the nearest tickets of its own priority on each
+// side, so a drop among another priority lands at the edge of its own: a drag
+// never changes a ticket's priority, and the column stays sorted.
+export function dropNeighbours(list, idx, task) {
+  const p = prioRank(task);
+  let prev = null, next = null;
+  for (let i = Math.min(idx, list.length) - 1; i >= 0; i--) if (prioRank(list[i]) === p) { prev = list[i]; break; }
+  for (let i = Math.max(idx, 0); i < list.length; i++) if (prioRank(list[i]) === p) { next = list[i]; break; }
+  return { prev, next };
+}
+
 // ── People: one person, several sign-in addresses ────────────────────────
 // An alias is a second address the same person signs in with. The board
 // never lists it as a person of its own: anything that names it (assignee,

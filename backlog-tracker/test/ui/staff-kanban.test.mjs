@@ -464,6 +464,9 @@ T("KB-NEW-TOP", "a new ticket is drawn at the top of a long Backlog, with no fil
   }
   seed.docs.kanbanTasks = { ...seed.docs.kanbanTasks, ...extraTasks };
   seed.docs.kanbanCards = { ...seed.docs.kanbanCards, ...extraCards };
+  // One priority throughout (the form's default, Medium): Backlog lists by priority first (KB-BOARD-3a), and a new
+  // ticket goes to the top of its own priority.
+  for (const c of ["kanbanTasks", "kanbanCards"]) for (const t of Object.values(seed.docs[c])) t.priority = "medium";
   const p = await open(prof, "#staff-kanban", { seed });
   const drawn = () => p.$$eval('.kb-col[data-status="backlog"] .kb-card', (e) => e.map((x) => x.dataset.key));
   assert.equal((await drawn()).length, 25, "Backlog draws its first 25");
@@ -475,6 +478,44 @@ T("KB-NEW-TOP", "a new ticket is drawn at the top of a long Backlog, with no fil
   const ranks = await p.evaluate(() => [...globalThis.__fbStub.col("kanbanTasks").values()].filter((t) => t.status === "backlog").map((t) => [t.key, t.rank]));
   const low = Math.min(...ranks.filter(([k]) => k !== "PH-40").map(([, r]) => r));
   assert.equal(ranks.find(([k]) => k === "PH-40")[1], low - 10, "ranked above every Backlog ticket");
+  await p.done();
+});
+
+// Priority order (J0C1tqszxl1xETVj060b, KB-BOARD-3a): every column, on the unfiltered board and in a staff
+// swimlane, lists Highest down to Lowest (none = Medium), and by rank within one priority.
+T("KB-PRIO-ORDER", "columns list tickets by priority, Highest first, then rank, with no filter and in a swimlane", { on: on.desktop }, async (prof) => {
+  const seed = kanbanSeed();
+  const base = Object.values(KB.kanbanTasks).find((t) => t.open && t.type === "task");
+  const extraTasks = {}, extraCards = {};
+  // Ranked so rank order alone would be the reverse of priority order.
+  [["lowest", 1], ["low", 2], ["", 3], ["medium", 4], ["high", 5], ["highest", 6], ["highest", 7]].forEach(([priority, r], i) => {
+    const key = `PH-${2000 + i}`;
+    const t = { ...base, key, number: 2000 + i, title: `Priority order ${i}`, status: "backlog", open: true, rank: -1000 + r, priority, assignee: LINH, resolution: null, labels: [], epic: "", links: [], attachments: [], flagged: false };
+    delete t.closedAt;
+    extraTasks[key] = t; extraCards[key] = cardOfTask(t);
+  });
+  seed.docs.kanbanTasks = { ...seed.docs.kanbanTasks, ...extraTasks };
+  seed.docs.kanbanCards = { ...seed.docs.kanbanCards, ...extraCards };
+  const p = await open(prof, "#staff-kanban", { seed, height: 2000 });
+  const PR = ["highest", "high", "medium", "low", "lowest"];
+  const pr = (t) => { const i = PR.indexOf(t.priority); return i < 0 ? 2 : i; };
+  const sortedOk = async (sel, what) => {
+    const keys = await p.$$eval(sel, (e) => e.map((x) => x.dataset.key));
+    const byKey = await p.evaluate(() => Object.fromEntries([...globalThis.__fbStub.col("kanbanTasks").values()].map((t) => [t.key, { priority: t.priority || "", rank: t.rank }])));
+    assert.ok(keys.length >= 7, `${what}: cards drawn`);
+    for (let i = 1; i < keys.length; i++) {
+      const a = byKey[keys[i - 1]], b = byKey[keys[i]];
+      assert.ok(pr(a) < pr(b) || (pr(a) === pr(b) && a.rank <= b.rank), `${what}: ${keys[i - 1]} (${a.priority || "none"}) before ${keys[i]} (${b.priority || "none"})`);
+    }
+    return keys;
+  };
+  const plain = await sortedOk('.kb-col[data-status="backlog"] .kb-card', "plain board Backlog");
+  assert.ok(plain.indexOf("PH-2005") < plain.indexOf("PH-2006"), "two Highest tickets keep their rank order");
+  assert.ok(plain.indexOf("PH-2006") < plain.indexOf("PH-2004"), "Highest above High although ranked below it");
+  assert.ok(plain.indexOf("PH-2000") > plain.indexOf("PH-2001"), "Lowest below Low");
+  await press(p, `.kb-person-chip[data-person="${LINH}"]`);
+  const lane = await sortedOk(`.kb-lane-cell[data-lane="${LINH}"][data-status="backlog"] .kb-card`, "swimlane Backlog");
+  assert.deepEqual(lane.filter((k) => /^PH-20\d\d$/.test(k)), ["PH-2005", "PH-2006", "PH-2004", "PH-2002", "PH-2003", "PH-2001", "PH-2000"]);
   await p.done();
 });
 
@@ -2257,6 +2298,13 @@ const E = {
     return { status: t.status, resolution: t.resolution || null, assignee: t.assignee, open: t.open, closedAt: t.closedAt || null, activity: act.map((a) => a.data.text) };
   },
   ranks: (p, status) => p.evaluate((s) => [...globalThis.__fbStub.col("kanbanTasks").values()].filter((t) => t.status === s).sort((a, b) => a.rank - b.rank).map((t) => t.key), status),
+  // The console lists a column by priority, then rank (KB-BOARD-3a): the reorder cases give every ticket one
+  // priority first, so they test the drag order itself (the prototype keeps plain rank order).
+  samePriority: (p) => p.evaluate(() => {
+    const b = globalThis.__fbStub;
+    for (const c of ["kanbanTasks", "kanbanCards"]) for (const [id, t] of b.col(c)) b.col(c).set(id, { ...t, priority: "medium" });
+    b.notify();
+  }).then(() => sleep(250)),
   confirmDelete: async (p, accept) => {
     await press(p, "#f-delete");
     await p.waitForSelector("#dialog-backdrop:not([hidden])");

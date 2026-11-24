@@ -129,13 +129,29 @@ lists Completed and Withdrawn separately.
 
 **KB-BOARD-3 Drag and drop.** Cards move by drag and drop with a mouse, and by
 press-and-hold (about 250 ms) then drag on touch. AC: a drop marker shows the
-insertion point; order within a column is kept (rank); a plain tap opens the
+insertion point; order within a column is kept (rank) within each priority
+(KB-BOARD-3a); a plain tap opens the
 task; the page scrolls when dragging near an edge. A drag drops nothing until
 the finger has moved: pressing and holding a card and letting go in place
 leaves it where it was. Esc cancels a drag in progress and the card returns
 (as in Jira and Trello). The drop place is worked out again whenever the page
 or the board scrolls under a held finger, so a card lands where it was last
 shown.
+
+**KB-BOARD-3a Priority order** (24 Nov 2026). Every column lists its tickets
+from the highest priority down to the lowest: Highest, High, Medium, Low,
+Lowest (a ticket with no priority counts as Medium), and by rank (the manual
+drag order) within one priority. The same order applies on the plain board
+with no filters, in each staff swimlane, and with any other filter on, and it
+is applied before paging (§13), so a Highest ticket is never behind "Show
+more". A drag changes a ticket's place only among tickets of its own
+priority: its rank is taken from the nearest same-priority tickets either side
+of the drop, so a drop among another priority lands at the edge of its own,
+and a drag never changes priority (change Priority in the ticket to move it to
+another band). AC: on the unfiltered board and in a swimlane, a Highest ticket
+ranked last in its column is drawn first; two tickets of the same priority
+keep their drag order. `kanban-core.js` `byBoardOrder` / `dropNeighbours`,
+`kanban-core.test.mjs`, `staff-kanban.test.mjs` ("KB-PRIO-ORDER").
 
 **KB-BOARD-4 Closing targets.** While any card is dragged, the Completed /
 Withdrawn column's cards hide and two large drop targets fill the visible
@@ -498,7 +514,8 @@ comment's `mentions` (the notification trigger's input). KB-C37,
 
 **KB-MOD-1 New task.** Always starts in Backlog (no Status field, no
 Comments), **at the top of Backlog** (23 Nov 2026: its rank is the lowest in
-Backlog minus 10), so it is among the 25 cards Backlog draws first (§13) and
+Backlog minus 10; since KB-BOARD-3a it is drawn at the top of its priority, so
+above every Backlog ticket of the same or a lower priority), so it is among the 25 cards Backlog draws first (§13) and
 shows on the unfiltered board as soon as it is created; a ticket ranked at the
 bottom of a long Backlog was behind "Show more" and looked missing. Every
 create path does the same: the board's form and `kanban_create_task`,
