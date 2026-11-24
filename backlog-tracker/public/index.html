@@ -65,6 +65,7 @@
   <link rel="modulepreload" href="js/dictation-results.js">
   <link rel="modulepreload" href="js/docs-grid.js">
   <link rel="modulepreload" href="js/docs-markdown.js">
+  <link rel="modulepreload" href="js/documentation-core.js">
   <link rel="modulepreload" href="js/entity-type.js">
   <link rel="modulepreload" href="js/groom-packages.js">
   <link rel="modulepreload" href="js/internal-map.js">
@@ -1947,6 +1948,26 @@
           <p class="empty-hint" id="doc-empty" hidden>Nothing here yet.</p>
         </div>
       </div>
+    </section>
+
+    <!-- A document opened from Documentation (#doc/<id>): read-only, the whole
+         content area, a centred reading column. Edit (editors only) opens the
+         article editor at #doc/<id>/edit; Back returns to the document's
+         section. Drawn by openDocReaderPage in app.js. -->
+    <section class="faq-admin-page doc-reader-page" id="doc-reader-page" hidden>
+      <div class="doc-reader-bar">
+        <button type="button" class="doc-reader-back" id="doc-reader-back"><span class="material-symbols-outlined" aria-hidden="true">arrow_back</span><span id="doc-reader-back-label">Documentation</span></button>
+        <button type="button" class="icon-btn doc-reader-edit" id="doc-reader-edit" title="Edit document" aria-label="Edit document" data-editor-only><span class="material-symbols-outlined" aria-hidden="true">edit</span></button>
+      </div>
+      <article class="doc-reader" id="doc-reader" aria-labelledby="doc-reader-title">
+        <p class="doc-reader-path" id="doc-reader-path" hidden></p>
+        <h1 class="doc-reader-title" id="doc-reader-title"></h1>
+        <p class="doc-reader-meta" id="doc-reader-meta" hidden></p>
+        <p class="doc-reader-summary" id="doc-reader-summary" hidden></p>
+        <div class="fa-body-viewer doc-reader-body" id="doc-reader-body"></div>
+        <p class="field-hint doc-reader-source" id="doc-reader-source" hidden></p>
+      </article>
+      <p class="empty-hint" id="doc-reader-missing" hidden>This document isn't in Documentation any more.</p>
     </section>
 
     <section class="faq-admin-page" id="faq-articles-page" hidden>

@@ -36,7 +36,7 @@ export const SECTIONS = [
     edit: ["#fa-new-article-btn", "#faq-new-category-btn", "#fa-save-draft", "#faq-cat-edit-save-btn"] },
   // Documentation (internal docs library) follows the Help Centre's grant until a role sets its own.
   { key: "documentation", label: "Documentation", nav: ["#documentation-btn"], inherits: "faq",
-    edit: ["#doc-new-category-btn", "#doc-new-article-btn", "#documentation-page [data-editor-only]"] },
+    edit: ["#doc-new-category-btn", "#doc-new-article-btn", "#documentation-page [data-editor-only]", "#doc-reader-page [data-editor-only]"] },
   { key: "settings", label: "Settings", nav: ["#faq-settings-btn"], edit: ["#faq-settings-page .btn-primary"] },
   { key: "user-management", label: "Settings > User Management", nav: ['[data-settings-page="user-management"]'],
     edit: ["#team-add-open", "#roles-create", ".role-actions", "#um-bulk", ".um-manage"] },

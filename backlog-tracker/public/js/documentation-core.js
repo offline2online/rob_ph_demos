@@ -63,3 +63,31 @@ export function snippetFor(text, q) {
   return (start > 0 ? "…" : "") + text.slice(start, start + 180) + (start + 180 < text.length ? "…" : "");
 }
 
+
+// What the read-only document reader (#doc/<id>) shows above the body: where
+// the document sits, its type, when it was last changed, its state badges and
+// where it came from. `updatedAt` is a Firestore Timestamp, a Date or millis.
+const DATE_FMT = { day: "numeric", month: "short", year: "numeric" };
+export function readerDate(v) {
+  if (!v) return "";
+  const d = typeof v.toDate === "function" ? v.toDate() : v instanceof Date ? v : Number.isFinite(Number(v)) ? new Date(Number(v)) : null;
+  return d && !Number.isNaN(d.getTime()) ? d.toLocaleDateString("en-GB", DATE_FMT) : "";
+}
+export function docReaderInfo(a, cats) {
+  const src = (a && a.source) || {};
+  const path = pathOf(cats || [], a && a.categoryId).map((c) => c.name || "(untitled)");
+  const badges = [];
+  if (a && a.status === "draft") badges.push({ label: "Draft", cls: "badge-status-draft" });
+  if (a && a.needsReview) badges.push({ label: "Needs review", cls: "badge-needs-review" });
+  if (src.archived || path[0] === "Archive") badges.push({ label: "Archived", cls: "badge-archived" });
+  const updated = readerDate(a && a.updatedAt);
+  return {
+    path,
+    typeLabel: (a && DOC_TYPE_LABEL[a.docType]) || "",
+    updated: updated ? `Updated ${updated}` : "",
+    badges,
+    source: src.system === "confluence" || src.path || src.lastUpdated
+      ? `Carried over from Confluence${src.path ? ` (${src.path})` : ""}${src.lastUpdated ? `, last updated there ${src.lastUpdated}` : ""}.`
+      : "",
+  };
+}

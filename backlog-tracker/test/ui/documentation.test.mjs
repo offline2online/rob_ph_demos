@@ -1,10 +1,13 @@
 // Support › Documentation (#documentation), in Chromium with the Firebase SDK
 // stubbed: the menu item under Help Centre, the section tree nested three
 // deep, a section's folders and documents, search across every document's
-// text, opening a document read-only in the shared article editor with the
-// website-only fields hidden, saving it back to docArticles (never
-// faqArticles), the Help Centre editor still showing its own fields
-// afterwards, a viewer getting no write controls, and no sideways scroll.
+// text, opening a document in the read-only reader (#doc/<id>: the whole
+// content area, its formatting, no editor fields) and from its Edit icon in
+// the shared article editor (#doc/<id>/edit) with the website-only fields
+// hidden, saving it back to docArticles (never faqArticles), Cancel back to
+// the reader and Back to the section, the Help Centre editor still showing
+// its own fields afterwards, a viewer reading with no write controls, and no
+// sideways scroll.
 // Run with:  cd backlog-tracker/test && node ui/run-ui.mjs ui/documentation.test.mjs
 import assert from "node:assert";
 import { startHarness, until } from "./harness.mjs";
@@ -72,11 +75,39 @@ try {
       await page.selectOption("#doc-status-filter", "all");
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       assert.ok(overflow <= 0, `no sideways scroll (${overflow}px)`);
-      // Open a document: read mode, the Help Centre's editor, website-only fields hidden.
+      // Open a document: the read-only reader, no editor fields.
       await page.click('#doc-tree [data-doc-cat="prod"]');
       await page.click('[data-doc-open="d1"]');
-      await until(() => page.evaluate(() => !document.getElementById("faq-article-editor-page").hidden && location.hash === "#doc/d1"), "the document");
-      await until(() => page.evaluate(() => !document.getElementById("fa-body-viewer").hidden && document.getElementById("fa-body-viewer").textContent.includes("Launch GenAI")), "read mode");
+      await until(() => page.evaluate(() => !document.getElementById("doc-reader-page").hidden && location.hash === "#doc/d1"), "the reader");
+      assert.ok(await page.evaluate(() => document.getElementById("faq-article-editor-page").hidden), "the editor stays closed");
+      assert.strictEqual(await page.textContent("#doc-reader-title"), "Future release planning");
+      assert.ok(await page.evaluate(() => document.getElementById("doc-reader-path").hidden), "a top-level document needs no path; Back names its section");
+      assert.strictEqual(await page.textContent("#doc-reader-back-label"), "Product & Roadmap");
+      assert.ok((await page.textContent("#doc-reader-meta")).includes("Explanation"));
+      assert.strictEqual(await page.textContent("#doc-reader-body h2"), "2026 priorities", "headings keep their formatting");
+      assert.ok((await page.textContent("#doc-reader-source")).includes("last updated there 2026-03-20"));
+      assert.strictEqual(await page.locator("#doc-reader-page input, #doc-reader-page textarea, #doc-reader-page [contenteditable]").count(), 0, "nothing to type into");
+      const reading = await page.evaluate(() => {
+        const body = document.getElementById("doc-reader-body");
+        const cs = getComputedStyle(body);
+        return { font: parseFloat(cs.fontSize), scroll: cs.overflowY, width: body.getBoundingClientRect().width, page: document.getElementById("doc-reader-page").getBoundingClientRect().width };
+      });
+      assert.ok(reading.font >= 16, `reading size (${reading.font}px)`);
+      assert.strictEqual(reading.scroll, "visible", "the body is read in full, not in a scroll box");
+      assert.ok(reading.width <= 760 && reading.width >= Math.min(660, reading.page - 80), `a reading column (${reading.width}px of ${reading.page}px)`);
+      const readerOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      assert.ok(readerOverflow <= 0, `no sideways scroll in the reader (${readerOverflow}px)`);
+      // A table keeps its formatting in the reader.
+      await page.evaluate(() => { location.hash = "#doc/d2"; });
+      await until(() => page.evaluate(() => document.getElementById("doc-reader-title").textContent === "Solution design overview"), "the second document");
+      assert.strictEqual(await page.textContent("#doc-reader-body table td"), "Redis");
+      assert.ok((await page.textContent("#doc-reader-meta")).includes("Needs review"));
+      await page.evaluate(() => { location.hash = "#doc/d1"; });
+      await until(() => page.evaluate(() => document.getElementById("doc-reader-title").textContent === "Future release planning"), "back to the first document");
+      // The Edit icon opens the Help Centre's editor, website-only fields hidden.
+      await page.click("#doc-reader-edit");
+      await until(() => page.evaluate(() => !document.getElementById("faq-article-editor-page").hidden && location.hash === "#doc/d1/edit"), "the editor");
+      assert.ok(await page.evaluate(() => document.getElementById("doc-reader-page").hidden), "the reader closes");
       assert.strictEqual(await page.textContent("#fa-title"), "Edit document");
       assert.ok((await page.textContent("#fa-doc-source")).includes("last updated there 2026-03-20"));
       const hidden = await page.evaluate(() => [...document.querySelectorAll("#faq-article-editor-page [data-faq-only]")].every((el) => !el.getClientRects().length));
@@ -89,9 +120,16 @@ try {
       await page.click("#fa-save-draft");
       await until(() => writes(page, /^docArticles\/d1$/).then((w) => w.length > 0), "the save");
       assert.deepStrictEqual(await writes(page, /^faqArticles\//), [], "nothing written to the Help Centre");
-      // Cancel returns to Documentation, at the document's section.
+      assert.strictEqual(await page.evaluate(() => location.hash), "#doc/d1/edit");
+      // Cancel returns to the reader; Back returns to the document's section.
       await page.click("#fa-cancel");
+      await until(() => page.evaluate(() => location.hash === "#doc/d1" && !document.getElementById("doc-reader-page").hidden), "back to the reader");
+      await page.click("#doc-reader-back");
       await until(() => page.evaluate(() => location.hash === "#documentation" && !document.getElementById("documentation-page").hidden), "back to Documentation");
+      assert.ok((await page.textContent("#doc-heading")).startsWith("Product & Roadmap"), "at the document's section");
+      // The pencil on a row still opens the editor straight away.
+      await page.click('[data-doc-edit="d1"]');
+      await until(() => page.evaluate(() => !document.getElementById("faq-article-editor-page").hidden && location.hash === "#doc/d1/edit"), "the editor from the row");
       // The Help Centre editor still has its own fields.
       await page.evaluate(() => { location.hash = "#faq-article/f1"; });
       await until(() => page.evaluate(() => !document.getElementById("faq-article-editor-page").hidden && document.getElementById("fa-title-input").value === "Add a display"), "the FAQ article");
@@ -101,12 +139,27 @@ try {
     });
   }
   await run("cold load straight into a document", { seed: seedFor("editor"), width: 1280, height: 900, hash: "#doc/d3" }, async (page) => {
-    await until(() => page.evaluate(() => !document.getElementById("faq-article-editor-page").hidden && document.getElementById("fa-title-input").value === "Appendix A - IP white-listing"), "the document", 15000);
+    await until(() => page.evaluate(() => !document.getElementById("doc-reader-page").hidden && document.getElementById("doc-reader-title").textContent === "Appendix A - IP white-listing"), "the document", 15000);
+    assert.strictEqual(await page.textContent("#doc-reader-path"), "Architecture & Solution Design › Solution Design Document › Appendices");
+    assert.ok((await page.textContent("#doc-reader-body pre")).includes("allow 10.0.0.0/8"), "code keeps its formatting");
+    // Escape goes back to the section.
+    await page.keyboard.press("Escape");
+    await until(() => page.evaluate(() => location.hash === "#documentation" && !document.getElementById("documentation-page").hidden), "back to Documentation");
+  });
+  await run("cold load straight into a document's editor", { seed: seedFor("editor"), width: 1280, height: 900, hash: "#doc/d3/edit" }, async (page) => {
+    await until(() => page.evaluate(() => !document.getElementById("faq-article-editor-page").hidden && document.getElementById("fa-title-input").value === "Appendix A - IP white-listing"), "the editor", 15000);
+    // Escape leaves the editor for the reader, and stops there.
+    await page.keyboard.press("Escape");
+    await until(() => page.evaluate(() => location.hash === "#doc/d3" && !document.getElementById("doc-reader-page").hidden), "the reader");
   });
   await run("viewer: read only", { seed: seedFor("viewer"), width: 1280, height: 900, hash: "#documentation" }, async (page) => {
     await until(() => page.locator("#doc-tree .doc-tree-row").count(), "the section tree", 15000);
     const visibleWrites = await page.evaluate(() => [...document.querySelectorAll("#doc-new-category-btn, #doc-new-article-btn, [data-doc-edit], [data-doc-add-sub]")].filter((el) => el.getClientRects().length).length);
     assert.strictEqual(visibleWrites, 0, "no write controls for a viewer");
+    // A viewer reads a document with no Edit icon.
+    await page.click('[data-doc-open="d1"]');
+    await until(() => page.evaluate(() => !document.getElementById("doc-reader-page").hidden && document.getElementById("doc-reader-body").textContent.includes("Launch GenAI")), "the reader");
+    assert.strictEqual(await page.locator("#doc-reader-edit").evaluate((el) => el.getClientRects().length), 0, "no Edit icon for a viewer");
   });
 } finally {
   await h.close();

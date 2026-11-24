@@ -8409,6 +8409,13 @@ Confluence (see `README.md` → "Documentation").
 - Sections nest to any depth; a section shows its folders, then its documents.
 - Search covers every document's title, summary, keywords and body text, and
   shows where each hit sits.
+- A document opens read-only (24 Nov 2026): clicking it shows the reader
+  (`#doc/<id>`), which fills the content area with no editor fields: its
+  section path, title, state badges (Draft, Needs review, Archived), type,
+  last update, summary and the formatted body in a centred reading column,
+  then where it was carried over from. Back (or Escape) returns to its
+  section. An Edit icon, shown to editors only, opens the editor
+  (`#doc/<id>/edit`), as does a row's pencil; Cancel returns to the reader.
 - A document uses the Help Centre's editor and properties; website-only
   fields (SEO & agents, Hide from website, live link) are not offered, and no
   product/program is required.

@@ -3285,6 +3285,46 @@ html[data-console-role="viewer"] .lead-prio-tools { display: none; }
 /* A document is read in full: no scroll box around the body. */
 .fa-library-docs .fa-body-viewer { max-height: none; }
 .fa-library-docs #fa-body-editor .ql-editor { max-height: 70vh; }
+
+/* The document reader (#doc/<id>, openDocReaderPage in app.js): read-only,
+   the whole content area, a centred column sized for reading (16px Roboto,
+   1.7 line height, about 75 characters a line). Wide tables, code and
+   images scroll inside the column rather than squeezing the text. */
+.doc-reader-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; max-width: 760px; margin: 0 auto 8px; }
+.doc-reader-back {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 4px 8px 4px 4px; border: none; border-radius: 6px;
+  background: transparent; font: inherit; font-size: 14px; color: var(--text-muted); cursor: pointer; min-width: 0;
+}
+.doc-reader-back span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-reader-back:hover { background: var(--surface-2); color: var(--text); }
+.doc-reader-back .material-symbols-outlined, .doc-reader-edit .material-symbols-outlined { font-size: 20px; }
+.doc-reader-edit { display: inline-flex; align-items: center; justify-content: center; min-width: 36px; min-height: 36px; }
+.doc-reader-edit:hover { color: var(--primary); }
+.doc-reader { max-width: 760px; margin: 0 auto 24px; padding: 32px 40px 40px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; color: var(--text); }
+.doc-reader-path { margin: 0 0 6px; font-size: 13px; color: var(--text-muted); }
+.doc-reader-title { margin: 0 0 10px; font-size: 28px; line-height: 1.25; font-weight: 700; overflow-wrap: anywhere; }
+.doc-reader-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0 0 16px; font-size: 13px; color: var(--text-muted); }
+.doc-reader-meta .badge { margin-left: 0; }
+.doc-reader-summary { margin: 0 0 20px; font-size: 17px; line-height: 1.6; color: var(--text-muted); }
+.doc-reader .doc-reader-body {
+  border: none; border-top: 1px solid var(--border); border-radius: 0; padding: 20px 0 0; background: transparent;
+  max-width: none; max-height: none; min-height: 0; overflow: visible; font-size: 16px; line-height: 1.7;
+}
+.doc-reader-body h1 { font-size: 24px; margin: 28px 0 10px; }
+.doc-reader-body h2 { font-size: 21px; margin: 26px 0 8px; }
+.doc-reader-body h3 { font-size: 18px; margin: 22px 0 6px; }
+.doc-reader-body h4 { font-size: 16px; margin: 18px 0 6px; }
+.doc-reader-body p, .doc-reader-body ul, .doc-reader-body ol { margin: 0 0 14px; }
+.doc-reader-body li { margin: 0 0 4px; }
+.doc-reader-body table { font-size: 14px; }
+.doc-reader-body code, .doc-reader-body pre, .doc-reader-body pre.ql-syntax { font-size: 13.5px; }
+.doc-reader-body .faq-table, .doc-reader-body pre { max-width: 100%; overflow-x: auto; }
+.doc-reader-body img { height: auto; }
+.doc-reader-source { margin: 24px 0 0; }
+@media (max-width: 640px) {
+  .doc-reader { padding: 20px 16px 28px; }
+  .doc-reader-title { font-size: 23px; }
+}
 .fa-body-viewer blockquote { border-left: 3px solid var(--border); margin: 0 0 10px; padding: 2px 12px; color: var(--text-muted); }
 
 /* ── Aidan in the console (yvnAPPAW9ROLrNwJceyn): js/aidan-chat.js ──────────

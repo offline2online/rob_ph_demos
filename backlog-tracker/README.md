@@ -4020,7 +4020,7 @@ spec in `REQUIREMENTS.md` → "Dashboard — the console's landing page". Tests:
 
 ## Documentation — the internal docs library (19 Nov 2026)
 
-**Support › Documentation** (`#documentation`, `#doc/<id>`) is the team's
+**Support › Documentation** (`#documentation`, `#doc/<id>`, `#doc/<id>/edit`) is the team's
 internal product and technical documentation. It replaced the Confluence space
 (`offline2online.atlassian.net/wiki`, spaces OPTUS/"Personalisation Hub", PH
 and PROC), which is no longer needed: every page was carried over on
@@ -4037,8 +4037,19 @@ and PROC), which is no longer needed: every page was carried over on
   and the properties (category, document type, linked project, program,
   releases, needs review, slug, keywords, status) are the same. The
   website-only fields (SEO & agents, Hide from website, the live link) carry
-  `data-faq-only` in `index.html` and are hidden for a document. Clicking a
-  title opens it read-only (View live); the pencil opens it for editing.
+  `data-faq-only` in `index.html` and are hidden for a document.
+- **Reading** (24 Nov 2026): clicking a title opens the document in the
+  read-only reader (`#doc/<id>`, `#doc-reader-page` in `index.html`,
+  `openDocReaderPage` in `app.js`): the whole content area, no editor fields,
+  a centred reading column (16px, 1.7 line height, at most 760px) holding its
+  section path, title, badges (Draft, Needs review, Archived), type, last
+  update, summary, the formatted body (the same `renderFaqBodyMd` and
+  `.fa-body-viewer` rules as the editor's View live) and where it was carried
+  over from. Back names the section and returns to it, as does Escape. The
+  Edit icon (editors only) and a row's pencil open the editor at
+  `#doc/<id>/edit`; Cancel there returns to the reader, a new or deleted
+  document to its section. The reader's header comes from `docReaderInfo` in
+  `documentation-core.js`.
 - **Page**: `public/js/documentation-page.js` (tree, list, search across every
   document's text, status filter, drag to re-order, new section/folder/
   document); pure helpers in `documentation-core.js`

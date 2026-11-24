@@ -35,6 +35,7 @@ import { trainTestChipHTML, approvalWarningLines, APPROVAL_WARNING_TITLE, APPROV
 import { sharedWithChipsHTML, foreignPathsChipsHTML, sharedFilesHeaderHTML, deployQueuedHintHTML, parseOwnedPaths } from "./train-overlap.js";
 import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mirrorChipHTML, openInGithubHTML, startHereChipHTML, projectDocRowHTML, interfaceActionsHTML } from "./docs-view.js";
 import { initNavShell } from "./nav-shell.js";
+import { docReaderInfo } from "./documentation-core.js";
 import { initAidanChat } from "./aidan-chat.js";
 import { ROUTINE_SETUP_HASH, ticketOwner, ownerFireBlock, deployOwnerBlock, groomOwnerBlock } from "./owner-fire.js";
 import { renderMarkdown } from "./docs-markdown.js";
@@ -604,6 +605,7 @@ function closeAllSubPages() {
   closePromotePage();
   closeSupportPage();
   closeDocumentationPage();
+  closeDocReaderPage();
   closeFaqArticlesPage();
   closeFaqArticleEditorPage();
   closeFaqRevisionReviewPage();
@@ -12275,7 +12277,8 @@ function ensureDocsUi() {
         getCategories: () => docCategories,
         getArticles: () => docArticles,
         canEdit: () => currentConsoleRole() !== "viewer" && canEditSection("documentation"),
-        openDoc: (id, { mode } = {}) => openFaqArticleEditorPage(id, { library: "docs", mode }),
+        // A title opens the read-only reader; the pencil opens the editor.
+        openDoc: (id, { mode } = {}) => (mode === "edit" ? openFaqArticleEditorPage(id, { library: "docs", mode: "edit" }) : openDocReaderPage(id)),
         newDoc: (categoryId) => openFaqArticleEditorPage(null, { library: "docs", categoryId }),
         alert: (m) => showAlert(m),
         confirm: (m, opts) => showConfirmDialog(m, opts),
@@ -12289,6 +12292,7 @@ function ensureDocsUi() {
 }
 function refreshDocumentationViews() {
   if (docsUi && documentationPage && !documentationPage.hidden) docsUi.render();
+  if (docReaderPage && !docReaderPage.hidden && docReaderId) renderDocReader();
 }
 function openDocumentationPage({ categoryId = null } = {}) {
   if (!documentationPage) return;
@@ -12314,22 +12318,97 @@ function closeDocumentationPage() {
   document.getElementById("board-page-header").hidden = false;
 }
 document.getElementById("documentation-btn")?.addEventListener("click", () => { closeNavDrawer(); openDocumentationPage(); });
-// "#doc/<id>" opens a document; a cold load waits for docArticles to arrive.
+// ── The document reader (#doc/<id>) ─────────────────────────────────────
+// A document opens read-only, on a page of its own: the whole content area,
+// a centred reading column, no editor fields. The pencil (editors only) opens
+// the article editor at "#doc/<id>/edit"; Back returns to its section.
+const docReaderPage = document.getElementById("doc-reader-page");
+let docReaderId = null;
+function renderDocReader() {
+  const $ = (id) => document.getElementById(id);
+  const a = docArticles.find((x) => x.id === docReaderId);
+  $("doc-reader").hidden = !a;
+  $("doc-reader-missing").hidden = !!a || !docArticles.length;
+  $("doc-reader-edit").hidden = !a;
+  if (!a) { $("doc-reader-back-label").textContent = "Documentation"; return; }
+  const info = docReaderInfo(a, docCategories);
+  $("doc-reader-back-label").textContent = info.path.length ? info.path[info.path.length - 1] : "Documentation";
+  // The back button already names the section; the full path only adds
+  // something once the document sits in a folder.
+  $("doc-reader-path").hidden = info.path.length < 2;
+  $("doc-reader-path").textContent = info.path.join(" › ");
+  $("doc-reader-title").textContent = a.title || "(untitled)";
+  const meta = $("doc-reader-meta");
+  meta.innerHTML = info.badges.map((b) => `<span class="badge ${b.cls}">${escapeHTML(b.label)}</span>`).join("") +
+    [info.typeLabel, info.updated].filter(Boolean).map((t) => `<span class="doc-reader-meta-item">${escapeHTML(t)}</span>`).join("");
+  meta.hidden = !meta.innerHTML;
+  $("doc-reader-summary").hidden = !a.summary;
+  $("doc-reader-summary").textContent = a.summary || "";
+  const body = $("doc-reader-body");
+  const html = renderFaqBodyMd(a.bodyMd || "");
+  if (body.dataset.src !== html) { body.innerHTML = html || '<p class="empty-hint">This document has no text yet.</p>'; body.dataset.src = html; }
+  $("doc-reader-source").hidden = !info.source;
+  $("doc-reader-source").textContent = info.source;
+  document.title = `${a.title || "Document"} — PH Agent Console`;
+}
+function openDocReaderPage(id) {
+  if (!docReaderPage || !pageAllowed("documentation")) return;
+  closeAllSubPages();
+  ensureLazy("docCategories", "docArticles");
+  docReaderId = id;
+  document.getElementById("projects-root").hidden = true;
+  document.getElementById("board-page-header").hidden = true;
+  document.getElementById("doc-reader-body").dataset.src = "";
+  docReaderPage.hidden = false;
+  setRouteHash(`#doc/${encodeURIComponent(id)}`);
+  updateTopbarTitle();
+  renderDocReader();
+  window.scrollTo(0, 0);
+}
+function closeDocReaderPage() {
+  if (!docReaderPage || docReaderPage.hidden) return;
+  docReaderPage.hidden = true;
+  docReaderId = null;
+  document.getElementById("projects-root").hidden = false;
+  document.getElementById("board-page-header").hidden = false;
+}
+function docReaderBack() {
+  const a = docArticles.find((x) => x.id === docReaderId);
+  openDocumentationPage({ categoryId: a ? a.categoryId : null });
+}
+document.getElementById("doc-reader-back")?.addEventListener("click", docReaderBack);
+document.getElementById("doc-reader-edit")?.addEventListener("click", () => {
+  if (docReaderId) openFaqArticleEditorPage(docReaderId, { library: "docs", mode: "edit" });
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || e.defaultPrevented || !docReaderPage || docReaderPage.hidden) return;
+  if (document.querySelector("dialog[open], .modal-backdrop:not([hidden])")) return;
+  docReaderBack();
+});
+// "#doc/<id>" opens a document in the reader, "#doc/<id>/edit" in the editor;
+// a cold load waits for docArticles to arrive.
 let pendingDocRoute = null;
+function openDocRoute({ id, edit }) {
+  if (edit) openFaqArticleEditorPage(id, { library: "docs", mode: "edit" });
+  else openDocReaderPage(id);
+}
 function resolvePendingDocRoute() {
-  if (!pendingDocRoute || !docArticles.some((a) => a.id === pendingDocRoute)) return;
-  const id = pendingDocRoute;
+  if (!pendingDocRoute || !docArticles.some((a) => a.id === pendingDocRoute.id)) return;
+  const route = pendingDocRoute;
   pendingDocRoute = null;
-  openFaqArticleEditorPage(id, { library: "docs", mode: "view" });
+  openDocRoute(route);
 }
 function openDocRouteFromHash(hash) {
   ensureLazy("docCategories", "docArticles");
-  const id = decodeURIComponent(hash.slice("#doc/".length));
+  const rest = hash.slice("#doc/".length);
+  const edit = rest.endsWith("/edit");
+  const id = decodeURIComponent(edit ? rest.slice(0, -"/edit".length) : rest);
   if (!id) return;
   if (id === "new") { openFaqArticleEditorPage(null, { library: "docs" }); return; }
-  if (!faqArticleEditorPage.hidden && faLibrary === "docs" && editingFaqArticleId === id) return;
-  if (docArticles.some((a) => a.id === id)) openFaqArticleEditorPage(id, { library: "docs", mode: "view" });
-  else pendingDocRoute = id;
+  if (edit && !faqArticleEditorPage.hidden && faLibrary === "docs" && editingFaqArticleId === id) return;
+  if (!edit && docReaderPage && !docReaderPage.hidden && docReaderId === id) return;
+  if (docArticles.some((a) => a.id === id)) openDocRoute({ id, edit });
+  else pendingDocRoute = { id, edit };
 }
 
 // ── Support › Support Inbox (#support, support-page.js) ──────────────────
@@ -13899,7 +13978,7 @@ function applyRouteFromHash() {
 }
 function anySubPageOpen() {
   const dash = document.getElementById("dashboard-page");
-  return !faqArticlesPage.hidden || !faqSettingsPage.hidden || !rolePage.hidden || !promotePage.hidden || !leadsPage.hidden || !prospectsPage.hidden || !funnelPage.hidden || (supportPage && !supportPage.hidden) || (documentationPage && !documentationPage.hidden) || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden || (dash && !dash.hidden);
+  return !faqArticlesPage.hidden || !faqSettingsPage.hidden || !rolePage.hidden || !promotePage.hidden || !leadsPage.hidden || !prospectsPage.hidden || !funnelPage.hidden || (supportPage && !supportPage.hidden) || (documentationPage && !documentationPage.hidden) || (docReaderPage && !docReaderPage.hidden) || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden || (dash && !dash.hidden);
 }
 // popstate (back/forward) and hashchange (a typed-in or pasted #hash) both
 // need to re-sync the visible page — pushState/replaceState above never
@@ -14722,7 +14801,7 @@ function openFaqArticleEditorPageNow(articleId, { pendingRevision = false, libra
   // falling back to the board. A no-op when this call is itself the result
   // of applying that same hash on load/hashchange (setRouteHash already
   // skips re-pushing an unchanged hash).
-  if (faLibrary === "docs") setRouteHash(articleId ? `#doc/${encodeURIComponent(articleId)}` : "#doc/new");
+  if (faLibrary === "docs") setRouteHash(articleId ? `#doc/${encodeURIComponent(articleId)}/edit` : "#doc/new");
   else setRouteHash(articleId ? `#faq-article/${encodeURIComponent(articleId)}${faEditingPendingRevision ? "/revision" : ""}` : "#faq-article/new");
   document.title = `${document.getElementById("fa-title").textContent} — PH Agent Console`;
   maybeRestoreInitialScroll();
@@ -14738,8 +14817,13 @@ function closeFaqArticleEditorPage() {
   document.getElementById("projects-root").hidden = false;
   document.getElementById("board-page-header").hidden = false;
 }
-function backToFaqArticleList() {
-  if (faLibrary === "docs") { const cat = faCategorySelect.value; openDocumentationPage({ categoryId: cat || null }); return; }
+// A saved document goes back to its reader (where Edit was clicked); a new
+// one never saved, or a deleted one ({ toList: true }), to its section.
+function backToFaqArticleList({ toList = false } = {}) {
+  if (faLibrary === "docs") {
+    if (!toList && editingFaqArticleId && docArticles.some((a) => a.id === editingFaqArticleId)) { openDocReaderPage(editingFaqArticleId); return; }
+    const cat = faCategorySelect.value; openDocumentationPage({ categoryId: cat || null }); return;
+  }
   openFaqArticlesPage();
 }
 
@@ -14747,16 +14831,18 @@ document.getElementById("fa-new-article-btn").addEventListener("click", async ()
   if (faqCategories.length === 0) { await showAlert("Add a category first."); return; }
   openFaqArticleEditorPage(null);
 });
-document.getElementById("fa-cancel").addEventListener("click", backToFaqArticleList);
+document.getElementById("fa-cancel").addEventListener("click", () => backToFaqArticleList());
 faDeleteBtn.addEventListener("click", async () => {
   if (!editingFaqArticleId) return;
   if (await showConfirmDialog("Delete this article? This can't be undone.", { title: "Delete article", okLabel: "Delete", danger: true })) {
     await deleteFaqArticle(editingFaqArticleId);
-    backToFaqArticleList();
+    backToFaqArticleList({ toList: true });
   }
 });
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || faqArticleEditorPage.hidden) return;
+  // Claimed, so the reader it may return to doesn't take the same key too.
+  e.preventDefault();
   backToFaqArticleList();
 });
 
@@ -14882,7 +14968,7 @@ async function submitFaqArticleFromEditor(publish) {
   if (faLibrary === "docs") {
     document.getElementById("fa-title").textContent = "Edit document";
     document.title = "Edit document — PH Agent Console";
-    setRouteHash(`#doc/${encodeURIComponent(savedId)}`);
+    setRouteHash(`#doc/${encodeURIComponent(savedId)}/edit`);
   } else {
     renderFaqLiveHint({ ...(faqArticles.find((x) => x.id === savedId) || {}), id: savedId, status, bodyMd: (faqArticles.find((x) => x.id === savedId) || {}).bodyMd });
     document.getElementById("fa-title").textContent = "Edit article";

@@ -4636,6 +4636,34 @@ const scenarios = [
       assert.ok(!/504/.test(err || ""), `no error is shown when the reply was saved: ${err}`);
     },
   },
+  {
+    // 2ZGt21abp5J4YZ9cGn9M: a document opens read-only in its own reader
+    // (#doc/<id>), and the Edit icon opens the editor (#doc/<id>/edit).
+    name: "Documentation: a document opens in the read-only reader, Edit opens the editor",
+    seed: () => seed({
+      docCategories: { dc1: { name: "Architecture", icon: "menu_book", order: 0, createdAt: t(T0), updatedAt: t(T0) } },
+      docArticles: { da1: { title: "Solution overview", categoryId: "dc1", order: 0, status: "published", docType: "reference", bodyMd: "<h2>Overview</h2><p>Runs on EKS.</p>", createdAt: t(T0), updatedAt: t(T0) } },
+    }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "publish", "documentation-btn", "documentation-page");
+      await c.click('[data-doc-open="da1"]', "open the document");
+      await c.visible("#doc-reader-page", "the reader shows");
+      await c.waitText("#doc-reader-title", "Solution overview");
+      await c.waitText("#doc-reader-body h2", "Overview");
+      await c.hidden("#faq-article-editor-page", "no editor fields while reading");
+      await c.click("#doc-reader-edit", "the Edit icon");
+      await c.visible("#fa-title-input", "the editor opens");
+      c.at("the editor's address");
+      await until(() => c.page.evaluate(() => location.hash === "#doc/da1/edit"), "#doc/da1/edit");
+      await c.click("#fa-cancel", "Cancel");
+      await c.visible("#doc-reader-page", "back in the reader");
+      await c.click("#doc-reader-back", "Back");
+      await c.visible("#documentation-page", "back at the section");
+      const w = await c.writes();
+      if (w.some((x) => /^docArticles\//.test(x.path))) throw new Error("reading wrote to the document");
+    },
+  },
 ];
 
 // ── Self-checks ────────────────────────────────────────────────────────────

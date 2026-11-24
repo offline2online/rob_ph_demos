@@ -1,6 +1,6 @@
 // Pure helpers of Support › Documentation (public/js/documentation-page.js).
 import assert from "node:assert";
-import { childrenOf, descendantIds, pathOf, plainText, matchesFilter, searchDocs, snippetFor } from "../public/js/documentation-core.js";
+import { childrenOf, descendantIds, pathOf, plainText, matchesFilter, searchDocs, snippetFor, docReaderInfo, readerDate } from "../public/js/documentation-core.js";
 
 const cats = [
   { id: "a", name: "Architecture", order: 1 },
@@ -26,4 +26,16 @@ assert.deepStrictEqual(searchDocs(arts, "eks", textOf).map((a) => a.id), ["1", "
 assert.deepStrictEqual(searchDocs(arts, "eks helm", textOf).map((a) => a.id), ["1", "3"], "every word must match");
 assert.deepStrictEqual(searchDocs(arts, "  ", textOf), []);
 assert.ok(snippetFor("a".repeat(100) + " needle " + "b".repeat(300), "needle").startsWith("…"));
+
+// The read-only reader's header (#doc/<id>).
+const info = docReaderInfo({ categoryId: "a11", docType: "reference", status: "draft", needsReview: true, updatedAt: { toDate: () => new Date(Date.UTC(2026, 10, 21, 12)) }, source: { system: "confluence", path: "Platform", lastUpdated: "2026-03-20" } }, cats);
+assert.deepStrictEqual(info.path, ["Architecture", "Solution design", "Appendices"]);
+assert.strictEqual(info.typeLabel, "Reference");
+assert.strictEqual(info.updated, "Updated 21 Nov 2026");
+assert.deepStrictEqual(info.badges.map((b) => b.label), ["Draft", "Needs review"]);
+assert.strictEqual(info.source, "Carried over from Confluence (Platform), last updated there 2026-03-20.");
+const plain = docReaderInfo({ categoryId: "x", status: "published" }, cats);
+assert.deepStrictEqual([plain.typeLabel, plain.updated, plain.source, plain.badges.map((b) => b.label)], ["", "", "", ["Archived"]], "a document under Archive reads as archived");
+assert.strictEqual(readerDate(null), "");
+assert.strictEqual(readerDate("not a date"), "");
 console.log("documentation-page: ok");
