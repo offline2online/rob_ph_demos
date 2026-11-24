@@ -87,7 +87,9 @@ heading (KB-MCP-1; `backlog-tracker/MCP.md` → Staff Kanban).
   report splits them too (filter, KPI and breakdown columns). While a card is being dragged, that column's cards hide and two large drop targets
   fill the screen height over it: Completed (three quarters) and Withdrawn (one quarter). On a phone they sit at the
   bottom of the screen. (The console build, 29 Oct 2026: on a tablet they cover that column only, clipped to what is on screen; on a phone they are a slim bar above the tab bar that grows only when the card nears it; a drag drops nothing until the finger has moved, a drop on a target counts only if the finger entered it after the drag began, and Esc cancels a drag. See REQUIREMENTS.md → KB-BOARD-3/4.) You can drag cards
-  with a mouse, or press and hold them on touch. Moving a card to Ready for
+  with a mouse, or press and hold them on touch. Every column lists its cards by priority, Highest first (no priority counts
+  as Medium), then in drag order within one priority, on the plain board and in swimlanes alike (KB-BOARD-3a); a drag
+  reorders a card only among cards of its own priority. Moving a card to Ready for
   Testing reassigns it to the tester (Rob by default). Moving it back to In
   Progress or Ready for Dev returns it to the developer. The primary filters, staff avatars,
   **My tasks**, the search box and **Release**, sit in a bar pinned to the top while you scroll, with the column headers under it.

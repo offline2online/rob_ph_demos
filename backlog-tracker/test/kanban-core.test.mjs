@@ -328,4 +328,25 @@ t("spoken names: a name or its pronunciation becomes a tag only when it is certa
   }
   assert.deepEqual(k.matchSpokenNames("hello Rob", []), [{ t: "text", text: "hello Rob" }]);
 });
+t("board order: priority Highest to Lowest (none = Medium), then rank; a drop ranks among its own priority", () => {
+  const list = [
+    { key: "A", priority: "low", rank: 1 }, { key: "B", priority: "highest", rank: 50 }, { key: "C", priority: "", rank: 5 },
+    { key: "D", priority: "high", rank: 30 }, { key: "E", priority: "highest", rank: 20 }, { key: "F", priority: "medium", rank: 2 },
+    { key: "G", priority: "lowest", rank: 0 }, { key: "H", priority: "bogus", rank: 3 },
+  ].sort(k.byBoardOrder);
+  assert.deepEqual(list.map((x) => x.key), ["E", "B", "D", "F", "H", "C", "A", "G"]);
+  assert.equal(k.prioRank({}), 2); assert.equal(k.prioRank({ priority: "highest" }), 0); assert.equal(k.prioRank({ priority: "lowest" }), 4);
+  // a High ticket dropped above E (top of Highest) lands at the top of High: before D
+  let { prev, next } = k.dropNeighbours(list, 0, { priority: "high" });
+  assert.deepEqual([prev, next && next.key], [null, "D"]);
+  assert.ok(k.rankBetween(null, next.rank) < next.rank);
+  // a Medium ticket dropped between F and H ranks between them
+  ({ prev, next } = k.dropNeighbours(list, 4, { priority: "medium" }));
+  assert.deepEqual([prev.key, next.key], ["F", "H"]);
+  // a Highest ticket dropped at the column's end lands at the end of Highest: after B
+  ({ prev, next } = k.dropNeighbours(list, list.length, { priority: "highest" }));
+  assert.deepEqual([prev.key, next], ["B", null]);
+  // a priority with no tickets in the column: no neighbours, the first rank
+  assert.deepEqual(k.dropNeighbours([{ key: "X", priority: "low", rank: 4 }], 0, { priority: "high" }), { prev: null, next: null });
+});
 console.log(`\n${n} passed`);
