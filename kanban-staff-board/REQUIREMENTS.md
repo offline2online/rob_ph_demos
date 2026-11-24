@@ -179,6 +179,31 @@ changed field, with the old and new value ("changed Priority from Medium to
 High", "assigned to Duong", "changed Estimate from 1d to 2d", added/removed
 labels, linked/unlinked tickets); status moves keep their own line.
 
+**KB-BOARD-5a Needs more work** (24 Nov 2026). A ticket in Ready for Testing
+that doesn't pass testing is sent back with a **Needs more work** stamp: the
+red **Needs more work** button at the top of the open ticket (shown while it is
+in Ready for Testing, to anyone who can edit) asks what still needs doing (required, up to 500
+characters) and moves it to **Ready for Dev**, returning it to its developer as
+KB-BOARD-5 does. The ticket and its card carry `needsMoreWork` `{reason, by,
+at}`. While stamped, the card has a red outline and a full-width red "Needs
+more work" banner with the reason across its top, the open ticket shows the
+banner with who sent it back and when, and the ticket is drawn **above every
+other ticket in its column**, Highest priority included (KB-BOARD-3a applies
+among stamped tickets), in Ready for Dev and still in In Progress or Backlog if
+the developer moves it there, so a pushed-back ticket is seen and fixed
+alongside the developer's own work. Reaching Ready for Testing again (or
+Approved / Completed / Withdrawn) clears the stamp. Both changes write their own
+activity line ("marked Needs more work: <reason>", "cleared Needs more work").
+A plain drag back out of Ready for Testing does not stamp a ticket. Over MCP,
+`kanban_move_task` takes `needsMoreWork` (the reason) with status `backlog`,
+`ready-for-dev` or `in-progress` on a ticket in Ready for Testing. AC: send a
+Ready for Testing ticket back with a reason; it is first in Ready for Dev,
+above a Highest ticket, with the red banner and reason, assigned to its
+developer; move it to In Progress and it is still stamped and first; move it to
+Ready for Testing and the stamp is gone. `kanban-core.js` `statusChange` /
+`byBoardOrder`, `kanban-core.test.mjs`, `kanban-mcp.test.js`,
+`kanban-rules.test.js`, `staff-kanban.test.mjs` ("KB-NEEDS-WORK").
+
 **KB-BOARD-6 Cards.** Show type icon, key (`PH-n`), priority, flag, title,
 parent epic (under the title), time-logged progress, remaining estimate or due
 date, comment and attachment counts, and the assignee's avatar. Epic cards show
@@ -790,8 +815,8 @@ stored by lowercased email; release ids are the console's `releases` ids.
 
 | Collection | Shape |
 |---|---|
-| `kanbanCards/{PH-n}` | The light copy the board reads: `key`, `type`, `title`, `status`, `resolution`, `open`, `closedAt`, `rank`, `assignee`, `previousAssignee`, `release`, `sprint`, `project`, `priority`, `flagged`, `estimate`, `logged`, `due`, `labels[]`, `epic`, `commentCount`, `attachmentCount`, `acTotal`, `acDone` (the acceptance-criteria counts, KB-TASK-12), `agentTotal`, `agentDone` (agent tickets sent and built, KB-AGENT-1; only once there are any, written by the server), `updatedAt/By` (what `core.cardOf` names; the rules refuse any other key, so no description, links or search tokens). **Every writer writes a ticket's card in the same batch or transaction as the ticket**: the page (`kanban-store.js` createTask / updateTask / deleteTask / addComment, children and epics too) and every MCP write in `functions/kanban.js`. |
-| `kanbanTasks/{PH-n}` | The full ticket, read when its modal opens (and by search and `kanban_get_task`): `key`, `number`, `type` (task/bug/epic), `title`, `description` (HTML), `descriptionText`, `status`, `resolution` (completed/withdrawn when status = done, else null), `open` (status ≠ done), `closedAt` (when done), `rank`, `assignee`, `previousAssignee`, `reporter`, `release`, `sprint`, `project` (console project id or empty), `estimate` (hours or null), `logged` (hours), `priority`, `due` (YYYY-MM-DD), `labels[]`, `epic` (parent key), `links[] {type,key}` (on both tickets: "A blocks B" is `{blocks,B}` on A and `{is blocked by,A}` on B, written in one batch by the page and the MCP tools), `flagged`, `acceptanceCriteria[]` (at most 50 strings `<id>\t<0|1>\t<text>`, KB-TASK-12), `attachments[] {name,size,contentType,url,path}`, `commentCount`, `mentions[]`, `watchers[]` (people who asked to follow it), `agentTickets[] {id, projectId}`, `agentTotal`, `agentDone` (Send to Agent, KB-AGENT-1: the Agent Board tickets made from it and how many are built; server only), `searchTokens[]` (server search, KB-TASK-6), `createdAt/By`, `updatedAt/By` |
+| `kanbanCards/{PH-n}` | The light copy the board reads: `key`, `type`, `title`, `status`, `resolution`, `open`, `closedAt`, `rank`, `assignee`, `previousAssignee`, `release`, `sprint`, `project`, `priority`, `flagged`, `estimate`, `logged`, `due`, `labels[]`, `epic`, `commentCount`, `attachmentCount`, `acTotal`, `acDone` (the acceptance-criteria counts, KB-TASK-12), `agentTotal`, `agentDone` (agent tickets sent and built, KB-AGENT-1; only once there are any, written by the server), `needsMoreWork` (`{reason, by, at}` or null, KB-BOARD-5a), `updatedAt/By` (what `core.cardOf` names; the rules refuse any other key, so no description, links or search tokens). **Every writer writes a ticket's card in the same batch or transaction as the ticket**: the page (`kanban-store.js` createTask / updateTask / deleteTask / addComment, children and epics too) and every MCP write in `functions/kanban.js`. |
+| `kanbanTasks/{PH-n}` | The full ticket, read when its modal opens (and by search and `kanban_get_task`): `key`, `number`, `type` (task/bug/epic), `title`, `description` (HTML), `descriptionText`, `status`, `resolution` (completed/withdrawn when status = done, else null), `open` (status ≠ done), `closedAt` (when done), `rank`, `assignee`, `previousAssignee`, `reporter`, `release`, `sprint`, `project` (console project id or empty), `estimate` (hours or null), `logged` (hours), `priority`, `due` (YYYY-MM-DD), `labels[]`, `epic` (parent key), `links[] {type,key}` (on both tickets: "A blocks B" is `{blocks,B}` on A and `{is blocked by,A}` on B, written in one batch by the page and the MCP tools), `flagged`, `acceptanceCriteria[]` (at most 50 strings `<id>\t<0|1>\t<text>`, KB-TASK-12), `attachments[] {name,size,contentType,url,path}`, `commentCount`, `mentions[]`, `watchers[]` (people who asked to follow it), `agentTickets[] {id, projectId}`, `agentTotal`, `agentDone` (Send to Agent, KB-AGENT-1: the Agent Board tickets made from it and how many are built; server only), `needsMoreWork` (`{reason, by, at}` while sent back from testing, else null; KB-BOARD-5a), `searchTokens[]` (server search, KB-TASK-6), `createdAt/By`, `updatedAt/By` |
 | `kanbanTasks/{PH-n}/comments/{id}` | `author`, `html`, `text`, `mentions[]`, `at`, `editedAt` (once edited), `via` (`"voice"` when it was dictated on the board, KB-VOICE-1; never changed by an edit) |
 | `kanbanTasks/{PH-n}/activity/{id}` | `who`, `at`, `text` (moves, field changes with old and new value, links, flags); append-only. The History tab reads these lines back (KB-HIST-1) |
 | `kanbanCounters/main` | `nextNumber`, advanced in the same transaction as the ticket it numbers |

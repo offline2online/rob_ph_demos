@@ -519,6 +519,52 @@ T("KB-PRIO-ORDER", "columns list tickets by priority, Highest first, then rank, 
   await p.done();
 });
 
+// Needs more work (DHtgfhGz2t1gcKX8adz0, KB-BOARD-5a): a ticket in Ready for Testing that didn't pass goes
+// back to Ready for Dev and its developer with a red stamp and the reason, drawn above every other ticket.
+T("KB-NEEDS-WORK", "Needs more work sends a tested ticket back to Ready for Dev, stamped and first in the column", { on: on.desktop }, async (prof) => {
+  const seed = kanbanSeed();
+  const base = Object.values(KB.kanbanTasks).find((t) => t.open && t.type === "task");
+  const mk = (key, n, over) => { const t = { ...base, key, number: n, open: true, resolution: null, labels: [], epic: "", links: [], attachments: [], flagged: false, ...over }; delete t.closedAt; return t; };
+  const tested = mk("PH-3000", 3000, { title: "Sent back from testing", status: "ready-for-testing", priority: "low", rank: 5, assignee: LINH, previousAssignee: HUY });
+  const top = mk("PH-3001", 3001, { title: "Highest in Ready for Dev", status: "ready-for-dev", priority: "highest", rank: -5000, assignee: HUY, previousAssignee: "" });
+  seed.docs.kanbanTasks = { ...seed.docs.kanbanTasks, [tested.key]: tested, [top.key]: top };
+  seed.docs.kanbanCards = { ...seed.docs.kanbanCards, [tested.key]: cardOfTask(tested), [top.key]: cardOfTask(top) };
+  const p = await open(prof, "#staff-kanban", { seed, height: 2000 });
+  const devKeys = () => p.$$eval('.kb-col[data-status="ready-for-dev"] .kb-card', (e) => e.map((x) => x.dataset.key));
+  // A ticket outside Ready for Testing has no such action.
+  await press(p, '.kb-card[data-key="PH-3001"] .card-title');
+  await until(async () => !!(await p.$("#f-status")), "the open ticket");
+  assert.equal(await p.$$eval("#f-needs-work", (e) => e.length), 0, "no Needs more work outside Ready for Testing");
+  await press(p, "#f-cancel");
+  await p.waitForFunction(() => document.getElementById("task-backdrop").hidden, null, { timeout: 5000 });
+  await press(p, '.kb-card[data-key="PH-3000"] .card-title');
+  await until(async () => !!(await p.$("#f-needs-work")), "the Needs more work action in the open ticket");
+  await press(p, "#f-needs-work");
+  await until(async () => !!(await p.$("#kb-needs-work-reason")), "the reason prompt");
+  assert.equal(await p.$eval("#kb-needs-work-ok", (b) => b.disabled), true, "a reason is required");
+  await p.fill("#kb-needs-work-reason", "Save button still greys out on the iPad");
+  await press(p, "#kb-needs-work-ok");
+  await eventually(async () => assert.equal((await devKeys())[0], "PH-3000", "first in Ready for Dev, above the Highest ticket"));
+  const card = '.kb-col[data-status="ready-for-dev"] .kb-card[data-key="PH-3000"]';
+  assert.ok(await p.$eval(card, (c) => c.classList.contains("kb-card-needs-work")), "the card is marked");
+  assert.match(await p.$eval(`${card} .kb-needs-work`, (e) => e.innerText), /Needs more work/i);
+  assert.match(await p.$eval(`${card} .kb-needs-work-reason`, (e) => e.textContent), /Save button still greys out on the iPad/);
+  const banner = await p.$eval(`${card} .kb-needs-work`, (e) => { const r = e.getBoundingClientRect(), c = e.closest(".kb-card").getBoundingClientRect(); return { w: r.width, cw: c.width, bg: getComputedStyle(e).backgroundColor }; });
+  assert.ok(banner.w > banner.cw * 0.8, "the stamp runs across the card");
+  assert.notEqual(banner.bg, "rgba(0, 0, 0, 0)", "the stamp is filled");
+  const stored = await p.evaluate(() => globalThis.__fbStub.col("kanbanTasks").get("PH-3000"));
+  assert.equal(stored.status, "ready-for-dev");
+  assert.equal(stored.assignee, HUY, "back with its developer");
+  assert.equal(stored.needsMoreWork.reason, "Save button still greys out on the iPad");
+  const storedCard = await p.evaluate(() => globalThis.__fbStub.col("kanbanCards").get("PH-3000"));
+  assert.equal(storedCard.needsMoreWork.reason, "Save button still greys out on the iPad", "the card carries the stamp");
+  // The open ticket shows the stamp too.
+  await press(p, `${card} .card-title`);
+  await until(async () => !!(await p.$("#task-form .kb-needs-work-modal")), "the stamp in the open ticket");
+  assert.match(await p.$eval("#task-form .kb-needs-work-modal", (e) => e.innerText), /Save button still greys out on the iPad/);
+  await p.done();
+});
+
 T("TC-12", "voice: Record task fills title, description and details, marked Agent", async (prof) => {
   const p = await open(prof, "#staff-kanban", { init: speechStub("so there's a bug where the menu board preview shows the wrong price for Welsh stores. it's urgent. assign it to Huy. it should take about four hours for the current release") });
   await press(p, "#kb-new-btn");

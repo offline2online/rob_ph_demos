@@ -217,16 +217,20 @@ export function rankBetween(prev, next) {
 // lists its tickets by priority, Highest first (a ticket with no priority
 // counts as Medium), then by rank: the manual drag order within one priority.
 export const prioRank = (t) => { const i = PRIORITIES.findIndex((p) => p.key === (t && t.priority)); return i < 0 ? 2 : i; };
-export const byBoardOrder = (a, b) => prioRank(a) - prioRank(b) || (Number(a.rank) || 0) - (Number(b.rank) || 0);
+// KB-BOARD-5a: a ticket sent back from testing ("Needs more work") is drawn
+// above every other ticket in its column, then priority and rank as usual.
+export const needsWork = (t) => !!(t && t.needsMoreWork && typeof t.needsMoreWork === "object");
+export const boardBand = (t) => (needsWork(t) ? 0 : 10) + prioRank(t);
+export const byBoardOrder = (a, b) => boardBand(a) - boardBand(b) || (Number(a.rank) || 0) - (Number(b.rank) || 0);
 // A drop at position idx of a column in board order (the dragged ticket left
 // out) takes its rank from the nearest tickets of its own priority on each
 // side, so a drop among another priority lands at the edge of its own: a drag
 // never changes a ticket's priority, and the column stays sorted.
 export function dropNeighbours(list, idx, task) {
-  const p = prioRank(task);
+  const p = boardBand(task);
   let prev = null, next = null;
-  for (let i = Math.min(idx, list.length) - 1; i >= 0; i--) if (prioRank(list[i]) === p) { prev = list[i]; break; }
-  for (let i = Math.max(idx, 0); i < list.length; i++) if (prioRank(list[i]) === p) { next = list[i]; break; }
+  for (let i = Math.min(idx, list.length) - 1; i >= 0; i--) if (boardBand(list[i]) === p) { prev = list[i]; break; }
+  for (let i = Math.max(idx, 0); i < list.length; i++) if (boardBand(list[i]) === p) { next = list[i]; break; }
   return { prev, next };
 }
 
@@ -263,7 +267,17 @@ export const isAliasEmail = (e) => Object.prototype.hasOwnProperty.call(PERSON_A
 // Ready for Testing hands the ticket to its designated tester (task.tester) if
 // it has one, else to the person the mover chose (opts.tester). There is no
 // board-wide default: with neither, the assignee is left alone.
-export function statusChange(task, status, { resolution, tester: chosen, firstName = (x) => x || "Unassigned" } = {}) {
+// Needs more work (KB-BOARD-5a): opts.needsMoreWork = { reason, by, at } sends a
+// ticket in Ready for Testing back (to Ready for Dev, In Progress or Backlog)
+// stamped as not passing testing; the stamp is cleared when the ticket reaches
+// Ready for Testing again or is approved or closed. stampLine is the extra
+// activity line the caller writes for either.
+export const NEEDS_WORK_BACK = ["backlog", "ready-for-dev", "in-progress"];
+export function normNeedsWork(v) {
+  if (!v || typeof v !== "object") return null;
+  return { reason: String(v.reason == null ? "" : v.reason).trim().slice(0, 500), by: String(v.by || ""), at: String(v.at || "") };
+}
+export function statusChange(task, status, { resolution, tester: chosen, firstName = (x) => x || "Unassigned", needsMoreWork } = {}) {
   const tester = (task && task.tester) || chosen || "";
   if (!STATUS_KEYS.includes(status)) throw new Error(`Unknown status ${status}`);
   const from = task.status, fromRes = res(task);
@@ -279,8 +293,16 @@ export function statusChange(task, status, { resolution, tester: chosen, firstNa
     patch.assignee = task.previousAssignee;
     note = `returned to ${firstName(task.previousAssignee)}`;
   }
+  let stampLine = "";
+  if (needsMoreWork && from === "ready-for-testing" && NEEDS_WORK_BACK.includes(status)) {
+    patch.needsMoreWork = normNeedsWork(needsMoreWork);
+    stampLine = `marked Needs more work${patch.needsMoreWork.reason ? ": " + patch.needsMoreWork.reason : ""}`;
+  } else if (needsWork(task) && !NEEDS_WORK_BACK.includes(status)) {
+    patch.needsMoreWork = null;
+    stampLine = "cleared Needs more work";
+  }
   const activity = `${statusLabel(from, fromRes)} → ${statusLabel(status, toRes)}${note ? " · " + note : ""}`;
-  return { patch, note, activity, resolution: toRes };
+  return { patch, note, activity, resolution: toRes, stampLine };
 }
 
 // ── History (KB-HIST-1): the audit trail and its figures ─────────────────
@@ -981,7 +1003,7 @@ export function editActivity(before, after, names = {}) {
 // tests use the same functions, so a card and its ticket cannot be derived two ways.
 // (one string, not a list of quoted words: a lone quoted word that is also an icon name fails test/icon-font.test.mjs)
 export const CARD_FIELDS = ("key type title status resolution open rank assignee previousAssignee release sprint project "
-  + "priority flagged estimate logged due labels epic commentCount attachmentCount acTotal acDone agentTotal agentDone").split(" ");
+  + "priority flagged estimate logged due labels epic commentCount attachmentCount acTotal acDone agentTotal agentDone needsMoreWork").split(" ");
 const CARD_NORM = {
   key: (v) => String(v || ""),
   type: (v) => v || "task",
@@ -1002,6 +1024,7 @@ const CARD_NORM = {
   labels: (v) => (Array.isArray(v) ? v.slice(0, 30) : []),
   epic: (v) => v || "",
   commentCount: (v) => (Number.isInteger(v) && v > 0 ? v : 0),
+  needsMoreWork: (v) => normNeedsWork(v),
 };
 // A ticket (or a card) → the fields of its card.
 export function cardOf(t) {

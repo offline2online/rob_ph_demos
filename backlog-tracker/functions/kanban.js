@@ -1670,19 +1670,23 @@ function kanbanTools(h) {
     },
     {
       name: "kanban_move_task",
-      description: "Staff Kanban: move a ticket to another column. Moving to Ready for Testing assigns it to the ticket's designated tester, else to the `tester` you pass (an email); with neither the assignee is left alone and the result says so. There is no default tester. Moving it back to In Progress or Ready for Dev returns it to the developer. To close one, use status done with resolution completed or withdrawn. When every child of the ticket's parent is then done, the parent moves to Ready for Testing by itself, and its parent in turn (parentsMovedToTesting lists them).",
+      description: "Staff Kanban: move a ticket to another column. Moving to Ready for Testing assigns it to the ticket's designated tester, else to the `tester` you pass (an email); with neither the assignee is left alone and the result says so. There is no default tester. Moving it back to In Progress or Ready for Dev returns it to the developer. A ticket in Ready for Testing that did not pass: pass `needsMoreWork` (what still needs doing) with status ready-for-dev, and it goes back stamped Needs more work, shown at the top of its column until it reaches Ready for Testing again. To close one, use status done with resolution completed or withdrawn. When every child of the ticket's parent is then done, the parent moves to Ready for Testing by itself, and its parent in turn (parentsMovedToTesting lists them).",
       scope: "board.write",
       inputSchema: {
         type: "object",
-        properties: { key: KEY, status: { type: "string", enum: core.STATUS_KEYS }, resolution: { type: "string", enum: ["completed", "withdrawn"] }, tester: PERSON },
+        properties: { key: KEY, status: { type: "string", enum: core.STATUS_KEYS }, resolution: { type: "string", enum: ["completed", "withdrawn"] }, tester: PERSON, needsMoreWork: { type: "string", maxLength: 500, description: "Ready for Testing only: why it did not pass. Sends it back stamped Needs more work (status backlog, ready-for-dev or in-progress)." } },
         required: ["key", "status"], additionalProperties: false,
       },
       async run(args, session) {
         const key = normKey(args.key);
         const cur = key && await getTask(key);
         if (!cur) return toolError(`No ticket ${args.key}.`);
+        const reason = typeof args.needsMoreWork === "string" ? args.needsMoreWork.trim() : "";
+        if (args.needsMoreWork !== undefined && (!reason || cur.status !== "ready-for-testing" || !core.NEEDS_WORK_BACK.includes(args.status))) {
+          return toolError("needsMoreWork needs a reason, a ticket in Ready for Testing and status backlog, ready-for-dev or in-progress.");
+        }
         const [s, first] = await Promise.all([settings(), fullNamer()]);
-        const ch = core.statusChange(cur, args.status, { resolution: args.resolution, tester: args.tester ? core.canonicalEmail(meOr(args.tester, session)) : "", firstName: first });
+        const ch = core.statusChange(cur, args.status, { resolution: args.resolution, tester: args.tester ? core.canonicalEmail(meOr(args.tester, session)) : "", firstName: first, needsMoreWork: reason ? { reason, by: session.email, at: new Date().toISOString() } : undefined });
         if (!ch) return textResult({ moved: false, key, status: cur.status, note: "Already there." });
         const rank = await nextRank(args.status);
         const patch = Object.assign({}, ch.patch, { rank }, stamp(session.email), args.status === "done" ? { closedAt: FieldValue.serverTimestamp() } : { closedAt: FieldValue.delete() });
@@ -1691,14 +1695,14 @@ function kanbanTools(h) {
         const moved = Object.assign({}, cur, patch);
         if (args.status !== "done") delete moved.closedAt;
         putCard(b, key, moved, session.email, args.status === "done" ? patch.closedAt : undefined);
-        activity(b, key, session.email, [ch.activity]);
+        activity(b, key, session.email, ch.stampLine ? [ch.activity, ch.stampLine] : [ch.activity]);
         await b.commit();
         // Parent automation (KB-TASK-14): parents whose children are now all done move to Ready for Testing.
         let advanced = [];
         try { advanced = await advanceParents(Object.assign({}, cur, ch.patch), session, first); }
         catch (err) { logger.warn("kanban_move_task: parent automation", err); }
         await audit(session, "kanban_move_task", { key, status: args.status, resolution: ch.resolution, parentsMoved: advanced.length ? advanced : undefined });
-        return textResult({ moved: true, key, status: args.status, resolution: ch.resolution, note: ch.note || (args.status === "ready-for-testing" ? "No tester set, so the assignee is unchanged. Pass `tester` or assign one." : null), assignee: patch.assignee || cur.assignee || null, parentsMovedToTesting: advanced.length ? advanced : undefined });
+        return textResult({ moved: true, key, status: args.status, resolution: ch.resolution, needsMoreWork: ch.patch.needsMoreWork !== undefined ? ch.patch.needsMoreWork : undefined, note: ch.note || (args.status === "ready-for-testing" ? "No tester set, so the assignee is unchanged. Pass `tester` or assign one." : null), assignee: patch.assignee || cur.assignee || null, parentsMovedToTesting: advanced.length ? advanced : undefined });
       },
     },
     {

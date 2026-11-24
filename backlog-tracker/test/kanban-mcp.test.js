@@ -174,6 +174,34 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.ok(activity("PH-1").includes("In Progress → Ready for Testing · reassigned to Rob for testing"));
   });
 
+  await test("kanban_move_task: needsMoreWork sends a ticket in testing back stamped, and testing again clears it (KB-BOARD-5a)", async () => {
+    // (PH-1 is In Progress with Huy)
+    const early = await tool(sam, "kanban_move_task", { key: "PH-1", status: "ready-for-dev", needsMoreWork: "not tested yet" });
+    assert.ok(early.isError); assert.match(early.text, /Ready for Testing/);
+    await tool(sam, "kanban_move_task", { key: "PH-1", status: "ready-for-testing", tester: ROB });
+    const blank = await tool(sam, "kanban_move_task", { key: "PH-1", status: "ready-for-dev", needsMoreWork: "  " });
+    assert.ok(blank.isError);
+    const fwd = await tool(sam, "kanban_move_task", { key: "PH-1", status: "approved", needsMoreWork: "nope" });
+    assert.ok(fwd.isError); assert.strictEqual(task("PH-1").status, "ready-for-testing");
+    const r = await tool(sam, "kanban_move_task", { key: "PH-1", status: "ready-for-dev", needsMoreWork: "Save still fails on the iPad" });
+    assert.ok(!r.isError, r.text);
+    assert.strictEqual(r.json.needsMoreWork.reason, "Save still fails on the iPad");
+    const t = task("PH-1");
+    assert.strictEqual(t.status, "ready-for-dev"); assert.strictEqual(t.assignee, HUY);
+    assert.strictEqual(t.needsMoreWork.reason, "Save still fails on the iPad"); assert.ok(t.needsMoreWork.by); assert.ok(t.needsMoreWork.at);
+    assert.deepStrictEqual(env.store.col("kanbanCards").get("PH-1").needsMoreWork, t.needsMoreWork);
+    assert.ok(activity("PH-1").includes("marked Needs more work: Save still fails on the iPad"));
+    assert.deepStrictEqual(cardDrift(), []);
+    await tool(sam, "kanban_move_task", { key: "PH-1", status: "in-progress" });
+    assert.strictEqual(task("PH-1").needsMoreWork.reason, "Save still fails on the iPad");
+    await tool(sam, "kanban_move_task", { key: "PH-1", status: "ready-for-testing", tester: ROB });
+    assert.strictEqual(task("PH-1").needsMoreWork, null);
+    assert.strictEqual(env.store.col("kanbanCards").get("PH-1").needsMoreWork, null);
+    assert.ok(activity("PH-1").includes("cleared Needs more work"));
+    await tool(sam, "kanban_move_task", { key: "PH-1", status: "in-progress" });
+    assert.strictEqual(task("PH-1").assignee, HUY);
+  });
+
   await test("Staff names: seeded pronunciations, admin-only setting, new members prompted, nothing leaks to the board", async () => {
     const NEWB = "newbie@ph.example";
     member("duong@ph.example", "editor", "Dương Nguyễn");
