@@ -1,7 +1,8 @@
 import assert from "node:assert";
-import { STAGES, buildFunnel, previousRange, addDays, daysBetween, joinOpportunities, dayOfInstant, normaliseWebRow, channelOf, fmtPct, fmtChange, EMPTY_FILTER, filterOptions, ingestStatusView, ingestFailureText, fmtUpdated } from "../public/js/funnel-core.js";
+import { STAGES, buildFunnel, previousRange, addDays, daysBetween, joinOpportunities, dayOfInstant, normaliseWebRow, channelOf, fmtPct, fmtChange, EMPTY_FILTER, filterOptions, ingestStatusView, ingestFailureText, fmtUpdated, fmtMoney, revenueOf } from "../public/js/funnel-core.js";
 
-assert.deepStrictEqual(STAGES.map((s) => s.key), ["impressions", "clicks", "visits", "demos", "downloads", "aceCreated", "aceOpen", "aceClosed", "deployed"], "nine stages in order");
+assert.deepStrictEqual(STAGES.map((s) => s.key), ["impressions", "clicks", "visits", "demos", "downloads", "aceCreated", "aceOpen", "aceClosed", "deployed", "revenue"], "nine counted stages, then Revenue");
+assert.strictEqual(STAGES[STAGES.length - 1].money, true, "Revenue is an amount");
 assert.strictEqual(addDays("2026-03-01", -1), "2026-02-28");
 assert.strictEqual(daysBetween("2026-11-01", "2026-11-30"), 30);
 assert.deepStrictEqual(previousRange("2026-11-01", "2026-11-30"), { from: "2026-10-02", to: "2026-10-31" });
@@ -85,4 +86,42 @@ assert.deepStrictEqual(bad.failures.map((x) => x.name), ["GA4", "Google Ads"], "
 assert.strictEqual(bad.updatedAt, Date.parse("2026-11-18T00:00:00Z"), "last updated is GA4's last good update, not the leads'");
 assert.match(ingestFailureText(bad), /^GA4 didn't update \(GA4 answered 401: bad credentials\); last good update .+\. Google Ads didn't update/);
 assert.strictEqual(fmtUpdated(0), "never");
+
+// The Partner Central S3 export ("pc-export" rows): the Revenue stage, attributed revenue first.
+const pcx = (date, o) => normaliseWebRow(`p${date}${o.aceId}`, { date, source: "pc-export", company: "Burger Co", industry: "QSR", country: "UK", channel: "Google Ads", campaign: "DC Spring", currency: "USD", ...o });
+const pcRows = [
+  pcx("2026-11-05", { aceId: "2", attributedRevenue: 1200, marketplaceRevenue: 900, fundingUsed: 300 }),
+  pcx("2026-11-06", { aceId: "1", attributedRevenue: 0, marketplaceRevenue: 500, fundingUsed: 0 }),
+  pcx("2026-10-06", { aceId: "2", attributedRevenue: 400, fundingUsed: 50 }),
+];
+assert.strictEqual(revenueOf(pcRows[0]), 1200, "attributed revenue where there is any");
+assert.strictEqual(revenueOf(pcRows[1]), 500, "else Marketplace revenue");
+const withPc = { web: [...web, ...pcRows], ace: joinOpportunities(opps, leads, prospects, pcRows) };
+assert.ok(withPc.ace.find((o) => o.id === "2").campaigns.includes("DC Spring"), "a Demand Center campaign on the export traces to its ACE opportunity");
+f = buildFunnel(F, withPc);
+const rev = f.stages.find((s) => s.key === "revenue");
+assert.strictEqual(rev.count, 1700);
+assert.strictEqual(rev.fundingUsed, 300);
+assert.strictEqual(rev.currency, "USD");
+assert.strictEqual(rev.fromPrev, null, "no % of a count above an amount");
+assert.strictEqual(rev.ofTop, null);
+assert.strictEqual(rev.width, f.stages.find((s) => s.key === "deployed").width, "drawn as wide as Deployed");
+assert.strictEqual(f.stages[0].count, 2000, "export rows never add to the counted stages");
+assert.strictEqual(f.hasExportData, true);
+assert.strictEqual(buildFunnel({ ...F, campaign: "DC Spring" }, withPc).stages.find((s) => s.key === "aceCreated").count, 2, "the campaign filter reaches the opportunities through the export");
+assert.strictEqual(buildFunnel({ ...F, industry: "Grocery" }, withPc).stages.find((s) => s.key === "revenue").count, 0, "filters apply to revenue");
+assert.strictEqual(buildFunnel({ ...F, adGroup: "x" }, withPc).stages.find((s) => s.key === "revenue").count, 0, "an ad group filter empties revenue like the ACE stages");
+const cmp = buildFunnel({ ...F, compare: true }, withPc).stages.find((s) => s.key === "revenue");
+assert.strictEqual(cmp.prev.count, 400);
+assert.strictEqual(cmp.change.count, 1300);
+assert.strictEqual(fmtMoney(1700, "USD"), "US$1,700");
+assert.strictEqual(fmtChange({ count: 1300, countPct: 325 }, "USD"), "+US$1,300 (+325%)");
+assert.strictEqual(fmtMoney(5, "nonsense"), "US$5", "an unknown currency reads as USD");
+// The export's state: not set up is neutral, never a failure.
+const notSetUp = ingestStatusView({ lastRunAt: "2026-11-19T06:00:00Z", sources: { leads: { ok: true, lastSuccessAt: "2026-11-19T06:00:00Z" }, "pc-export": { ok: true, notSetUp: true } } });
+assert.strictEqual(notSetUp.flagged, false);
+assert.strictEqual(notSetUp.pcExport.notSetUp, true);
+const pcFail = ingestStatusView({ lastRunAt: "2026-11-19T06:00:00Z", sources: { "pc-export": { ok: false, error: "S3 answered AccessDenied", lastSuccessAt: null } } });
+assert.strictEqual(pcFail.flagged, true);
+assert.match(ingestFailureText(pcFail), /^Partner Central export didn't update \(S3 answered AccessDenied\)/);
 console.log("funnel.test.mjs: ok");

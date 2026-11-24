@@ -11,8 +11,12 @@
 //   impressions, clicks, visits, demoRequests, downloads  (numbers)
 //   source ("ga4-total" | "ga4-site" | "ga4-industry" | "ga4-industry-total" |
 //   "ga4-industry-users" | "ga4-events" |
-//   "google-ads" | "leads" | "ace", functions/funnel-ingest.js), and per source
-//   users, pageViews, walkthroughs, calculatorUses, leadForms, leads, aceCreated
+//   "google-ads" | "leads" | "ace" | "pc-export", functions/funnel-ingest.js), and per source
+//   users, pageViews, walkthroughs, calculatorUses, leadForms, leads, aceCreated;
+//   a "pc-export" row (the Partner Central S3 data export, functions/pc-export.js)
+//   is one ACE opportunity's revenue on a day: aceId, stage, currency,
+//   attributedRevenue, marketplaceRevenue, fundingUsed. It feeds the Revenue
+//   stage only, never the counts above it.
 // Dates are calendar days and the page works in the viewer's local days; nothing
 // here formats or compares a UTC instant.
 
@@ -26,6 +30,7 @@ export const STAGES = [
   { key: "aceOpen", label: "ACE opportunities open", source: "Console", icon: "pending_actions", info: "Of those created, the ones still open (not Launched and not Closed Lost)." },
   { key: "aceClosed", label: "ACE opportunities closed", source: "Console", icon: "task_alt", info: "Won (Launched) or lost (Closed Lost). Measured against the opportunities created, since an opportunity leaves 'open' when it closes.", from: "aceCreated" },
   { key: "deployed", label: "Deployed", source: "Console", icon: "rocket_launch", info: "Closed-won opportunities that have launched." },
+  { key: "revenue", label: "Revenue", source: "Partner Central", icon: "payments", money: true, info: "Revenue from the Partner Central data export: AWS Revenue Measurement attributed revenue where an opportunity has it, otherwise its AWS Marketplace revenue. An amount, so it has no % of the stage above." },
 ];
 export const STAGE_KEYS = STAGES.map((s) => s.key);
 
@@ -34,6 +39,8 @@ export const CHANNELS = ["Google Ads", "Organic", "Direct", "Referral", "AWS Mar
 export const EMPTY_FILTER = { from: "", to: "", industry: "", channel: "", campaign: "", adGroup: "", company: "", country: "", content: "", compare: false };
 
 // Stage -> the row field(s) summed for it.
+// The Revenue stage's amount for one export row: attributed revenue where there is any, else Marketplace revenue.
+export const revenueOf = (r) => (num(r.attributedRevenue) > 0 ? num(r.attributedRevenue) : num(r.marketplaceRevenue));
 const WEB_METRICS = { impressions: ["impressions"], clicks: ["clicks"], visits: ["visits"], demos: ["demoRequests"], downloads: ["downloads", "calculatorUses"] };
 const eq = (a, b) => String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
 const num = (v) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0);
@@ -84,7 +91,12 @@ export function channelOf(source) {
 
 // One record per ACE opportunity, carrying what the filters need from the
 // prospect (industry, country, campaigns) and lead (channel, content) it joins.
-export function joinOpportunities(opps, leads, prospects) {
+// A Demand Center campaign named on the opportunity's Partner Central export row
+// (exportRows, from funnelDaily "pc-export") is added to its campaigns, so a
+// campaign filter traces campaign → lead → ACE opportunity.
+export function joinOpportunities(opps, leads, prospects, exportRows = []) {
+  const exportCampaigns = new Map();
+  for (const r of exportRows || []) if (r.aceId && r.campaign) exportCampaigns.set(r.aceId, [...(exportCampaigns.get(r.aceId) || []), r.campaign]);
   const byName = new Map();
   for (const p of prospects || []) { const k = normName(p.name); if (k && !byName.has(k)) byName.set(k, p); }
   const leadByName = new Map();
@@ -101,7 +113,7 @@ export function joinOpportunities(opps, leads, prospects) {
       industry: String(o.industry || (p && p.industry) || (l && l.company && l.company.industry) || ""),
       country: String((p && (p.country || p.hqCountry)) || (l && l.company && l.company.countries[0]) || ""),
       channel: channelOf(l && l.source),
-      campaigns: p ? p.campaigns : [],
+      campaigns: [...new Set([...(p ? p.campaigns : []), ...(exportCampaigns.get(String(o.id || "")) || [])])],
       content: String((l && (l.sourceLabel || l.sourcePage)) || ""),
       lost: eq(stage, "Closed Lost"),
       won: eq(stage, "Launched"),
@@ -126,9 +138,15 @@ const aceCannotMatch = (f) => !!f.adGroup;
 // Counts for one range. Stages with no source data stay 0; `hasData` says which half had anything.
 export function stageCounts(f, range, data) {
   const out = Object.fromEntries(STAGE_KEYS.map((k) => [k, 0]));
-  let webRows = 0;
+  let webRows = 0, fundingUsed = 0, currency = "";
   for (const r of data.web || []) {
     if (!inRange(r.date, range.from, range.to) || !webMatches(r, f)) continue;
+    if (r.source === "pc-export") {
+      // Company-level, like the ACE stages: an ad group filter empties it.
+      if (aceCannotMatch(f)) continue;
+      out.revenue += revenueOf(r); fundingUsed += num(r.fundingUsed); currency = currency || r.currency;
+      continue;
+    }
     webRows++;
     for (const [stage, fields] of Object.entries(WEB_METRICS)) for (const field of fields) out[stage] += num(r[field]);
   }
@@ -141,7 +159,8 @@ export function stageCounts(f, range, data) {
       if (o.won) out.deployed++;
     }
   }
-  return { counts: out, webRows };
+  out.revenue = Math.round(out.revenue * 100) / 100;
+  return { counts: out, webRows, fundingUsed: Math.round(fundingUsed * 100) / 100, currency: currency || "USD" };
 }
 
 const pct = (n, d) => (d > 0 ? (n / d) * 100 : null);
@@ -158,22 +177,28 @@ export function buildFunnel(f, data) {
   const prevTop = prev ? prev.counts[STAGES[0].key] : 0;
   const stages = STAGES.map((s, i) => {
     const count = cur.counts[s.key];
-    const base = s.from ? cur.counts[s.from] : i > 0 ? cur.counts[STAGES[i - 1].key] : null;
-    const row = { key: s.key, label: s.label, icon: s.icon, source: s.source, info: s.info, count, fromPrev: base == null ? null : pct(count, base), ofTop: i === 0 ? 100 : pct(count, top), width: 0 };
+    // An amount (Revenue) has no % of a count above it, nor of the top.
+    const base = s.money ? null : s.from ? cur.counts[s.from] : i > 0 ? cur.counts[STAGES[i - 1].key] : null;
+    const row = { key: s.key, label: s.label, icon: s.icon, source: s.source, info: s.info, money: !!s.money, count, fromPrev: base == null ? null : pct(count, base), ofTop: s.money ? null : i === 0 ? 100 : pct(count, top), width: 0 };
+    if (s.money) { row.currency = cur.currency; row.fundingUsed = cur.fundingUsed; }
     if (prev) {
       const pCount = prev.counts[s.key];
-      const pBase = s.from ? prev.counts[s.from] : i > 0 ? prev.counts[STAGES[i - 1].key] : null;
-      row.prev = { count: pCount, fromPrev: pBase == null ? null : pct(pCount, pBase), ofTop: i === 0 ? 100 : pct(pCount, prevTop) };
+      const pBase = s.money ? null : s.from ? prev.counts[s.from] : i > 0 ? prev.counts[STAGES[i - 1].key] : null;
+      row.prev = { count: pCount, fromPrev: pBase == null ? null : pct(pCount, pBase), ofTop: s.money ? null : i === 0 ? 100 : pct(pCount, prevTop) };
       row.change = { count: count - pCount, countPct: pct(count - pCount, pCount), points: row.fromPrev == null || row.prev.fromPrev == null ? null : row.fromPrev - row.prev.fromPrev };
     }
     return row;
   });
   // Bar width: log-ish scale would hide drop-off, so it is each stage's share of
   // the top, floored so a tiny stage is still a visible bar.
-  const max = Math.max(...stages.map((s) => s.count), 0);
-  for (const s of stages) s.width = max > 0 ? Math.max(6, Math.round((s.count / max) * 100)) : 0;
+  // Revenue is an amount, not a count, so it is not on the counts' scale: its
+  // bar is as wide as the Deployed bar it follows (or the narrowest bar).
+  const counted = stages.filter((s) => !s.money);
+  const max = Math.max(...counted.map((s) => s.count), 0);
+  for (const s of counted) s.width = max > 0 ? Math.max(6, Math.round((s.count / max) * 100)) : 0;
+  for (const s of stages) if (s.money) s.width = s.count > 0 ? Math.max(6, (counted[counted.length - 1] || {}).width || 0) : 0;
   const empty = stages.every((s) => s.count === 0);
-  return { stages, empty, prevRange, hasWebData: cur.webRows > 0, hasAceData: (data.ace || []).length > 0 };
+  return { stages, empty, prevRange, hasWebData: cur.webRows > 0, hasAceData: (data.ace || []).length > 0, hasExportData: (data.web || []).some((r) => r.source === "pc-export") };
 }
 
 // ── Filter options (from what exists, so a choice always has data behind it) ──
@@ -200,6 +225,8 @@ export function normaliseWebRow(id, d) {
     industry: s(x.industry), country: s(x.country), content: s(x.content), company: s(x.company),
     impressions: num(x.impressions), clicks: num(x.clicks), visits: num(x.visits), demoRequests: num(x.demoRequests), downloads: num(x.downloads),
     calculatorUses: num(x.calculatorUses),
+    source: s(x.source), aceId: s(x.aceId), currency: s(x.currency).toUpperCase().slice(0, 3),
+    attributedRevenue: num(x.attributedRevenue), marketplaceRevenue: num(x.marketplaceRevenue), fundingUsed: num(x.fundingUsed),
   };
 }
 
@@ -207,7 +234,7 @@ export function normaliseWebRow(id, d) {
 // What the pages show about the data behind the funnel: when it was last
 // updated and which sources failed on the last run, so a broken credential
 // reads as a flagged failure rather than a silent 0.
-const SOURCE_NAMES = { "ga4-total": "GA4", "ga4-site": "GA4", "ga4-industry": "GA4", "ga4-industry-total": "GA4", "ga4-industry-users": "GA4", "ga4-events": "GA4", "google-ads": "Google Ads", leads: "Leads", ace: "ACE" };
+const SOURCE_NAMES = { "ga4-total": "GA4", "ga4-site": "GA4", "ga4-industry": "GA4", "ga4-industry-total": "GA4", "ga4-industry-users": "GA4", "ga4-events": "GA4", "google-ads": "Google Ads", leads: "Leads", ace: "ACE", "pc-export": "Partner Central export" };
 const isoMs = (v) => {
   if (!v) return 0;
   if (typeof v.toMillis === "function") return v.toMillis();
@@ -229,7 +256,11 @@ export function ingestStatusView(status) {
     if (!byName.has(name)) byName.set(name, { name, error: String(v.error || ""), lastSuccessAt: isoMs(v.lastSuccessAt) });
   }
   const failures = [...byName.values()];
-  return { known: true, updatedAt, failures, flagged: failures.length > 0 };
+  // The Partner Central export: "not set up yet" (no bucket configured) is a
+  // neutral state, not a failure; once set up, when its newest export was read.
+  const pc = sources["pc-export"] || null;
+  const pcExport = !pc ? null : { notSetUp: pc.notSetUp === true, ok: pc.ok !== false, exportedAt: isoMs(pc.exportedAt), lastSuccessAt: isoMs(pc.lastSuccessAt) };
+  return { known: true, updatedAt, failures, flagged: failures.length > 0, pcExport };
 }
 // "19 Nov 2026, 06:10" in the viewer's own locale and time zone; "never" for 0.
 export function fmtUpdated(ms) {
@@ -243,12 +274,18 @@ export function ingestFailureText(view) {
 
 // ── Formatting ─────────────────────────────────────────────────────────────
 export const fmtCount = (n) => new Intl.NumberFormat("en-GB").format(n);
+// An amount in its currency, whole units ("US$12,400" style per the viewer's locale; en-GB gives "US$12,400").
+export function fmtMoney(n, currency = "USD") {
+  const cur = /^[A-Z]{3}$/.test(String(currency || "")) ? currency : "USD";
+  try { return new Intl.NumberFormat("en-GB", { style: "currency", currency: cur, maximumFractionDigits: 0 }).format(n || 0); }
+  catch { return `${cur} ${fmtCount(Math.round(n || 0))}`; }
+}
 export function fmtPct(p) { return p == null ? "–" : `${p >= 10 ? Math.round(p) : Number(p.toFixed(1))}%`; }
-export function fmtChange(c) {
+export function fmtChange(c, currency) {
   if (!c) return "";
   const sign = c.count > 0 ? "+" : c.count < 0 ? "−" : "";
   const pc = c.countPct == null ? "" : ` (${c.countPct > 0 ? "+" : c.countPct < 0 ? "−" : ""}${Math.abs(c.countPct).toFixed(0)}%)`;
-  return `${sign}${fmtCount(Math.abs(c.count))}${pc}`;
+  return `${sign}${currency ? fmtMoney(Math.abs(c.count), currency) : fmtCount(Math.abs(c.count))}${pc}`;
 }
 // A day as the viewer reads it, in their own locale and time zone.
 export function fmtDay(day) { const d = parseDay(day); return d ? d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : ""; }

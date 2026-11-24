@@ -81,14 +81,15 @@ function describeNetworkError(err, host) {
 const sha256hex = (s) => crypto.createHash("sha256").update(s).digest("hex");
 const hmac = (key, s) => crypto.createHmac("sha256", key).update(s).digest();
 
-function signRequest({ method = "POST", host, path = "/", headers = {}, body = "", service, region = REGION, creds, date = new Date() }) {
+// `query` is the canonical query string (keys sorted, RFC 3986-encoded), "" for none: S3 reads use it.
+function signRequest({ method = "POST", host, path = "/", query = "", headers = {}, body = "", service, region = REGION, creds, date = new Date() }) {
   const amzDate = date.toISOString().replace(/[:-]|\.\d{3}/g, ""); // 20261106T120000Z
   const day = amzDate.slice(0, 8);
   const h = { ...headers, host, "x-amz-date": amzDate };
   if (creds.sessionToken) h["x-amz-security-token"] = creds.sessionToken;
   const names = Object.keys(h).map((k) => k.toLowerCase()).sort();
   const lower = Object.fromEntries(Object.entries(h).map(([k, v]) => [k.toLowerCase(), String(v).trim()]));
-  const canonical = [method, path, "", names.map((n) => `${n}:${lower[n]}\n`).join(""), names.join(";"), sha256hex(body)].join("\n");
+  const canonical = [method, path, query, names.map((n) => `${n}:${lower[n]}\n`).join(""), names.join(";"), sha256hex(body)].join("\n");
   const scope = `${day}/${region}/${service}/aws4_request`;
   const toSign = ["AWS4-HMAC-SHA256", amzDate, scope, sha256hex(canonical)].join("\n");
   let k = hmac(`AWS4${creds.secretAccessKey}`, day);
@@ -468,7 +469,10 @@ function createPartnerCentralApi({
     }
   }
 
-  return { handle, status, aceOpportunities, aceCreate, aceUpdate, aceOne, callAws, listOpportunities, getOpportunity, createOpportunity, updateOpportunity, createBenefitDraft };
+  // The role's short-lived credentials, for the S3 export reader (pc-export.js). Never sent to a browser.
+  const awsCredentials = async () => assumeRole((await loadConfig()).roleArn);
+
+  return { handle, status, awsCredentials, aceOpportunities, aceCreate, aceUpdate, aceOne, callAws, listOpportunities, getOpportunity, createOpportunity, updateOpportunity, createBenefitDraft };
 }
 
 module.exports = { createPartnerCentralApi, sanitiseAceInput, buildUpdate, buildCreate, EDITABLE, describeNetworkError, normaliseOpportunity, signRequest, OPERATIONS, SERVICES, CATALOGS, AUDIT, DEFAULT_ROLE_ARN };

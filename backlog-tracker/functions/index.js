@@ -2909,6 +2909,7 @@ exports.aceToGa4 = onRequest({ cors: false, secrets: [GA4_MP_API_SECRET, BOARD_A
 //   POST /funnelIngest  X-Board-Key: <BOARD_API_KEY>  {"mode": "backfill"}  (90 days)
 //   POST /funnelIngest  X-Board-Key: <BOARD_API_KEY>  {"mode": "daily"}     (last 3 days)
 const { createFunnelIngestJob } = require("./funnel-ingest");
+const { createS3Reader } = require("./pc-export");
 const { keyMatches } = require("./lead-ingest");
 let funnelIngestJob = null;
 function getFunnelIngestJob() {
@@ -2919,6 +2920,9 @@ function getFunnelIngestJob() {
       db: getFirestore(),
       ga4AccessToken: async () => { const client = await auth.getClient(); const t = await client.getAccessToken(); return (t && t.token) || t; },
       partnerCentral: getPartnerCentralApi(),
+      // The Partner Central S3 data export (pc-export.js), read with the same
+      // keyless role credentials; dormant until consoleConfig/funnelIngest.pcExportBucket is set.
+      pcExportS3: createS3Reader({ credentials: () => getPartnerCentralApi().awsCredentials() }),
       boardKey: () => BOARD_API_KEY.value(),
       serverTimestamp: () => FieldValue.serverTimestamp(),
       logger,

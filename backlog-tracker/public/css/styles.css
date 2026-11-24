@@ -2963,6 +2963,7 @@ html[data-console-role="viewer"] .lead-prio-tools { display: none; }
 .funnel-bar-0 { background: #169bc2; } .funnel-bar-1 { background: #1f93c0; } .funnel-bar-2 { background: #3a8bc4; }
 .funnel-bar-3 { background: #5a82c9; } .funnel-bar-4 { background: #7a79d0; } .funnel-bar-5 { background: #9747ff; }
 .funnel-bar-6 { background: #8c52e6; } .funnel-bar-7 { background: #7d5bc9; } .funnel-bar-8 { background: #3d9970; }
+.funnel-bar-revenue { background: #09759c; } /* Revenue: an amount, drawn as wide as Deployed, in primary-active */
 .funnel-stage-rates { display: flex; flex-direction: column; gap: 1px; font-size: 14px; font-weight: 600; }
 .funnel-rate small { font-weight: 400; color: var(--text-muted); font-size: 12px; }
 .funnel-rate-top { color: var(--text-muted); font-weight: 500; }

@@ -34,6 +34,14 @@
 //                 never counted
 //   ace           day × industry: `aceCreated`, ACE opportunities created
 //                 (only while the Partner Central connection answers)
+//   pc-export     day × ACE opportunity: `attributedRevenue` (AWS Revenue
+//                 Measurement), `marketplaceRevenue`, `fundingUsed`, with the
+//                 opportunity's `aceId`, `stage` and `currency`, read from the
+//                 newest Partner Central S3 data export (pc-export.js). The
+//                 export is a snapshot, so each import replaces every pc-export
+//                 row; an export whose files are unchanged is not re-read. Until
+//                 consoleConfig/funnelIngest.pcExportBucket is set the source is
+//                 "not set up yet" (notSetUp: true), which is not a failure
 //
 // Days: GA4 reports dates in the property's time zone; the console's own
 // records (leads, ACE) are bucketed in the same zone (`timeZone`, default
@@ -61,6 +69,7 @@
 // (`backfilledAt`) only once every GA4 source has succeeded in it.
 
 const crypto = require("crypto");
+const pcExport = require("./pc-export");
 
 // The board key check (the same as lead-ingest.js keyMatches, kept here so this
 // module needs no Firebase SDK and test/funnel-ingest.test.js can load it bare).
@@ -80,8 +89,8 @@ const DUE_AFTER_MS = 6 * 3600e3;
 const DUE_BUDGET_MS = 150e3;
 // The GA4 Data API sources (Google Ads included: it is read through GA4), with their report.
 const GA4_SOURCES = [["ga4-total", "total"], ["ga4-site", "site"], ["ga4-industry", "industry"], ["ga4-industry-total", "industryTotal"], ["ga4-industry-users", "industryUsers"], ["ga4-events", "events"], ["google-ads", "ads"]];
-const SOURCES = [...GA4_SOURCES.map(([src]) => src), "leads", "ace"];
-const SOURCE_LABELS = { "ga4-total": "GA4", "ga4-site": "GA4", "ga4-industry": "GA4", "ga4-industry-total": "GA4", "ga4-industry-users": "GA4", "ga4-events": "GA4", "google-ads": "Google Ads", leads: "Leads", ace: "ACE" };
+const SOURCES = [...GA4_SOURCES.map(([src]) => src), "leads", "ace", "pc-export"];
+const SOURCE_LABELS = { "ga4-total": "GA4", "ga4-site": "GA4", "ga4-industry": "GA4", "ga4-industry-total": "GA4", "ga4-industry-users": "GA4", "ga4-events": "GA4", "google-ads": "Google Ads", leads: "Leads", ace: "ACE", "pc-export": "Partner Central export" };
 
 // GA4 event name → funnelDaily field. Several names may feed one field.
 const EVENT_FIELDS = {
@@ -342,7 +351,7 @@ function createGa4Client({ propertyId, accessToken, fetch: fetchImpl = globalThi
 
 // ── The job ───────────────────────────────────────────────────────────────
 function createFunnelIngestJob({
-  db, ga4AccessToken, partnerCentral = null, boardKey = () => "",
+  db, ga4AccessToken, partnerCentral = null, pcExportS3 = null, boardKey = () => "",
   fetch: fetchImpl = globalThis.fetch, logger = console, now = () => new Date(), serverTimestamp = () => now(),
 }) {
   const configRef = () => db.collection(CONFIG_DOC[0]).doc(CONFIG_DOC[1]);
@@ -363,6 +372,22 @@ function createFunnelIngestJob({
     const keep = new Set(rows.map((r) => r.id));
     const ops = [];
     for (const d of existing.docs) if (d.data().source === source && !keep.has(d.id)) ops.push((b) => b.delete(d.ref));
+    const at = serverTimestamp();
+    for (const { id, row } of rows) ops.push((b) => b.set(db.collection(COLLECTION).doc(id), { ...row, ingestedAt: at }));
+    for (let i = 0; i < ops.length; i += 450) {
+      const batch = db.batch();
+      ops.slice(i, i + 450).forEach((op) => op(batch));
+      await batch.commit();
+    }
+    return { written: rows.length, removed: ops.length - rows.length };
+  }
+
+  // Replace every row of a snapshot source (no date window): the Partner Central export.
+  async function replaceAllRows(source, rows) {
+    const existing = await db.collection(COLLECTION).where("source", "==", source).get();
+    const keep = new Set(rows.map((r) => r.id));
+    const ops = [];
+    for (const d of existing.docs) if (!keep.has(d.id)) ops.push((b) => b.delete(d.ref));
     const at = serverTimestamp();
     for (const { id, row } of rows) ops.push((b) => b.set(db.collection(COLLECTION).doc(id), { ...row, ingestedAt: at }));
     for (let i = 0; i < ops.length; i += 450) {
@@ -418,9 +443,14 @@ function createFunnelIngestJob({
       }
     }
 
+    // Read once per run, shared by the leads, ACE and export sources.
+    let leadsCache = null, aceCache = null;
+    const allLeads = async () => leadsCache || (leadsCache = (await db.collection("leads").get()).docs.map((d) => ({ id: d.id, ...d.data() })));
+    const aceList = async () => aceCache || (aceCache = await partnerCentral.aceOpportunities({ by: "funnelIngest" }));
+
     // Console leads (test and archived leads never counted).
     if (wanted("leads") && timeLeft("leads")) try {
-      const leads = (await db.collection("leads").get()).docs.map((d) => ({ id: d.id, ...d.data() }));
+      const leads = await allLeads();
       const res = await replaceRows("leads", window, leadRows(leads, { timeZone: cfg.timeZone, ...window }));
       record("leads", true, { rows: res.written });
     } catch (err) { record("leads", false, { error: (err && err.message) || err }); }
@@ -428,10 +458,34 @@ function createFunnelIngestJob({
     // ACE opportunities, where the Partner Central connection answers.
     if (partnerCentral && typeof partnerCentral.aceOpportunities === "function" && wanted("ace") && timeLeft("ace")) {
       try {
-        const ace = await partnerCentral.aceOpportunities({ by: "funnelIngest" });
+        const ace = await aceList();
         const res = await replaceRows("ace", window, aceRows(ace.opportunities, { timeZone: cfg.timeZone, ...window }));
         record("ace", true, { rows: res.written, catalog: s(ace.catalog) });
       } catch (err) { record("ace", false, { error: (err && err.message) || err }); }
+    }
+
+    // The Partner Central S3 data export (revenue, funding), once it is set up.
+    if (wanted("pc-export") && timeLeft("pc-export")) {
+      const xcfg = pcExport.exportConfig(cfg.raw);
+      const prev = prevSources["pc-export"] || {};
+      if (!xcfg || !pcExportS3) {
+        sources["pc-export"] = { ok: true, notSetUp: true, at: startedAt.toISOString(), lastSuccessAt: prev.lastSuccessAt || null, error: "" };
+      } else try {
+        const got = await pcExport.readLatestExport(pcExportS3, xcfg, { lastSignature: s(prev.signature) });
+        if (got.skipped) {
+          record("pc-export", true, { unchanged: true, signature: got.signature, files: got.files, rows: Number(prev.rows) || 0, recordsRead: Number(prev.recordsRead) || 0, joined: Number(prev.joined) || 0, unknownHeaders: prev.unknownHeaders || [], exportedAt: prev.exportedAt || "" });
+        } else {
+          let opportunities = [];
+          if (partnerCentral && typeof partnerCentral.aceOpportunities === "function") { try { opportunities = (await aceList()).opportunities || []; } catch { opportunities = []; } }
+          const prospects = (await db.collection("prospects").get()).docs.map((d) => ({ id: d.id, ...d.data() }));
+          const { rows, joined } = pcExport.exportRows(got.entries, { opportunities, leads: await allLeads(), prospects });
+          const res = await replaceAllRows("pc-export", rows);
+          record("pc-export", true, { rows: res.written, recordsRead: got.records.length, opportunities: got.opportunities.length, joined, unknownHeaders: got.unknownHeaders, files: got.files.slice(0, 25), exportedAt: s(got.exportedAt), signature: got.signature });
+        }
+      } catch (err) {
+        record("pc-export", false, { error: (err && err.message) || err });
+        logger.error("funnelIngest: source failed", { source: "pc-export", error: String((err && err.message) || err).slice(0, 300) });
+      }
     }
 
     const failed = Object.entries(sources).filter(([, v]) => !v.ok).map(([k]) => k);

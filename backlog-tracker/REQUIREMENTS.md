@@ -6482,9 +6482,16 @@ overlay. Presentation only: every field, action and datum is still there.
   Prospects (TAM)), read-only.
 - **Nine stages, top to bottom:** ad impressions, click-throughs (Google Ads);
   site visits, demo requests, calculator / model downloads (GA4); ACE
-  opportunities created, open, closed (won or lost); deployed (Launched). Each
-  row shows the count, the % of the previous stage, the % of the top, and a
-  funnel bar. "Closed" is measured against "created" (an opportunity leaves
+  opportunities created, open, closed (won or lost); deployed (Launched); then
+  **Revenue** (24 Nov 2026), from the Partner Central S3 data export. Each
+  count row shows the count, the % of the previous stage, the % of the top, and a
+  funnel bar. Revenue is an amount, not a count: it shows the currency amount
+  (AWS Revenue Measurement attributed revenue where the opportunity has it,
+  otherwise its AWS Marketplace revenue), the Partner Central funding used in
+  the period and when the export was written, with no % of the stage above or
+  of the top; its bar is as wide as Deployed's. Until the export is set up it
+  reads "Not set up yet", which is not a failure. The count line adds the
+  revenue once there is export data. "Closed" is measured against "created" (an opportunity leaves
   "open" when it closes), and its tooltip says so. Counts recalculate live as
   any filter changes; no explanatory copy on the page, only info tooltips.
 - **Filters (all combinable):** date range (local calendar days, quick ranges)
@@ -6528,6 +6535,27 @@ overlay. Presentation only: every field, action and datum is still there.
   - `leads`: day × industry × country × channel: `leads` from the console's
     `leads`; test and archived leads are never counted.
   - `ace`: day × industry: `aceCreated`, while Partner Central answers.
+  - `pc-export` (24 Nov 2026, ticket 45gMhPpfJ7naO40HM8X2, `functions/pc-export.js`):
+    day × ACE opportunity, from Partner Central's single-step S3 data export to
+    a PH-owned bucket: `attributedRevenue`, `marketplaceRevenue`, `fundingUsed`,
+    with `aceId`, `stage`, `currency`. The day is the revenue period (a month
+    counts on its 1st), else the close date, else the created date. Joined on
+    the ACE opportunity id (company, industry and stage from the live ACE
+    list), then on company name to Prospects (TAM) (industry, country) and
+    Leads (channel, content; a lead id in the export wins). A Demand Center
+    campaign on the export is the row's campaign and is added to that
+    opportunity's campaigns, so the campaign filter traces campaign → lead →
+    ACE opportunity → revenue. The live Selling API stays the source of the ACE
+    stages; the export never overrides them. The import reads the newest run
+    (the newest data file's folder; files loose under the prefix count as one
+    run when written within 6 hours of the newest), CSV or JSON, columns by
+    header alias. It replaces every `pc-export` row, so a re-import never double
+    counts, and an export whose files and ETags are unchanged is not re-read.
+    `sources.pc-export` records `recordsRead`, `joined`, `unknownHeaders`,
+    `files` and `exportedAt`. Set-up (bucket, export, the role's
+    `ExportBucketName`, `consoleConfig/funnelIngest.pcExportBucket` /
+    `pcExportPrefix` / `pcExportRegion`) is in `deploy/aws/README.md`; S3 is
+    read with the Partner Central role's short-lived credentials, never a key.
 - **Days** are calendar days in the configured zone (`timeZone`, default
   Australia/Sydney, set to match the GA4 property's zone, which is the zone GA4
   reports its dates in); the console's own records are bucketed in that zone

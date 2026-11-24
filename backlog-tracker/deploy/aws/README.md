@@ -18,6 +18,26 @@ Cloud Function --Google OIDC ID token--> STS AssumeRoleWithWebIdentity --15 min 
    Role mapping). Until this is done the console shows **Not linked yet**.
 3. Console -> Settings -> Integrations & MCP -> **AWS Partner Central** -> Test connection.
 
+## Partner Central data export → Conversion Funnel (one-off, by Rob)
+
+The Conversion Funnel's Revenue stage reads Partner Central's single-step S3 data export
+(`functions/pc-export.js`, run by the funnel ingest every 6 hours). It needs:
+
+1. A PH-owned S3 bucket in account `817173160653` (private, no public access), e.g.
+   `ph-partner-central-export`.
+2. Partner Central -> Analytics -> data export, pointed at that bucket (and a folder, if you want
+   one). Partner Central's own instructions add a bucket policy that lets it write there.
+3. Redeploy `partner-central-role.yaml` with `ExportBucketName` set to the bucket. That adds
+   `s3:ListBucket` and `s3:GetObject` on that bucket only.
+4. Set `pcExportBucket` (and `pcExportPrefix` for the folder, `pcExportRegion` if it is not
+   `us-east-1`) on `consoleConfig/funnelIngest` in Firestore.
+5. Run the import once: POST `funnelIngest` with `X-Board-Key` and `{"mode": "daily"}`. Then
+   check `consoleConfig/funnelIngest.sources.pc-export`: `recordsRead`, `joined` (the rows matched
+   to an ACE opportunity, a prospect or a lead) and `unknownHeaders` (columns the import did not
+   recognise; add them to `HEADER_ALIASES` if they carry a figure the funnel needs).
+
+Until step 4 the funnel's Revenue row reads **Not set up yet**. It does not show as a failure.
+
 ## Safety
 
 * Catalogue is **Sandbox** until an admin switches to **AWS** (live) in Settings and types `LIVE`.

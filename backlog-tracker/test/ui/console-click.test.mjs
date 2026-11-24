@@ -3322,13 +3322,15 @@ const scenarios = [
     },
   },
   {
-    name: "Promote: Conversion Funnel - sits below Prospects, nine stages, filters recalculate, empty state, compare",
+    name: "Promote: Conversion Funnel - sits below Prospects, nine stages and Revenue, filters recalculate, empty state, compare",
     seed: () => ({ ...seed({
       prospects: { pa: { name: "Alpha Grocer", country: "United Kingdom", industry: "Grocery", hqCountry: "United Kingdom", markets: ["United Kingdom"], campaigns: ["Spring"], status: "new", leadId: "", createdAt: t(T0), updatedAt: t(T0) } },
       funnelDaily: {
         a: { date: "2026-11-02", channel: "Google Ads", campaign: "Spring", industry: "Grocery", country: "United Kingdom", impressions: 1000, clicks: 100, visits: 80, demoRequests: 10, downloads: 5 },
         b: { date: "2026-11-03", channel: "Organic", campaign: "", industry: "QSR", country: "United Kingdom", impressions: 500, clicks: 20, visits: 20, demoRequests: 2, downloads: 1 },
         c: { date: "2026-10-10", channel: "Google Ads", campaign: "Spring", industry: "Grocery", country: "United Kingdom", impressions: 400, clicks: 40, visits: 30, demoRequests: 4, downloads: 2 },
+        // The Partner Central S3 export: one opportunity's revenue (attributed first) and funding.
+        x: { date: "2026-11-04", source: "pc-export", aceId: "F2", company: "Alpha Grocer", channel: "", campaign: "DC Launch", industry: "Grocery", country: "United Kingdom", currency: "USD", attributedRevenue: 12400, marketplaceRevenue: 9000, fundingUsed: 2500 },
       },
     }), aceOpportunities: [
       { id: "F1", name: "Menus", customer: "Alpha Grocer", stage: "Qualified", reviewStatus: "Approved", createdDate: "2026-11-02T12:00:00", partnerCentralUrl: "" },
@@ -3343,7 +3345,14 @@ const scenarios = [
       const setRange = async (from, to) => { await c.page.fill("#funnel-from", from); await c.page.fill("#funnel-to", to); await c.page.dispatchEvent("#funnel-to", "change"); await c.page.dispatchEvent("#funnel-from", "change"); };
       await setRange("2026-11-01", "2026-11-30");
       const counts = () => c.page.evaluate(() => [...document.querySelectorAll("#funnel-stages .funnel-stage")].map((li) => li.dataset.stage + "=" + li.querySelector(".funnel-bar b").textContent.replace(/,/g, "")).join());
-      await until(async () => (await counts()) === "impressions=1500,clicks=120,visits=100,demos=12,downloads=6,aceCreated=2,aceOpen=1,aceClosed=1,deployed=1", "all nine stages with their counts", 8000);
+      await until(async () => (await counts()) === "impressions=1500,clicks=120,visits=100,demos=12,downloads=6,aceCreated=2,aceOpen=1,aceClosed=1,deployed=1,revenue=US$12400", "all nine stages with their counts, then Revenue", 8000);
+      const revRow = await c.text('[data-stage="revenue"]');
+      assert.ok(revRow.includes("US$2,500 funding used") && !revRow.includes("of previous") && !revRow.includes("of top"), `Revenue is an amount with funding used, no %: ${revRow}`);
+      assert.ok((await c.text("#funnel-count")).includes("US$12,400 revenue"), "the count line carries revenue");
+      // A Demand Center campaign on the export traces to its opportunity.
+      await c.page.selectOption("#funnel-campaign", "DC Launch");
+      await until(async () => (await counts()).endsWith("aceCreated=1,aceOpen=0,aceClosed=1,deployed=1,revenue=US$12400"), "the export's campaign to filter the ACE stages and revenue", 5000);
+      await c.page.selectOption("#funnel-campaign", "");
       assert.ok((await c.text("#funnel-stages")).includes("8% of previous"), "clicks are 8% of impressions");
       const cut = await c.page.$$eval("#funnel-stages .funnel-bar", (bars) => bars.filter((b) => b.scrollWidth > b.clientWidth + 1 || b.querySelector("b").getBoundingClientRect().width > b.getBoundingClientRect().width).map((b) => b.textContent));
       assert.deepStrictEqual(cut, [], "every count fits inside its bar (a small stage was drawn ~28px wide, cutting 1,100 to ,100)");
@@ -3357,7 +3366,7 @@ const scenarios = [
       await c.page.click("#funnel-reset");
       await setRange("2026-11-01", "2026-11-30");
       await c.page.check("#funnel-compare");
-      await until(async () => (await c.page.locator(".funnel-delta").count()) === 9, "a change per stage when comparing", 5000);
+      await until(async () => (await c.page.locator(".funnel-delta").count()) === 10, "a change per stage when comparing", 5000);
       assert.ok((await c.text('[data-stage="impressions"] .funnel-delta')).includes("+1,100"), "change against the previous period");
     },
   },
