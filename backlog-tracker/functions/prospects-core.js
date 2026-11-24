@@ -98,6 +98,75 @@ function normaliseIndustry(v) {
   return hit ? INDUSTRIES.find((i) => i.slug === hit[0]).label : "";
 }
 
+// ── Missing industries (24 Nov 2026, ticket ulDiLF4v0qHFgFu3aQKS) ──────────
+// A company that fits none of the nine keeps a blank industry. The industry it
+// WOULD need is read from its sub-industry (free text): the first proposal whose
+// label or pattern matches. Nothing here is ever stored as an industry; it only
+// groups the blank companies so the missing website industries can be created.
+const UNCLASSIFIED_PROPOSAL = "Unclassified (needs research)";
+// Order matters: the first match wins (an exact label always wins).
+const PROPOSED_INDUSTRIES = [
+  ["Consumer Electronics", /electronic/],
+  ["Home, Furniture & Homewares", /furniture|homeware|bedding|\bhome\b(?![\s-]*(improvement|hardware))/],
+  ["Hardware & DIY", /hardware|\bdiy\b|home[\s-]*improvement|\btools?\b/],
+  ["Automotive", /automotive|\bauto\b|\btyres?\b|car[\s-]*dealer/],
+  ["Sporting Goods & Outdoor", /sport|outdoor/],
+  ["Jewellery", /jewel/],
+  ["Beauty & Cosmetics", /beauty|cosmetic/],
+  ["Liquor Retail", /liquor|\bwine|spirits/],
+  ["Pet Retail", /\bpets?\b/],
+  ["Books, Stationery & Office", /\bbooks?|stationery|\boffice\b/],
+  ["Baby & Kids", /\bbaby|\bkids?\b|\btoys?\b/],
+  ["Variety & Discount Stores", /variety|discount/],
+  ["Airlines & Travel", /airline|travel|aviation/],
+  ["Shopping Centres & Property", /shopping[\s-]*cent|\bmalls?\b|property/],
+  ["Consumer Goods Brands", /consumer[\s-]*goods|\bcpg\b|\bfmcg\b/],
+  ["Healthcare & Life Sciences", /healthcare|pharmaceutical|life[\s-]*science|health[\s-]*services/],
+  ["Technology & Consulting", /technology|consult|software|payments/],
+  ["Diversified Retail Groups", /conglomerate|diversified/],
+  ["Wholesale & Distribution", /wholesale|distribut|foodservice/],
+  ["Education", /education|universit/],
+  ["Lotteries & Gaming", /lotter|gaming|betting/],
+  ["Industry Bodies", /industry[\s-]*bod|association|council/],
+].map(([label, re]) => ({ label, re }));
+const PROPOSED_INDUSTRY_LABELS = PROPOSED_INDUSTRIES.map((x) => x.label);
+// The missing industry a prospect would need: "" when it already has one of the nine.
+function proposeIndustry(p) {
+  const x = p || {};
+  if (normaliseIndustry(x.industry)) return "";
+  const s = String(x.subIndustry == null ? "" : x.subIndustry).trim().toLowerCase();
+  if (!s) return UNCLASSIFIED_PROPOSAL;
+  const exact = PROPOSED_INDUSTRIES.find((e) => e.label.toLowerCase() === s);
+  if (exact) return exact.label;
+  const hit = PROPOSED_INDUSTRIES.find((e) => e.re.test(s));
+  return hit ? hit.label : UNCLASSIFIED_PROPOSAL;
+}
+// Every blank company grouped under the industry it would need, biggest group
+// first and Unclassified last; the group counts always add up to `unassigned`.
+function missingIndustriesReport(rows) {
+  const list = rows || [];
+  const groups = new Map();
+  for (const p of list) {
+    const label = proposeIndustry(p);
+    if (!label) continue;
+    if (!groups.has(label)) groups.set(label, { label, count: 0, companies: [] });
+    const g = groups.get(label);
+    g.count++;
+    g.companies.push({ id: String(p.id || ""), name: String(p.name || ""), country: String(p.country || "") });
+  }
+  const out = [...groups.values()];
+  out.forEach((g) => g.companies.sort((a, b) => a.name.localeCompare(b.name) || a.country.localeCompare(b.country)));
+  out.sort((a, b) => (a.label === UNCLASSIFIED_PROPOSAL) - (b.label === UNCLASSIFIED_PROPOSAL) || b.count - a.count || a.label.localeCompare(b.label));
+  const unassigned = out.reduce((n, g) => n + g.count, 0);
+  return { total: list.length, assigned: list.length - unassigned, unassigned, groups: out };
+}
+// The report as a CSV: one row per blank company.
+function missingIndustriesCsv(report) {
+  const lines = [["Proposed industry", "Companies needing it", "Company", "Country"].map(csvCell).join(",")];
+  for (const g of (report && report.groups) || []) for (const c of g.companies) lines.push([g.label, g.count, c.name, c.country].map(csvCell).join(","));
+  return lines.join("\r\n") + "\r\n";
+}
+
 // Every country, for the Country filter: the list does not depend on what is in the data.
 const COUNTRIES = ("Afghanistan|Albania|Algeria|Andorra|Angola|Antigua and Barbuda|Argentina|Armenia|Australia|Austria|Azerbaijan|Bahamas|Bahrain|Bangladesh|Barbados|Belarus|Belgium|Belize|Benin|Bhutan|Bolivia|Bosnia and Herzegovina|Botswana|Brazil|Brunei|Bulgaria|Burkina Faso|Burundi|Cabo Verde|Cambodia|Cameroon|Canada|Central African Republic|Chad|Chile|China|Colombia|Comoros|Congo|Costa Rica|Croatia|Cuba|Cyprus|Czechia|Democratic Republic of the Congo|Denmark|Djibouti|Dominica|Dominican Republic|Ecuador|Egypt|El Salvador|Equatorial Guinea|Eritrea|Estonia|Eswatini|Ethiopia|Fiji|Finland|France|Gabon|Gambia|Georgia|Germany|Ghana|Greece|Grenada|Guatemala|Guinea|Guinea-Bissau|Guyana|Haiti|Honduras|Hong Kong|Hungary|Iceland|India|Indonesia|Iran|Iraq|Ireland|Israel|Italy|Ivory Coast|Jamaica|Japan|Jordan|Kazakhstan|Kenya|Kiribati|Kosovo|Kuwait|Kyrgyzstan|Laos|Latvia|Lebanon|Lesotho|Liberia|Libya|Liechtenstein|Lithuania|Luxembourg|Macau|Madagascar|Malawi|Malaysia|Maldives|Mali|Malta|Marshall Islands|Mauritania|Mauritius|Mexico|Micronesia|Moldova|Monaco|Mongolia|Montenegro|Morocco|Mozambique|Myanmar|Namibia|Nauru|Nepal|Netherlands|New Zealand|Nicaragua|Niger|Nigeria|North Korea|North Macedonia|Norway|Oman|Pakistan|Palau|Palestine|Panama|Papua New Guinea|Paraguay|Peru|Philippines|Poland|Portugal|Puerto Rico|Qatar|Romania|Russia|Rwanda|Saint Kitts and Nevis|Saint Lucia|Saint Vincent and the Grenadines|Samoa|San Marino|Sao Tome and Principe|Saudi Arabia|Senegal|Serbia|Seychelles|Sierra Leone|Singapore|Slovakia|Slovenia|Solomon Islands|Somalia|South Africa|South Korea|South Sudan|Spain|Sri Lanka|Sudan|Suriname|Sweden|Switzerland|Syria|Taiwan|Tajikistan|Tanzania|Thailand|Timor-Leste|Togo|Tonga|Trinidad and Tobago|Tunisia|Turkey|Turkmenistan|Tuvalu|Uganda|Ukraine|United Arab Emirates|United Kingdom|United States|Uruguay|Uzbekistan|Vanuatu|Vatican City|Venezuela|Vietnam|Yemen|Zambia|Zimbabwe").split("|");
 const COUNTRY_ALIASES = { uk: "United Kingdom", "great britain": "United Kingdom", england: "United Kingdom", usa: "United States", us: "United States", "united states of america": "United States", uae: "United Arab Emirates", "south korea (republic of korea)": "South Korea", korea: "South Korea", "czech republic": "Czechia", "cote d'ivoire": "Ivory Coast", "türkiye": "Turkey", holland: "Netherlands" };
@@ -617,4 +686,4 @@ function planInbound({ prospects, leads, company, contact } = {}) {
   return { kind: "lead", prospectId, prospect, createProspect, how: prospect ? (m.prospect ? m.how : "id") : "new", leadId, lead, linkProspect: !prospect || prospect.leadId !== leadId || prospect.status !== "converted" };
 }
 
-module.exports = { STATUSES, STATUS_KEYS, DEFAULT_STATUS, statusLabel, isStatus, SIZE_BANDS, SIZE_BAND_KEYS, sizeBandLabel, sizeBandFor, LIMITS, PRIORITIES, PRIORITY_KEYS, priorityLabel, INDUSTRIES, INDUSTRY_LABELS, UNASSIGNED_INDUSTRY, normaliseIndustry, COUNTRIES, canonicalCountry, AWS_REGIONS, awsRegionForCountry, parseList, parseStorePresence, parseStoreCount, normaliseUrl, normaliseLinkedinUrl, companyKey, slugId, prospectKey, prospectIdFor, normaliseAwsAccountId, AWS_ACCOUNT_ID_ERROR, prospectFromInput, normaliseProspect, EMPTY_FILTER, FILTER_KEYS, matchesFilter, filterProspects, isFilterEmpty, filterOptions, sanitiseSavedFilters, withSavedFilter, CSV_COLUMNS, csvCell, toCsv, LINKEDIN_COLUMNS, toLinkedInCsv, leadIdForProspect, LEAD_SOURCE, leadFieldsFromProspect, FREE_EMAIL_DOMAINS, emailDomain, businessDomain, websiteHost, sameDomain, isAwsDomain, AWS_PROSPECT_ID, AWS_COMPANY_KEYS, isAwsProspect, INBOUND_SOURCE, matchProspect, prospectForInbound, awsProspectFields, awsContactFrom, mergeContact, planInbound };
+module.exports = { STATUSES, STATUS_KEYS, DEFAULT_STATUS, statusLabel, isStatus, SIZE_BANDS, SIZE_BAND_KEYS, sizeBandLabel, sizeBandFor, LIMITS, PRIORITIES, PRIORITY_KEYS, priorityLabel, INDUSTRIES, INDUSTRY_LABELS, UNASSIGNED_INDUSTRY, normaliseIndustry, UNCLASSIFIED_PROPOSAL, PROPOSED_INDUSTRIES, PROPOSED_INDUSTRY_LABELS, proposeIndustry, missingIndustriesReport, missingIndustriesCsv, COUNTRIES, canonicalCountry, AWS_REGIONS, awsRegionForCountry, parseList, parseStorePresence, parseStoreCount, normaliseUrl, normaliseLinkedinUrl, companyKey, slugId, prospectKey, prospectIdFor, normaliseAwsAccountId, AWS_ACCOUNT_ID_ERROR, prospectFromInput, normaliseProspect, EMPTY_FILTER, FILTER_KEYS, matchesFilter, filterProspects, isFilterEmpty, filterOptions, sanitiseSavedFilters, withSavedFilter, CSV_COLUMNS, csvCell, toCsv, LINKEDIN_COLUMNS, toLinkedInCsv, leadIdForProspect, LEAD_SOURCE, leadFieldsFromProspect, FREE_EMAIL_DOMAINS, emailDomain, businessDomain, websiteHost, sameDomain, isAwsDomain, AWS_PROSPECT_ID, AWS_COMPANY_KEYS, isAwsProspect, INBOUND_SOURCE, matchProspect, prospectForInbound, awsProspectFields, awsContactFrom, mergeContact, planInbound };

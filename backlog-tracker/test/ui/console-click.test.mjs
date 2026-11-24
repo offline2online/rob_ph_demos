@@ -2757,6 +2757,34 @@ const scenarios = [
     },
   },
   {
+    name: "Promote: Prospects (TAM) - Missing industries groups every blank company by the industry it needs and filters the grid to them",
+    seed: () => seed({ prospects: {
+      pa: { name: "Alpha Grocer", country: "United Kingdom", industry: "Grocery & Supermarkets", markets: [], vendors: [], campaigns: [], status: "new", leadId: "", createdAt: t(T0), updatedAt: t(T0) },
+      pb: { name: "Beta Electrics", country: "Germany", industry: "Electronics & Technology", subIndustry: "Consumer Electronics", markets: [], vendors: [], campaigns: [], status: "new", leadId: "", createdAt: t(T0), updatedAt: t(T0) },
+      pc: { name: "Gamma Holdings", country: "France", industry: "", markets: [], vendors: [], campaigns: [], status: "new", leadId: "", createdAt: t(T0), updatedAt: t(T0) },
+      pd: { name: "Delta Tools", country: "Australia", industry: "Retail", subIndustry: "Hardware", markets: [], vendors: [], campaigns: [], status: "new", leadId: "", createdAt: t(T0), updatedAt: t(T0) },
+    } }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-prospects-btn", "prospects-page");
+      const rowIds = () => c.page.evaluate(() => [...document.querySelectorAll("#prospects-grid .ag-center-cols-container .ag-row")].map((r) => r.getAttribute("row-id")).sort().join());
+      await until(async () => (await rowIds()) === "pa,pb,pc,pd", "the grid to show all four prospects", 8000);
+      await until(async () => (await c.text("#prospects-gaps-btn")).trim() === "Missing industries (3)", "the button to count the three blank companies", 5000);
+      assert.strictEqual(await c.page.getAttribute("#prospects-gaps-btn", "type"), "button", "a real button (iPad taps)");
+      await c.page.click("#prospects-gaps-btn");
+      await c.visible("#prospect-gaps", "the Missing industries panel");
+      assert.match(await c.text("#prospect-gaps-sub"), /3 of 4 companies have no website industry · 3 industries needed/);
+      const groups = await c.page.evaluate(() => [...document.querySelectorAll("#prospect-gaps-body .prospect-gaps-group")].map((g) => `${g.querySelector("h3 span").textContent}=${[...g.querySelectorAll("li")].map((l) => l.textContent.replace(/\s+/g, " ").trim()).join("|")}`));
+      assert.deepStrictEqual(groups, ["Consumer Electronics=Beta Electrics · Germany", "Hardware & DIY=Delta Tools · Australia", "Unclassified (needs research)=Gamma Holdings · France"], "every blank company is listed once, Unclassified last");
+      await c.page.keyboard.press("Escape");
+      await until(async () => c.page.evaluate(() => document.getElementById("prospect-gaps-backdrop").hidden), "Escape to close the panel", 3000);
+      await c.page.click("#prospects-gaps-btn");
+      await c.page.click("#prospect-gaps-show");
+      await until(async () => (await rowIds()) === "pb,pc,pd", "the grid to show only the blank companies", 5000);
+      assert.ok(await c.page.evaluate(() => document.getElementById("prospect-gaps-backdrop").hidden), "the panel closes");
+    },
+  },
+  {
     name: "Promote: Prospects (TAM) - sits below Leads, filters, status edit, saved filter, convert to lead without duplicating",
     seed: () => seed({ prospects: {
       pa: { name: "Alpha Grocer", country: "United Kingdom", priority: "high", website: "https://alpha.example", industry: "Grocery", hqCountry: "United Kingdom", markets: ["United Kingdom", "Ireland"], awsRegion: "eu-west-2", storeCount: 400, storePresence: "400+ stores", sizeBand: "large", ownership: "Listed", insights: "Strong digital signage appetite.", decisionMakers: "Head of Retail Media", linkedinUrl: "https://www.linkedin.com/company/alpha-grocer/", linkedinOrgId: "1234", linkedinVerified: true, contacts: [{ name: "Jo Bloggs", role: "CMO", lastContact: "May 2026" }], vendors: ["Acme Signage"], campaigns: ["Spring"], status: "new", leadId: "", createdAt: t(T0), updatedAt: t(T0)  },
