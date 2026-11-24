@@ -3892,6 +3892,46 @@ const scenarios = [
     },
   },
   {
+    // 0I93kb0fqXL4Qr4qyzwv: Flow & blockers shows, beside the stuck count, the
+    // tickets that went back through retesting and how many times each, and
+    // its panel opens the filtered list of exactly those tickets (the Testing
+    // loops page's Retested view, every project, routed so a reload keeps it).
+    name: "Dashboard: Flow & blockers counts retested tickets and opens their list",
+    hash: "",
+    seed: () => {
+      const s = only("b1", "r1", "l1");
+      const sb = (iso, line, extra = {}) => ({ at: iso, by: "person", who: "tester@example.com", line, counted: true, ...extra });
+      Object.assign(s.docs.backlogItems.r1, { testRound: 3, sendBackCount: 3, countedSendBacks: 2,
+        sendBacks: [sb("2026-11-10T10:00:00Z", "chip missing"), sb("2026-11-11T10:00:00Z", "flaky", { by: "tests", counted: false }), sb("2026-11-12T10:00:00Z", "header count wrong", { by: "tests" })] });
+      Object.assign(s.docs.backlogItems.b1, { testRound: 2, sendBackCount: 1, countedSendBacks: 1, sendBacks: [sb("2026-11-13T10:00:00Z", "wrong purple")] });
+      return s;
+    },
+    async run(c) {
+      await c.visible("#dashboard-page");
+      const tile = '.dash-tile-wrap[data-tile="flow"]';
+      await until(async () => /2\s*retested/.test(await c.text(`${tile} .dash-tile`)), "the retested count beside Tickets stuck", 8000);
+      await c.click(`${tile} .dash-tile`, "pin Flow & blockers");
+      await c.visible("#dash-panel");
+      const panel = await c.text("#dash-panel");
+      assert.ok(panel.includes("Went back through retesting (2)"), `the retested section: ${panel}`);
+      assert.ok(/Fix the thing\s*Retested 2 times/.test(panel) && /Purple widget\s*Retested once/.test(panel), `each ticket with its retest count, most first: ${panel}`);
+      assert.ok(!panel.includes("Shipped thing"), "a ticket never sent back is not listed");
+      await c.click("#dash-panel .dash-tip-open", "Open list of retested tickets");
+      await c.visible("#testing-loops-page");
+      assert.strictEqual(new URL(c.page.url()).hash, "#testing-loops?view=retested", "the list has its own address");
+      assert.ok(await c.page.locator("#dashboard-page").isHidden(), "the Dashboard closed");
+      assert.strictEqual((await c.text("#testing-loops-heading")).trim(), "Retested tickets");
+      assert.strictEqual((await c.text("#testing-loops-project-name")).trim(), "All projects");
+      await until(async () => (await c.text("#testing-loops-count")).trim() === "2 tickets", "the list matches the tile's count", 5000);
+      await until(async () => { const l = await c.text("#testing-loops-grid"); return l.includes("Fix the thing") && l.includes("Purple widget"); }, "the list's rows to draw", 5000);
+      assert.ok(!(await c.text("#testing-loops-grid")).includes("Shipped thing"), "a ticket never sent back is not in the list");
+      c.at("a reload keeps the list");
+      await c.page.reload({ waitUntil: "domcontentloaded" });
+      await c.visible("#testing-loops-page");
+      await until(async () => (await c.text("#testing-loops-count")).trim() === "2 tickets", "the list after a reload", 8000);
+    },
+  },
+  {
     // cMyA3FMlUUrSjGtPkLZC: with no release open (every release live), the
     // Staff Kanban tile counts all open work across active projects, so it is
     // never blank; a task of an archived project is left out.

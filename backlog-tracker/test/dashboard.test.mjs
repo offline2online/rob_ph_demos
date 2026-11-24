@@ -101,6 +101,25 @@ assert.ok(!isBuilding({ status: "backlog", lastFire: { status: "started", at: at
   assert.strictEqual(tileStatus("flow", fk).level, "alert", "red at three or more stuck");
   assert.strictEqual(tileStatus("flow", flowKpi(flow.slice(0, 1), projects, NOW)).level, "warn");
   assert.strictEqual(tileStatus("flow", flowKpi([], projects, NOW)).level, "ok");
+  assert.deepStrictEqual([fk.retestedCount, fk.retested], [0, []], "nothing sent back: nothing retested");
+}
+// Retested tickets (0I93kb0fqXL4Qr4qyzwv): beside the stuck count, every
+// ticket not archived that went back through retesting, and how many times.
+{
+  const sb = (day, line, extra = {}) => ({ at: new Date(at(day)).toISOString(), by: "person", who: "tester@example.com", line, counted: true, ...extra });
+  const loops = [
+    { id: "r1", title: "Twice", projectId: "p1", status: "ready-for-testing", testRound: 3, sendBackCount: 2, countedSendBacks: 2, sendBacks: [sb(10, "a"), sb(12, "b")] },
+    { id: "r2", title: "Once", projectId: "p2", status: "published-live", testRound: 2, sendBackCount: 1, countedSendBacks: 1, sendBacks: [sb(11, "c")] },
+    { id: "r3", title: "Flaky only", projectId: "p1", status: "ready-for-testing", testRound: 1, sendBackCount: 1, countedSendBacks: 0, sendBacks: [sb(11, "d", { by: "tests", counted: false })] },
+    { id: "r4", title: "Archived", projectId: "p1", status: "archived", testRound: 2, sendBackCount: 1, countedSendBacks: 1, sendBacks: [sb(9, "e")] },
+    { id: "r5", title: "Never sent back", projectId: "p1", status: "ready-for-testing", testRound: 1, sendBackCount: 0, countedSendBacks: 0, sendBacks: [] },
+  ];
+  const rk = flowKpi(loops, projects, NOW);
+  assert.strictEqual(rk.retestedCount, 2, "counted send-backs only; archived left out");
+  assert.deepStrictEqual(rk.retested.map((r) => [r.id, r.times, r.round]), [["r1", 2, 3], ["r2", 1, 2]], "most retested first, times = counted send-backs");
+  assert.strictEqual(rk.retested[0].project, "Backlog Tracker & FAQs");
+  assert.strictEqual(rk.value, 0, "a retested ticket is not stuck by itself");
+  assert.strictEqual(tileStatus("flow", rk).level, "ok", "retested tickets leave the tile's colour alone");
 }
 
 // ── Staff Kanban ──────────────────────────────────────────────────────────

@@ -28,7 +28,7 @@ import { clearFirestoreLocalCache } from "./local-cache.js";
 import { INTAKE_SECTIONS, missingSections, applyAnswers } from "./ticket-intake.js";
 import { FAILED_TESTING_CHOICES, DEFAULT_FAILED_TESTING_CHOICE, sendBackFields, followUpWrites } from "./follow-up.js";
 import { rejectionSummaryHTML, lastRejectionLine } from "./rejection-summary.js";
-import { roundChipHTML, sentBackLastTimeHTML, isLooping, testingLoopRows, formatDuration, LOOP_ROUND, REPORT_DAYS } from "./test-rounds-view.js";
+import { roundChipHTML, sentBackLastTimeHTML, isLooping, testingLoopRows, retestedRows, formatDuration, LOOP_ROUND, REPORT_DAYS } from "./test-rounds-view.js";
 import { suggestModel, suggestionHint, modelChipText, reviewNeedsOpus, reviewedForCommit, buildsByModel } from "./model-suggest.js";
 import { cardState, deployGate, trainState, needsAttention, waitingOnMe, statusEnteredMs, ageLabel, AGE_THRESHOLDS, selfAnswering, personQuestion } from "./card-state.js";
 import { trainTestChipHTML, approvalWarningLines, APPROVAL_WARNING_TITLE, APPROVAL_WARNING_FOOTER, approvalFields, approvedByLine } from "./card-test-status.js";
@@ -483,8 +483,10 @@ let editingDocId = null; // null while adding, an id while editing (Additional d
 
 // ── Archive page state ─────────────────────────────────────────────────
 let archiveProjectId = null;
-// The Testing loops page's project (null when closed) — see openTestingLoopsPage.
+// The Testing loops page's project (null when closed; TESTING_LOOPS_ALL for
+// every project) and view ("loops" or "retested") — see openTestingLoopsPage.
 let testingLoopsProjectId = null;
+let testingLoopsView = "loops";
 // The Builds by model page's project (null when closed) — see openBuildsByModelPage.
 let buildsByModelProjectId = null;
 let archiveSort = { field: "date", dir: "desc" };
@@ -7053,16 +7055,57 @@ archiveFilterCategory.addEventListener("change", () => {
 // their round, reasons and time from first build to approval. Same table
 // component and page shell as Archived tickets. Includes archived tickets,
 // so it loads them (ensureArchivedItems) like the archive page does.
+//
+// Its "retested" view (0I93kb0fqXL4Qr4qyzwv) is the list the Dashboard's
+// Flow & blockers panel opens: every ticket not archived that went back
+// through retesting at least once, with how many times (retestedRows, the
+// same rows the tile counts), across every project. It is routed
+// ("#testing-loops?view=retested", optionally "#testing-loops/<projectId>?…")
+// so the dashboard can link to it and a reload keeps it; the project menu
+// still opens the 30-day loops view for one project, unrouted as before.
+const TESTING_LOOPS_ALL = "*all*";
+const TESTING_LOOPS_VIEWS = {
+  loops: {
+    heading: "Testing loops", countHeader: "Send-backs",
+    info: "Tickets sent back from testing twice or more in the last 30 days. A person's Failed testing, the train's tests and a review kick-back count together; taking a ticket off a release, a red main and a flaky test do not count.",
+    empty: `No ticket was sent back twice or more in the last ${REPORT_DAYS} days.`,
+  },
+  retested: {
+    heading: "Retested tickets", countHeader: "Times retested",
+    info: "Tickets that went back through retesting: every ticket not archived that was sent back from testing at least once, most retested first. A person's Failed testing, the train's tests and a review kick-back count; taking a ticket off a release, a red main and a flaky test do not. The Dashboard's Flow & blockers counts the same tickets.",
+    empty: "No ticket has been sent back from testing.",
+  },
+};
 let testingLoopsList = null;
+let testingLoopsListView = null;
 const STATUS_LABELS = { backlog: "Backlog", "ready-for-testing": "Ready for Testing", "ready-to-publish": "Approved for Deployment", "published-live": "Merged to Main (Live)", archived: "Archived" };
-function openTestingLoopsPage(pid) {
+function openTestingLoopsPage(pid, view = "loops") {
   closeAllSubPages();
   ensureArchivedItems();
-  testingLoopsProjectId = pid;
+  testingLoopsProjectId = pid || TESTING_LOOPS_ALL;
+  testingLoopsView = TESTING_LOOPS_VIEWS[view] ? view : "loops";
   document.getElementById("projects-root").hidden = true;
   document.getElementById("board-page-header").hidden = true;
   document.getElementById("testing-loops-page").hidden = false;
   renderTestingLoopsPage();
+}
+// "#testing-loops[/<projectId>][?view=retested]": the routed way in (the
+// Dashboard's link). openTestingLoopsPage closes every sub-page first, which
+// clears the hash; put it back once it has run.
+function testingLoopsRoute(hash) {
+  const m = /^#testing-loops(?:\/([^?]*))?(?:\?(.*))?$/.exec(hash || "");
+  if (!m) return null;
+  const view = new URLSearchParams(m[2] || "").get("view");
+  return { pid: m[1] ? decodeURIComponent(m[1]) : TESTING_LOOPS_ALL, view: TESTING_LOOPS_VIEWS[view] ? view : "loops" };
+}
+function openTestingLoopsRouteFromHash(hash) {
+  const r = testingLoopsRoute(hash);
+  if (!r) return;
+  if (!sectionAllowed("agent-board")) { showAccessDenied("agent-board"); return; }
+  const page = document.getElementById("testing-loops-page");
+  if (page.hidden || testingLoopsProjectId !== r.pid || testingLoopsView !== r.view) openTestingLoopsPage(r.pid, r.view);
+  setRouteHash(hash, { replace: true });
+  updateTopbarTitle();
 }
 function closeTestingLoopsPage() {
   const page = document.getElementById("testing-loops-page");
@@ -7073,30 +7116,40 @@ function closeTestingLoopsPage() {
   document.getElementById("board-page-header").hidden = false;
 }
 function getTestingLoopsList() {
-  if (!testingLoopsList) {
-    const pad = (n) => String(n == null ? -1 : n).padStart(14, "0");
-    testingLoopsList = createDocsList(document.getElementById("testing-loops-grid"), {
-      id: "testing-loops", searchLabel: "Search title or reasons", emptyText: `No ticket was sent back twice or more in the last ${REPORT_DAYS} days.`,
-      columns: [
-        { key: "title", header: "Ticket", flex: 1, minWidth: 220, text: (r) => r.title,
-          html: (r) => `<a class="archive-row-title" href="#item-${escapeHTML(r.id)}">${escapeHTML(r.title || r.id)}</a><p class="archive-row-desc">${escapeHTML(STATUS_LABELS[r.status] || r.status)}</p>` },
-        { key: "round", header: "Round", width: 100, text: (r) => pad(r.round),
-          html: (r) => `<span class="round-chip round-chip-static${r.round >= LOOP_ROUND ? " round-chip-warn" : ""}"><span class="material-symbols-outlined" aria-hidden="true">replay</span>Round ${r.round}</span>` },
-        { key: "recent", header: "Send-backs", width: 120, text: (r) => pad(r.recent), html: (r) => `${r.recent}${r.counted > r.recent ? ` <span class="archive-row-desc">(${r.counted} ever)</span>` : ""}` },
-        { key: "reasons", header: "Reasons", flex: 1, minWidth: 260, text: (r) => r.reasons.join(" "),
-          html: (r) => `<ol class="loop-reasons">${r.reasons.map((x) => `<li>${escapeHTML(x)}</li>`).join("")}</ol>` },
-        { key: "toApproval", header: "First build → approval", width: 170, text: (r) => pad(r.buildToApprovalMs),
-          html: (r) => (r.buildToApprovalMs != null ? escapeHTML(formatDuration(r.buildToApprovalMs)) : '<span class="archive-row-desc">Not approved yet</span>') },
-        { key: "last", header: "Last sent back", width: 140, text: (r) => (r.lastAt ? r.lastAt.toISOString() : ""), html: (r) => (r.lastAt ? escapeHTML(r.lastAt.toLocaleDateString()) : "—") },
-      ],
-    });
-  }
+  // One list per view: the column header and empty text differ, so switching
+  // view builds the list again in the same container.
+  if (testingLoopsList && testingLoopsListView === testingLoopsView) return testingLoopsList;
+  const v = TESTING_LOOPS_VIEWS[testingLoopsView];
+  const allProjects = () => testingLoopsProjectId === TESTING_LOOPS_ALL;
+  const pad = (n) => String(n == null ? -1 : n).padStart(14, "0");
+  testingLoopsListView = testingLoopsView;
+  testingLoopsList = createDocsList(document.getElementById("testing-loops-grid"), {
+    id: "testing-loops", searchLabel: "Search title or reasons", emptyText: v.empty,
+    columns: [
+      { key: "title", header: "Ticket", flex: 1, minWidth: 220, text: (r) => `${r.title} ${allProjects() ? projectName(r.projectId || GENERAL_PROJECT_ID) : ""}`,
+        html: (r) => `<a class="archive-row-title" href="#item-${escapeHTML(r.id)}">${escapeHTML(r.title || r.id)}</a><p class="archive-row-desc">${allProjects() ? `${escapeHTML(projectName(r.projectId || GENERAL_PROJECT_ID))} · ` : ""}${escapeHTML(STATUS_LABELS[r.status] || r.status)}</p>` },
+      { key: "round", header: "Round", width: 100, text: (r) => pad(r.round),
+        html: (r) => `<span class="round-chip round-chip-static${r.round >= LOOP_ROUND ? " round-chip-warn" : ""}"><span class="material-symbols-outlined" aria-hidden="true">replay</span>Round ${r.round}</span>` },
+      { key: "recent", header: v.countHeader, width: 130, text: (r) => pad(r.recent), html: (r) => `${r.recent}${r.counted > r.recent ? ` <span class="archive-row-desc">(${r.counted} ever)</span>` : ""}` },
+      { key: "reasons", header: "Reasons", flex: 1, minWidth: 260, text: (r) => r.reasons.join(" "),
+        html: (r) => `<ol class="loop-reasons">${r.reasons.map((x) => `<li>${escapeHTML(x)}</li>`).join("")}</ol>` },
+      { key: "toApproval", header: "First build → approval", width: 170, text: (r) => pad(r.buildToApprovalMs),
+        html: (r) => (r.buildToApprovalMs != null ? escapeHTML(formatDuration(r.buildToApprovalMs)) : '<span class="archive-row-desc">Not approved yet</span>') },
+      { key: "last", header: "Last sent back", width: 140, text: (r) => (r.lastAt ? r.lastAt.toISOString() : ""), html: (r) => (r.lastAt ? escapeHTML(r.lastAt.toLocaleDateString()) : "—") },
+    ],
+  });
   return testingLoopsList;
 }
 function renderTestingLoopsPage() {
   if (!testingLoopsProjectId) return;
-  document.getElementById("testing-loops-project-name").textContent = projectName(testingLoopsProjectId);
-  const rows = testingLoopRows(allItems.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === testingLoopsProjectId));
+  const v = TESTING_LOOPS_VIEWS[testingLoopsView];
+  const all = testingLoopsProjectId === TESTING_LOOPS_ALL;
+  document.getElementById("testing-loops-heading").textContent = v.heading;
+  const info = document.getElementById("testing-loops-info");
+  if (info) info.title = v.info;
+  document.getElementById("testing-loops-project-name").textContent = all ? "All projects" : projectName(testingLoopsProjectId);
+  const scoped = all ? allItems : allItems.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === testingLoopsProjectId);
+  const rows = testingLoopsView === "retested" ? retestedRows(scoped) : testingLoopRows(scoped);
   document.getElementById("testing-loops-count").textContent = `${rows.length} ticket${rows.length === 1 ? "" : "s"}`;
   getTestingLoopsList().setRows(rows);
 }
@@ -13928,6 +13981,7 @@ const ROUTE_TITLES = {
   "#releases": "Releases",
   "#concept-incubator": "Concept Incubator",
   "#staff-kanban": "Staff Kanban",
+  "#testing-loops": "Retested tickets",
   "#staff-kanban/report": "Release report",
   "#staff-kanban/settings": "Kanban settings",
 };
@@ -14085,6 +14139,7 @@ function applyRouteFromHash() {
   else if (hash.startsWith("#concept-")) openConceptRouteFromHash(hash);
   else if (hash.startsWith("#faq-article/")) openFaqArticleRouteFromHash(hash);
   else if (hash.startsWith("#docs/")) openDocsRouteFromHash(hash);
+  else if (testingLoopsRoute(hash)) openTestingLoopsRouteFromHash(hash);
   else if (hash === "#staff-kanban" || hash.startsWith("#staff-kanban/") || hash.startsWith("#staff-kanban?")) openStaffKanbanRouteFromHash(hash);
   else if (conceptDetailId) closeConceptDetailPage();
   else if (docsOpenedByRoute && !docsPage.hidden) closeDocsPage();

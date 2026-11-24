@@ -1566,7 +1566,13 @@ rebuilt with no cap at all. The loop is now stored and shown.
 - **Report.** The project's ⋮ menu → **Testing loops**: tickets with 2 or
   more counted send-backs in the last 30 days, with round, reasons, time
   from first build to approval and the last send-back date. Read-only, the
-  Archived tickets table.
+  Archived tickets table. The same page has a **Retested** view
+  (0I93kb0fqXL4Qr4qyzwv), the list the Dashboard's Flow & blockers opens:
+  every ticket not archived with at least one counted send-back, at any
+  time, across every project, with how many times it was retested. It is
+  routed — `#testing-loops?view=retested`, or `#testing-loops/<projectId>?…`
+  for one project — so a link and a reload keep it; the ⋮ menu entry still
+  opens the 30-day view, unrouted.
 - **Backfill.** Cards from before this read their loop from notes with
   `rejectionsOf`'s rules (the same counts; `test/test-rounds.test.js`), and
   their first recorded send-back stores the lot.
@@ -8271,7 +8277,7 @@ tiles. A tile never opens its section (see "Dashboard v2"); the panel's
 | Section | Tile | Headline (on the tile) | Summary panel | Open section |
 |---|---|---|---|---|
 | Internal | Delivery | Tickets deployed in the selected range — Yesterday (the default) or the last 7 days — (`mergedAt`, else `statusEnteredAt` of a Merged to Main card), against the previous period of the same length, with a 7-day line; the first-time pass rate over those tickets with its change, and their average lead time from Backlog (`createdAt`) to Live | A Yesterday / Last 7 days switch; per project: tickets deployed and first-time pass, each with its change on the previous period, and lead time | `#board` |
-| Internal | Flow & blockers | Tickets stuck now, split blocked / failed testing / waiting to test | Each stuck ticket with its project, the reason and how long it has waited, longest first | `#board` |
+| Internal | Flow & blockers | Tickets stuck now, split blocked / failed testing / waiting to test; beside them, how many tickets went back through retesting ("N retested") | Each stuck ticket with its project, the reason and how long it has waited, longest first; then each retested ticket with its project, round and how many times it was retested, most first, with **Open list** to `#testing-loops?view=retested` | `#board` |
 | Internal | Staff Kanban | Open tasks of the current release split To do (Backlog, Ready for Dev) / In progress / Testing (Ready for Testing, Approved); the release's name and % done; amber flags for overdue, unassigned, unestimated and waiting on you in Testing | Workload per person: remaining effort as hours with days in brackets at 8 h a day ("24h (3d)"), open tasks, overdue, and which tasks have no estimate | `#staff-kanban` |
 | External | Leads | New leads in the last 7 days against the 7 days before, with a 7-day line and yesterday's count; the company pipeline Lead → Hot Lead → Demo → Post-demo → Closed Won with the count at each stage now and the conversion from the stage before; stale and not-contacted flags | The last 7 days' leads by source (Website, Network operator, Partner, Other), industry and market, with names; the pipeline with conversion; the stale and not-contacted leads by name | `#promote/leads` |
 | External | Conversion funnel | Unique visitors over the last 7 days against the 7 days before, with a 7-day line; visitor-to-lead %; a mini funnel Visitors → Industry → Engaged → Leads → Opps with the biggest drop-off in amber; the top-moving industry and market | The full funnel with count and drop-off at each step; industries and markets ranked by visitors with the change on the week before; traffic sources | `#promote/conversion-funnel` |
@@ -8310,6 +8316,19 @@ Rules:
   trigger afterwards, so it is always a little later), or when it has
   been in Ready for Testing (waiting on a person) for more than 24 hours.
   Approved and live tickets are never stuck.
+- **Retested tickets** (0I93kb0fqXL4Qr4qyzwv): beside the stuck count, every
+  ticket not archived that went back through retesting, i.e. has at least one
+  counted send-back (`loopOf(item).counted`, "Testing rounds": a person's
+  Failed testing, a red train test, a review kick-back; not a ticket taken off
+  a release, a red main or a flaky test), at any time. Each is shown
+  "Retested N times" with N the counted send-backs (not the round, which is
+  one more), most retested first, then the latest send-back. They are
+  information, not stuck: they leave the tile's colour alone. The panel's
+  **Open list** opens the Testing loops page's **Retested** view
+  (`#testing-loops?view=retested`, every project), which lists the same
+  tickets from the same selector (`retestedRows` in
+  `public/js/test-rounds-view.js`), so the tile's count is always the list's
+  length.
 - **Staff Kanban** reads every open task (`kanbanCards` where `open == true`,
   the query Staff Kanban itself uses; `kanbanTasks` while the cards lag) and
   the current release's tasks for its progress. The current release is Staff

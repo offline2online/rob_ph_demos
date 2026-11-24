@@ -10,7 +10,8 @@
 // Tiles (Dashboard v2 content, cMyA3FMlUUrSjGtPkLZC) and where their numbers come from:
 //   Delivery          backlogItems the console already holds (mergedAt,
 //                     createdAt, countedSendBacks / testRound)
-//   Flow & blockers   the same tickets (blocked, lastFailureReason, statusEnteredAt)
+//   Flow & blockers   the same tickets (blocked, lastFailureReason, statusEnteredAt;
+//                     testing rounds for the retested tickets)
 //   Staff Kanban      open kanbanCards (open == true) and the current release's
 //                     cards; kanbanSettings/main picks the release
 //   Leads             leads (createdAt, stage, source, history, test, archivedAt)
@@ -21,6 +22,7 @@
 import { remaining, currentReleaseId } from "./kanban/kanban-core.js";
 import { leadName } from "./leads-core.js";
 import { inInbox, DEFAULT_INBOX, QUEUES } from "./support-core.js";
+import { retestedRows } from "./test-rounds-view.js";
 
 export const HOURS_PER_DAY = 8;
 
@@ -333,6 +335,10 @@ const BLOCK_REASONS = {
 //                Backlog card whose lastFailureReason is newer than its move
 //                to Backlog, with no build running and no patch waiting to land
 //   testing      in Ready for Testing for more than 24 hours, waiting on a person
+// Alongside, the tickets that went back through retesting (0I93kb0fqXL4Qr4qyzwv):
+// every ticket not archived with a counted send-back, and how many times
+// (retestedRows in test-rounds-view.js, the same rows the list it opens shows).
+// They are information, not stuck, so they leave the tile's colour alone.
 export function flowKpi(items, projects, now = Date.now()) {
   const names = new Map((projects || []).map((x) => [x.id, x.name || "Untitled project"]));
   const stuck = [];
@@ -358,7 +364,8 @@ export function flowKpi(items, projects, now = Date.now()) {
   }
   stuck.sort((a, b) => (b.waitedMs || 0) - (a.waitedMs || 0) || a.title.localeCompare(b.title));
   const count = (k) => stuck.filter((s) => s.kind === k).length;
-  return { value: stuck.length, stuck, blocked: count("blocked"), failed: count("failed"), testing: count("testing") };
+  const retested = retestedRows(items).map((r) => ({ id: r.id, title: r.title || "Untitled ticket", project: names.get(r.projectId) || "General", times: r.counted, round: r.round, status: r.status }));
+  return { value: stuck.length, stuck, blocked: count("blocked"), failed: count("failed"), testing: count("testing"), retested, retestedCount: retested.length };
 }
 
 // ── Staff Kanban ─────────────────────────────────────────────────────────

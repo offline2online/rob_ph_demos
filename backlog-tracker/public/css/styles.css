@@ -3259,6 +3259,16 @@ html[data-console-role="viewer"] .lead-prio-tools { display: none; }
 .dash-panel-body > .dash-tip-title, .dash-panel-body > .dash-tip-empty, .dash-panel-body > .dash-tip-wide { grid-column: 1 / -1; }
 .dash-panel-body > .dash-tip-list { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 0 24px; }
 .dash-tip-col { min-width: 0; }
+/* A panel section heading with its own link through to the list (Flow & blockers' retested tickets). */
+.dash-panel-body > .dash-tip-head { grid-column: 1 / -1; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin-top: 12px; }
+.dash-tip-head > .dash-tip-title { margin: 0; }
+.dash-tip-open {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; min-height: 32px;
+  border: 0; border-radius: 6px; background: none; font: inherit; font-size: 13px; color: var(--primary); cursor: pointer;
+}
+.dash-tip-open:hover { background: var(--primary-tint); }
+.dash-tip-open .material-symbols-outlined { font-size: 16px; }
+.dash-tip-open:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 .dash-tip-title { margin: 8px 0 4px; font-size: 12px; font-weight: 700; }
 .dash-panel-body > .dash-tip-title:first-child, .dash-tip-col > .dash-tip-title:first-child { margin-top: 0; }
 .dash-tip-empty { margin: 0 0 4px; color: var(--text-muted); }

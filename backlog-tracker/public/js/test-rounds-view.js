@@ -109,6 +109,22 @@ function firstBuildAt(item) {
   return first;
 }
 
+// One report row: `shown` are the send-backs the row is about (the last 30
+// days for testingLoopRows, every counted one for retestedRows).
+function loopRow(item, loop, shown) {
+  const firstBuild = firstBuildAt(item);
+  const approved = toDate(item.approvedAt);
+  return {
+    id: item.id, title: item.title || "", status: item.status || "backlog", projectId: item.projectId || "",
+    round: loop.round, counted: loop.counted, recent: shown.length,
+    reasons: shown.slice(-3).map((s) => `${byLabel(s)}: ${s.line}`),
+    lastAt: shown.length ? shown[shown.length - 1].at : null,
+    firstBuild, approved,
+    buildToApprovalMs: firstBuild && approved && approved >= firstBuild ? approved - firstBuild : null,
+  };
+}
+const lastAtMs = (r) => (r.lastAt ? r.lastAt.getTime() : 0);
+
 // Tickets with 2+ counted send-backs in the last 30 days, highest round first.
 export function testingLoopRows(items, now = Date.now()) {
   const since = now - REPORT_DAYS * DAY_MS;
@@ -117,18 +133,26 @@ export function testingLoopRows(items, now = Date.now()) {
     const loop = loopOf(item);
     const recent = loop.sendBacks.filter((s) => s.counted && s.at && s.at.getTime() >= since);
     if (recent.length < 2) continue;
-    const firstBuild = firstBuildAt(item);
-    const approved = toDate(item.approvedAt);
-    rows.push({
-      id: item.id, title: item.title || "", status: item.status || "backlog",
-      round: loop.round, counted: loop.counted, recent: recent.length,
-      reasons: recent.slice(-3).map((s) => `${byLabel(s)}: ${s.line}`),
-      lastAt: recent[recent.length - 1].at,
-      firstBuild, approved,
-      buildToApprovalMs: firstBuild && approved && approved >= firstBuild ? approved - firstBuild : null,
-    });
+    rows.push(loopRow(item, loop, recent));
   }
-  return rows.sort((a, b) => (b.round - a.round) || ((b.lastAt ? b.lastAt.getTime() : 0) - (a.lastAt ? a.lastAt.getTime() : 0)));
+  return rows.sort((a, b) => (b.round - a.round) || (lastAtMs(b) - lastAtMs(a)));
+}
+
+// Retested tickets (0I93kb0fqXL4Qr4qyzwv): every ticket not archived that went
+// back through retesting, i.e. has at least one counted send-back, with
+// `counted` the number of times. The Dashboard's Flow & blockers figure and the
+// "#testing-loops?view=retested" list both come from this, so the count on the
+// tile is always the length of the list it opens. Most retested first, then the
+// most recent send-back.
+export function retestedRows(items) {
+  const rows = [];
+  for (const item of items || []) {
+    if (!item || item.status === "archived") continue;
+    const loop = loopOf(item);
+    if (loop.counted < 1) continue;
+    rows.push(loopRow(item, loop, loop.sendBacks.filter((s) => s.counted)));
+  }
+  return rows.sort((a, b) => (b.counted - a.counted) || (lastAtMs(b) - lastAtMs(a)) || a.title.localeCompare(b.title));
 }
 
 export function formatDuration(ms) {

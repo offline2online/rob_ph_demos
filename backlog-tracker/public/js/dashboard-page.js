@@ -30,6 +30,8 @@ import { normaliseTicket, confidenceBand, pct as confPct } from "./support-core.
 const STALE_MS = 5 * 60 * 1000;
 const SUPPORT_LIMIT = 300;
 const SUPPORT_TIP_ROWS = 10;
+// The list the Flow & blockers panel's retested tickets open (app.js, Testing loops page).
+export const RETESTED_LIST = "#testing-loops?view=retested";
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 // key: tile id; src: the source it reads ("items" are the tickets app.js
@@ -40,7 +42,7 @@ export const TILES = [
   { key: "delivery", group: "internal", src: "items", section: "agent-board", title: "Delivery", icon: "rocket_launch", target: "#board",
     info: "Tickets deployed in the range chosen in its summary panel, Yesterday (your local day) or the last 7 days, against the previous period of the same length; the line shows the last 7 days. First-time pass is the share of those tickets that passed testing without being sent back, its change in percentage points; lead time is the average from Backlog to Live." },
   { key: "flow", group: "internal", src: "items", section: "agent-board", title: "Flow & blockers", icon: "pending_actions", target: "#board",
-    info: "Tickets stuck now: blocked, sent back with Failed testing and not rebuilding yet, or waiting in Ready for Testing for more than 24 hours. Amber when one is stuck, red at three or more." },
+    info: "Tickets stuck now: blocked, sent back with Failed testing and not rebuilding yet, or waiting in Ready for Testing for more than 24 hours. Amber when one is stuck, red at three or more. Retested counts the tickets not archived that were sent back from testing at least once; the panel shows how many times each and opens their list." },
   { key: "kanban", group: "internal", src: "kanban", section: "staff-kanban", title: "Staff Kanban", icon: "view_kanban", target: "#staff-kanban",
     info: "Open tasks in the current release (the one picked in Kanban settings, else the earliest release not yet live), by column, with the release's progress. With no release, or none of its tasks open, it counts all open work. Amber when a task is overdue, unassigned, unestimated or waiting on you in Testing." },
   { key: "leads", group: "external", src: "leads", section: "promote-leads", title: "Leads", icon: "group", target: "#promote/leads",
@@ -112,6 +114,8 @@ export function mountDashboard(ctx) {
     if (e.target.closest(".dash-panel-close")) { unpin(true); return; }
     const rangeBtn = e.target.closest("[data-delivery-range]");
     if (rangeBtn) { setDeliveryRange(rangeBtn.dataset.deliveryRange); return; }
+    const goto = e.target.closest(".dash-tip-open[data-go]");
+    if (goto) { ctx.go(goto.dataset.go); return; }
     const open = e.target.closest(".dash-panel-open");
     if (open) { const t = TILES.find((x) => x.key === pinned); if (t) ctx.go(t.target); return; }
     const tile = e.target.closest(".dash-tile");
@@ -270,9 +274,18 @@ export function mountDashboard(ctx) {
       const parts = [[k.blocked, "blocked"], [k.failed, "failed testing"], [k.testing, "waiting to test"]].filter(([x]) => x).map(([x, l]) => `<span class="dash-sub">${x} ${l}</span>`).join("");
       const rows = k.stuck.map((s) => `<li><span class="dash-tip-row"><strong>${esc(s.title)}</strong><b>${esc(s.waitedMs == null ? "—" : fmtWait(s.waitedMs))}</b></span>`
         + `<span class="dash-tip-meta">${esc(s.project)} · ${esc(s.reason)}</span></li>`);
+      // Retested tickets (0I93kb0fqXL4Qr4qyzwv): beside the stuck count, and
+      // listed in the panel with how many times each went back; "Open list"
+      // opens the same tickets as the Testing loops page's Retested view.
+      const retestRows = k.retested.map((r) => `<li><span class="dash-tip-row"><strong>${esc(r.title)}</strong><b>Retested ${r.times === 1 ? "once" : `${fmtCount(r.times)} times`}</b></span>`
+        + `<span class="dash-tip-meta">${esc(r.project)} · Round ${fmtCount(r.round)}</span></li>`);
+      const retestSub = `<span class="dash-sub">${icon("replay")}<b>${fmtCount(k.retestedCount)}</b> retested</span>`;
       return {
-        metric: "Tickets stuck", value: fmtCount(k.value), status: tileStatus("flow", k), extra: parts || `<span class="dash-sub">Nothing stuck</span>`,
-        tip: `<p class="dash-tip-title">Stuck now, longest wait first</p>${tipList(rows, "Nothing is blocked, failed or waiting over a day to be tested.")}`,
+        metric: "Tickets stuck", value: fmtCount(k.value), status: tileStatus("flow", k), extra: (parts || `<span class="dash-sub">Nothing stuck</span>`) + retestSub,
+        tip: `<p class="dash-tip-title">Stuck now, longest wait first</p>${tipList(rows, "Nothing is blocked, failed or waiting over a day to be tested.")}`
+          + `<div class="dash-tip-head"><p class="dash-tip-title">Went back through retesting (${fmtCount(k.retestedCount)}), most retested first</p>`
+          + `<button type="button" class="dash-tip-open" data-go="${RETESTED_LIST}">Open list${icon("arrow_forward")}</button></div>`
+          + tipList(retestRows, "No ticket has been sent back from testing."),
       };
     }
     if (t.key === "kanban") {
