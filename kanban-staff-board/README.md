@@ -89,7 +89,9 @@ heading (KB-MCP-1; `backlog-tracker/MCP.md` → Staff Kanban).
   bottom of the screen. (The console build, 29 Oct 2026: on a tablet they cover that column only, clipped to what is on screen; on a phone they are a slim bar above the tab bar that grows only when the card nears it; a drag drops nothing until the finger has moved, a drop on a target counts only if the finger entered it after the drag began, and Esc cancels a drag. See REQUIREMENTS.md → KB-BOARD-3/4.) You can drag cards
   with a mouse, or press and hold them on touch. Every column lists its cards by priority, Highest first (no priority counts
   as Medium), then in drag order within one priority, on the plain board and in swimlanes alike (KB-BOARD-3a); a drag
-  reorders a card only among cards of its own priority. Moving a card to Ready for
+  reorders a card only among cards of its own priority. Ready for Testing groups by type first: bugs at the top, then
+  tasks (and any other type), then epics at the bottom, each group by priority and then drag order; a drag there
+  stays within the ticket's own type and priority (KB-BOARD-3b). Moving a card to Ready for
   Testing reassigns it to the tester (Rob by default). Moving it back to In
   Progress or Ready for Dev returns it to the developer. The primary filters, staff avatars,
   **My tasks**, the search box and **Release**, sit in a bar pinned to the top while you scroll, with the column headers under it.
