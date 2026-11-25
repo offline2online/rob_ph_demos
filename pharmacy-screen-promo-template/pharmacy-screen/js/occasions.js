@@ -3,7 +3,8 @@
 // definitions (board documents "Occasion template designs", parts 1 and 2), unchanged except that each template's
 // copy block (<div class="txt">) is left out: js/render.js draws the copy from each pharmacy's own content
 // (OCCASIONS there says which beat holds which line), and the Christmas photo comes from css/occasion-media.css
-// (var(--occ-photo)) instead of a christmas-tree.jpg beside the page.
+// (var(--occ-photo)) instead of a christmas-tree.jpg beside the page. Christmas's landscape lights (.gl) differ too: since
+// 25 Nov 2026 they sit on the tree, inside .photo, instead of the prototype's two columns beside it (see XMAS_GL).
 //
 // Decorations are scattered with a seeded generator, so the markup is the same on every screen and matches the
 // prototype; keep the templates in this order (each one continues the random sequence of the one before).
@@ -40,11 +41,35 @@ const T = [];
 
 const spark=(x,y)=>`<i style="left:${x}%;top:${y}%;--z:${r(1.4,4)}cqmin;--r:${r(0,45,0)}deg;animation-duration:${r(.9,2.6)}s;animation-delay:-${r(0,3)}s"></i>`;
 /* ---------- 1. Christmas: real photo of a lit tree, very large centred copy ---------- */
+/* Portrait lights (.gp): rows on the tree, unchanged since the approved design. */
+const xmasGp = (()=>{let o='';[10,13.5,17,20.5,24,27.5,31,67,70.5,74,77.5,81,84].forEach(y=>{const h=Math.max(3,(y-6)/74*36)*.88,n=Math.max(1,Math.round(h/4.5));for(let k=0;k<n;k++){const x=(55.5-h+2*h*(k+.5)/n+(rnd()*2-1)*1.4).toFixed(1);o+=spark(x,(y+(rnd()*2-1)*.9).toFixed(1))}});return o})();
+/* Landscape lights (.gl, 25 Nov 2026): on the tree, not beside it. Each point is "x,y" in screen % of a 1920x1080 screen
+   as christmas-tree.jpg is drawn there (cover, center 38%): the photo's own visible bulbs, plus fill points across the
+   branches between them, all inside the tree's silhouette (screen % at y 0: x 44-68, 10: 42-69, 30: 37-72, 50: 32-78,
+   70: 32-79, 90-100: 31-81). They sit inside .photo, so they drift with it (xmasDrift) and stay on the tree; .photo has
+   inset -4%, so a screen % is (s + 4) / 1.08 of the photo box. Sizes, rotation and flicker still come from the seeded
+   generator. The scatter this replaced (two columns at x 19-30% and 70-85%) drew 312 numbers from it, so it draws
+   exactly that many here, whatever the point count, and the later templates' decorations stay as they were. */
+const XMAS_GL = `
+  62.4,4 44.5,4.8 63.5,7.8 66.1,7.8 59.3,8.1 51.2,11.7 43.5,12 55.7,12.9 47.3,13.1 67.8,14.7 42.7,16 45.5,16
+  47.9,17.6 49.8,19.9 61,22 65.5,22.4 63.6,23.8 44.8,24 42.3,24.8 47.5,25.2 52,25.4 56.8,25.9 69,27.7 66.1,28
+  47.4,31.2 37.2,34.8 56,35.7 59.9,36.9 72.1,37.2 51.8,37.5 62.6,37.5 48.1,38.7 44.6,40.7 64.1,40.8 36.9,42.3 45.5,42.4
+  68.1,42.6 44.2,43.9 59.4,44.7 67.8,46.7 35.3,49.8 49,49.8 73.3,50.4 54.2,52.2 40.5,52.8 74.4,54.5 60.9,55.2 64.8,56.7
+  39.5,57 35.3,57.3 43.3,57.7 52.1,58.1 54.9,58.6 69.8,59.7 53.4,62 58.9,62.2 75.4,62.2 42.3,62.7 57,63.6 33.7,64.8
+  51.9,65.7 47.2,66.3 55.8,66.8 74.5,67.7 41.2,68.6 59.5,69.1 67.1,71.8 35.1,72.3 49.3,72.3 71.3,72.5 77.8,74.3 62.7,74.4
+  42.7,74.6 45.5,75.3 57.8,77.8 49.3,79.8 41,80 77.8,80.3 33.9,80.7 69.3,81.2 41,83 45.7,83.3 54.3,83.3 35.5,84.8
+  57.8,84.9 79.3,84.9 79.7,87.4 61.8,88.7 40.4,88.8 50.2,89.4 66.6,89.9 71.2,92.2 33.7,93.5 79,94.4 47.7,94.8 41.8,97.2
+  56.8,97.2 76.5,97.9`.trim().split(/\s+/).map((p) => p.split(',').map(Number));
+const xmasGl = (() => {
+  const start = seed, box = (v) => ((v + 4) / 1.08).toFixed(1);
+  const o = XMAS_GL.map(([x, y]) => spark(box(x), box(y))).join('');
+  seed = start; for (let i = 0; i < 312; i++) rnd();
+  return o;
+})();
 T.push({
   id:'christmas', name:'Christmas', when:'25 December', uses:'Suburb + store name', bg:'christmas-tree.jpg',
-  fx:`<div class="fx photo anim"></div><div class="fx shade"></div>
-<div class="fx glow gp">${(()=>{let o='';[10,13.5,17,20.5,24,27.5,31,67,70.5,74,77.5,81,84].forEach(y=>{const h=Math.max(3,(y-6)/74*36)*.88,n=Math.max(1,Math.round(h/4.5));for(let k=0;k<n;k++){const x=(55.5-h+2*h*(k+.5)/n+(rnd()*2-1)*1.4).toFixed(1);o+=spark(x,(y+(rnd()*2-1)*.9).toFixed(1))}});return o})()}</div>
-<div class="fx glow gl">${(()=>{let o='';for(let y=10;y<=88;y+=6.5){[[19,30],[70,85]].forEach(([a,b])=>{for(let k=0;k<2;k++){const x=(a+(b-a)*(k+.5)/2+(rnd()*2-1)*2).toFixed(1);o+=spark(x,(y+(rnd()*2-1)*1.5).toFixed(1))}})}return o})()}</div>`,
+  fx:`<div class="fx photo anim"><div class="fx glow gl">${xmasGl}</div></div><div class="fx shade"></div>
+<div class="fx glow gp">${xmasGp}</div>`,
   css:`
 .occ-christmas{--display:'Playfair Display',Georgia,serif;--body:'Outfit',system-ui,sans-serif;--from:translateY(3cqmin) scale(.97);--to:scale(1.02);--ease:cubic-bezier(.16,.84,.3,1);background:#0b1418;color:#fff}
 .occ-christmas .photo{inset:-4%;background:var(--occ-photo,none) center 40%/cover no-repeat;animation:xmasDrift 24s ease-in-out infinite alternate}

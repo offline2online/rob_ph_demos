@@ -49,6 +49,12 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Fixed
 
+- **Christmas (landscape): the lights flash on the tree, not beside it.** The landscape sparkles were scattered in
+  two columns (x 19–30% and 70–85%), so most flashed on the wall and shelves beside the tree. They now sit on the
+  photo's own visible bulbs plus fill points across the branches (98 lights, all inside the tree's silhouette), and
+  are drawn inside the photo layer so they drift with it and stay on the tree for the whole playback. Same sizes,
+  rotation and flicker; portrait unchanged; every pharmacy and the master template (built-in design,
+  `pharmacy-screen/js/occasions.js`).
 - **Fallback: the pharmacy's logo now looks exactly as it does in Morning and Afternoon.** The Fallback already
   used the same uploaded logo, but drew it on a white tile with padding and a shadow, which washed out logos made
   for the brand colour (white lettering) so they no longer read as the same logo. It is now drawn as it is, straight

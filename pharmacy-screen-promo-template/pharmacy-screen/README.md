@@ -120,7 +120,7 @@ orientations (1080×1920 and 1920×1080); the layout switches by a container que
 
 | Occasion | Look | Beats (label line / main line) |
 |---|---|---|
-| Christmas | A real photo of a lit tree slowly drifting closer, flickering sparkles on the tree (above and below the copy in portrait, either side in landscape), very large centred copy | "Merry Christmas, ${Suburb}" · "With warm wishes / from the whole ${StoreName} team" |
+| Christmas | A real photo of a lit tree slowly drifting closer, flickering sparkles on the tree (above and below the copy in portrait; in landscape on the photo's own bulbs and across its branches, moving with the photo's drift), very large centred copy | "Merry Christmas, ${Suburb}" · "With warm wishes / from the whole ${StoreName} team" |
 | New Year's | Midnight sky, firework bursts, poster type | "Happy New Year" · "Thank you for a great year, ${Suburb}" · "Here's to a healthy year ahead / from the whole ${StoreName} team" |
 | Australia Day | The Australian flag waving on a pole against a navy sky, in the flag colours | "26 January / Happy Australia Day, ${Suburb}" · "Enjoy the sunshine" · "Slip, slop, slap" with the pill "Stay sun safe this summer" |
 | Valentine's Day | Blush pink, rising hearts | "14 February / Happy Valentine's Day, ${Suburb}" · "Look after the ones you love" · "and yourself, too" |
