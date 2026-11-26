@@ -51,6 +51,8 @@ async function open(token = 'dev-admin', { viewport = { width: 1400, height: 100
   }
   return { ctx, page, errors, firstTab };
 }
+// Beaumaris's special hours (the mock data) start on 24 Dec 2026: none within 90 days of 1 Jun 2026.
+const NO_SPECIAL_DATE = '2026-06-01T02:00:00Z';
 const settle = (page) => page.evaluate(async () => { await window.pharmacyAdmin.flush(); for (let i = 0; i < 100 && window.pharmacyAdmin.pending(); i++) await new Promise((r) => setTimeout(r, 50)); });
 const api = async (method, path, { token = 'dev-admin', body } = {}) => {
   const r = await fetch(dev.base + path, { method, headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
@@ -594,7 +596,8 @@ test('scenes: Add promotion picker closes without adding; a new promotion can be
 });
 
 test('preview: Copy experience URL with a live playback duration and its setup tooltip', async () => {
-  const { ctx, page } = await open();
+  // A date with no special hours coming up for Beaumaris, so Closed plays its three default headlines.
+  const { ctx, page } = await open('dev-admin', { date: NO_SPECIAL_DATE });
   await own(page);
   // The admin view keeps the ${Suburb} hint, the remote config and this row (the pharmacy view hides them).
   for (const id of ['#dpHint', '#cfgBox', '#cpRow', '#pbInfo']) assert.equal(await page.isVisible(id), true, id);
@@ -627,7 +630,8 @@ test('preview: Copy experience URL with a live playback duration and its setup t
 });
 
 test('preview: timeline and editor highlight each other; orientation and experience URL follow', async () => {
-  const { ctx, page } = await open();
+  // A date with no special hours coming up for Beaumaris, so Closed plays its three default headlines.
+  const { ctx, page } = await open('dev-admin', { date: NO_SPECIAL_DATE });
   await own(page);
   await page.click('#playBtn');
   await page.click('#tl button[data-i="2"]');
@@ -1790,4 +1794,58 @@ test('Screen device ID: another store\'s device, a malformed ID, an unknown ID a
   assert.equal((await api('DELETE', `/api/admin/pharmacies/${made.id}`)).status < 300, true);
   assert.deepEqual(errors, []);
   await ctx.close();
+});
+
+test('special opening hours: the editor\'s preview plays what the screen plays, and a bar message is never previewed on a closed special day', async () => {
+  // Beaumaris with its Screen device ID: live data from the dev server's PH mock, which carries its special hours
+  // (Christmas Eve to Australia Day). 26 Nov 2026, noon in Melbourne.
+  const NOV26 = '2026-11-26T01:00:00Z';
+  const { ctx, page, errors } = await open('dev-admin', { date: NOV26 });
+  await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-001');
+  await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-001');
+  if (await page.evaluate(() => window.pharmacyAdmin.state.cur.device) !== EXAMPLE_DEVICE) {
+    await page.click('#setBtn');
+    await paste(page, '#sDev', EXAMPLE_DEVICE);
+    await page.waitForFunction((d) => window.pharmacyAdmin.state.cur.device === d, EXAMPLE_DEVICE);
+    await settle(page);
+    await page.click('#setBtn');
+  }
+  await page.waitForFunction(() => document.getElementById('pvData').textContent === 'Live opening hours');
+  await page.click('#playBtn'); // pause
+  await page.click('#dpTabs button:has-text("Closed")');
+  await page.waitForTimeout(80);
+  const editorScenes = await page.$$eval('#tl button .lb', (b) => b.map((x) => x.textContent.replace(/^\d+/, '')));
+  const preview = await page.textContent('#screen');
+  assert.match(preview, /Christmas Day/, 'the special hours are listed in the preview');
+  // Every scene of the preview: never "Please call to confirm" beside the confirmed special hours.
+  for (let i = 0; i < editorScenes.length; i++) {
+    await page.click(`#tl button[data-i="${i}"]`);
+    assert.doesNotMatch(await page.textContent('#screen'), /Please call to confirm/, `preview scene ${i + 1}`);
+  }
+  // The screen itself, same device and date: the same scenes.
+  const sctx = await browser.newContext({ viewport: { width: 540, height: 960 } });
+  const sp = await sctx.newPage();
+  await sp.clock.setFixedTime(new Date(NOV26));
+  await sp.goto(`${dev.base}/pharmacy-screen.html?device=${EXAMPLE_DEVICE}&promo=closed&scene=0`);
+  await sp.waitForFunction(() => window.pharmacyScreen && window.pharmacyScreen.ready && window.pharmacyScreen.info, null, { timeout: 20000 });
+  const screenScenes = await sp.evaluate(() => window.pharmacyScreen.info.scenes);
+  await sctx.close();
+  assert.deepEqual(editorScenes, screenScenes);
+  assert.equal(editorScenes.length, 2);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+  // Christmas Day (closed in PH): "While open" previews the next real open time, not a closed bar; "After closing"
+  // is still closed.
+  const x = await open('dev-admin', { date: '2026-12-25T01:00:00Z' });
+  await x.page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-001');
+  await x.page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-001');
+  await x.page.waitForFunction(() => document.getElementById('pvData').textContent === 'Live opening hours');
+  await x.page.click('#playBtn');
+  const bar = () => x.page.$eval('#screen .s-foot .f1', (e) => e.textContent.trim());
+  await x.page.click('#barTabs button:text-is("While open")');
+  assert.match(await bar(), /^Open today until \d/);
+  await x.page.click('#barTabs button:text-is("After closing")');
+  assert.match(await bar(), /^Closed now$/);
+  assert.deepEqual(x.errors, []);
+  await x.ctx.close();
 });

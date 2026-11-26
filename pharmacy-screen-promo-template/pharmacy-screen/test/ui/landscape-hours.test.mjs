@@ -25,7 +25,7 @@ async function measure(device, orientation = 'landscape') {
   const ctx = await browser.newContext({ viewport: land ? { width: 1920, height: 1080 } : { width: 1080, height: 1920 } });
   try {
     const page = await ctx.newPage();
-    await page.goto(`${base}?mockapi=1&device=${device}&orientation=${orientation}&promo=closed&scene=0&now=wed-22:00`);
+    await page.goto(`${base}?mockapi=1&device=${device}&orientation=${orientation}&promo=closed&scene=0&now=wed-22:00&date=2027-06-02`); // a date with no special hours ahead (test/ui/special-hours.test.mjs has those)
     await page.waitForFunction(() => window.pharmacyScreen && window.pharmacyScreen.ready);
     await page.evaluate(() => document.fonts.ready);
     return await page.evaluate(async () => {

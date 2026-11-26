@@ -8,6 +8,22 @@ release handed to miPharmacy is tagged and packaged with this file and the `docs
 Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 ([docs/RELEASING.md](docs/RELEASING.md)).
 
+### Added
+
+- **Special opening hours on the screen (Christmas, New Year, Australia Day).** The proxy passes a store's special
+  hours through from Personalisation Hub as `store_info.special_hours[]` (`name`, `date`, `open`, `open_time`,
+  `close_time`; checked strictly, `[]` when PH sends none; docs/DATA-CONTRACT.md). The "Open today" bar and
+  `${OpenTime}` / `${CloseTime}` on every template use them for their dates in the store's time zone (`js/hours.js`
+  `storeStateOn`). The opening hours template (Closed) lists the nearest 6 upcoming special dates (90 days ahead at
+  most) under the weekly hours, in place of "Public Holidays: Please call to confirm" and its default headline, and
+  its card shrinks to fit (`fitCard`, covered by the copy-fit audit). A store with none looks exactly as before.
+  `date=` now also sets the date the special hours are read for (with `now=`, the weekday comes from the date). The
+  mock data gives Beaumaris (`DEVICE-VIC-MP-001`) the special hours PH holds for it. The editor's preview plays
+  exactly what the screen plays (the same headlines, the default "Public Holidays" one left out while special hours
+  are listed), and its "Open today bar in the preview" tabs pick a time on the real dates, so a closed special day is
+  never previewed as open (`nowInStateOn`). The screen reads its time and date from one instant, so the bar cannot
+  jump a week at the stroke of midnight.
+
 ### Changed
 
 - **Sales Promos: Personalisation Hub owns scheduling; the end date is wording only.** `promo=sale` now always

@@ -14,7 +14,7 @@ import * as M from './model.js';
 import { storeModel, resolvePromotion, sequence, sceneName, renderScene, renderMessage, saleCopy, saleFooter, saleFinishes, saleDateText, saleValue, cleanYmd, SALE_MAX_BRANDS, SALE_MAX_BRAND_LENGTH, DEFAULT_HTML, footerConfig, boost, tileTop, occasionOf, occasionFieldName, beatSeconds, seasonDates, seasonDatesOf, fmtMonthDay, scheduledOccasion, activationUntil, activationOn, FALLBACK_OCCASION } from '../../js/render.js';
 import { esc, TEMPLATE_TOKENS } from '../../js/tokens.js';
 import { geom } from '../../js/fit-text.js';
-import { nowInState, storeNow } from '../../js/hours.js';
+import { nowInStateOn, storeDate } from '../../js/hours.js';
 
 const $ = (id) => document.getElementById(id);
 const pref = {
@@ -117,7 +117,8 @@ let ver = 0, scene = 0, elapsed = 0, playing = true, last = performance.now(), l
 const seq = () => (model ? sequence(model.play) : [{ k: 0, t: 3 }]);
 
 // "Open today bar in the preview": which message the preview's bar shows. null follows the store's clock (what the
-// screen does); otherwise the preview is drawn at a store time today in that state (hours.js nowInState). Editor only.
+// screen does); otherwise the preview is drawn at a store time in that state, today where today allows, on the real
+// dates so a special day (Christmas Day closed) is never previewed as open (hours.js nowInStateOn). Editor only.
 const BAR_STATES = [
   { k: null, label: "Store's time" },
   { k: 'open', label: 'While open', box: 'ftOpen' },
@@ -126,9 +127,12 @@ const BAR_STATES = [
   { k: 'closed', label: 'After closing', box: 'ftClosed' },
 ];
 let barState = null, barFor = '';
-function previewNow(store) {
-  if (!barState || !store) return undefined;
-  return nowInState(store.sessions, barState, storeNow(store.tz)) || undefined;
+function previewClock(store) {
+  if (!barState || !store) return {};
+  const at = nowInStateOn(store.sessions, store.special, barState, storeDate(store.tz));
+  if (!at) return {};
+  const [y, m, d] = at.ymd.split('-').map(Number);
+  return { now: { day: at.day, min: at.min }, today: { y, m, d } };
 }
 function markBar() {
   BAR_STATES.forEach((x) => { const b = x.box && $(x.box); if (b) b.closest('.rtf').classList.toggle('focus', x.k === barState); });
@@ -161,7 +165,8 @@ function renderScreen(force) {
   try {
     model = previewModel();
     if (scene >= sequence(model.play).length) scene = 0;
-    renderScene(el, { store: model.store, play: model.play, orientation: orient, scene, now: previewNow(model.store), enter: sceneChanged, loop: occLoop });
+    const pc = previewClock(model.store);
+    renderScene(el, { store: model.store, play: model.play, orientation: orient, scene, now: pc.now, today: pc.today, enter: sceneChanged, loop: occLoop });
   } catch (e) {
     model = null;
     renderMessage(el, orient, 'Preview unavailable', (e && (e.detail || e.message)) || String(e));
@@ -190,10 +195,15 @@ function renderSceneBtns() {
 const secs = (t) => (Math.round(t * 10) / 10).toFixed(1) + 's';
 function setPlaying(v) { playing = v; $('playIc').textContent = v ? 'pause' : 'play_arrow'; $('playTx').textContent = v ? 'Pause' : 'Play'; }
 
+// The opening hours template leaves its unedited "Public Holidays" headline out while special hours are listed
+// (render.js resolvePromotion, droppedHeadline): headline field h is then scene h, or h - 1 after the left-out one.
+const droppedHl = () => (model && model.play && model.play.droppedHeadline >= 0 ? model.play.droppedHeadline : -1);
+const sceneOfHeadline = (h) => { const x = droppedHl(); return x < 0 || h < x ? h : h === x ? -1 : h - 1; };
+const headlineOfScene = (i) => { const x = droppedHl(); return x < 0 || i < x ? i : i + 1; };
 function editorTarget(i) {
   if (isOcc()) return document.querySelector(`#occList .slot[data-o="${i}"]`);
   if (isSale()) return document.querySelector(`#dpBody .slot[data-sc="${i}"]`);
-  if (isHours()) return document.querySelector(`#hlSec .slot[data-h="${i}"]`);
+  if (isHours()) return document.querySelector(`#hlSec .slot[data-h="${headlineOfScene(i)}"]`);
   const s = seq()[i];
   if (!s) return null;
   if (s.k === 'intro') return $('dg') && $('dg').closest('.slot');
@@ -228,7 +238,7 @@ $('dpBody').addEventListener('focusin', (e) => {
   const sl = e.target.closest('.slot');
   if (isOcc()) { if (sl && sl.dataset.o !== undefined) i = +sl.dataset.o; }
   else if (isSale()) { if (sl && sl.dataset.sc !== undefined) i = +sl.dataset.sc; }
-  else if (isHours()) { if (sl && sl.dataset.h !== undefined) i = +sl.dataset.h; }
+  else if (isHours()) { if (sl && sl.dataset.h !== undefined) i = sceneOfHeadline(+sl.dataset.h); }
   else if (sl) { if (sl.dataset.i !== undefined) i = +sl.dataset.i + 1; else if (sl.querySelector('#dg')) i = 0; else if (sl.querySelector('#cdur')) i = content().slots.length + 1; }
   if (i < 0) return;
   if (i !== scene || playing) goScene(i, false);

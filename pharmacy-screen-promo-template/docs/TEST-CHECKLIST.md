@@ -52,7 +52,7 @@ Use the campaign URL with a real device: `<site>/pharmacy-screen.html?device=<de
 |---|---|---|---|---|
 | D1 | Open it | The debug panel shows the right store code and store for that device | ☐ | ☐ |
 | D2 | Check the greeting | `${Suburb}` is the store's suburb (a store with no suburb shows the greeting with no trailing comma) | ☐ | ☐ |
-| D3 | `promo=closed` | That store's weekly opening hours, "Public Holidays: Please call to confirm" and its phone number | ☐ | ☐ |
+| D3 | `promo=closed` | That store's weekly opening hours, "Public Holidays: Please call to confirm" and its phone number (a store with special hours set in PH in the next 90 days: those, under "Special hours", instead of the "Public Holidays" line) | ☐ | ☐ |
 | D4 | Debug panel → store time | The store's local time in `store_timezone` (also when the browser is in another zone) | ☐ | ☐ |
 | D5 | Change the store's hours in PH | The screen shows the new hours within about 35 s, without a reload | ☐ | ☐ |
 | D6 | `device=UNKNOWN-123` | "Screen not set up" with the device ID shown | ☐ | ☐ |
