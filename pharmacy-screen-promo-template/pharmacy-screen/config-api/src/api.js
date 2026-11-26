@@ -21,6 +21,7 @@ const crypto = require("node:crypto");
 const { ApiError, bad } = require("./validate");
 const { createConfigService } = require("./service");
 const { createRateLimiter } = require("./rate-limit");
+const { createVideoJobs } = require("./video/jobs");
 
 const JSON_LIMIT = 2 * 1024 * 1024;
 // A CSP report is a few hundred bytes; anything bigger is not one.
@@ -80,8 +81,11 @@ const PUBLIC_MAX_AGE = 5;
 // screensPerClientLimit: GET /api/screens/** requests per client address per minute (per instance; 0 = no limit).
 // Counted only when the entry point passes the address (req.ip): the Cloud Function and the Lambda do, the local
 // dev servers don't. clock: milliseconds, for that limit (tests).
-function createConfigApi({ store, blobs, auth, allowedOrigins = [], now, log = () => {}, screensPerClientLimit = 600, clock }) {
+// video: {screenPageUrl, dispatch(jobId), now?} turns on Download MP4 (src/video/jobs.js); without it the two
+// /api/admin/videos routes answer 503.
+function createConfigApi({ store, blobs, auth, allowedOrigins = [], now, log = () => {}, screensPerClientLimit = 600, clock, video = {} }) {
   const svc = createConfigService({ store, blobs, now, log });
+  const videos = createVideoJobs({ store, svc, screenPageUrl: video.screenPageUrl, dispatch: video.dispatch, now: video.now, log });
   const origins = new Set(allowedOrigins.filter(Boolean));
   const screensLimiter = createRateLimiter({ limit: screensPerClientLimit, now: clock });
   const cspLimiter = createRateLimiter({ limit: CSP_REPORTS_PER_CLIENT_PER_MIN, now: clock });
@@ -158,6 +162,10 @@ function createConfigApi({ store, blobs, auth, allowedOrigins = [], now, log = (
   route("DELETE", "/api/admin/services/{id}", (r) => svc.deleteService(r.actor, r.params.id, v(r)));
 
   route("GET", "/api/admin/audit", ({ query }) => svc.listAudit(query));
+
+  // Download MP4: admin only (the default), one render at a time (src/video/jobs.js).
+  route("POST", "/api/admin/videos", ({ actor, json }) => created(videos.start(actor, json())));
+  route("GET", "/api/admin/videos/{id}", ({ params }) => videos.get(params.id));
 
   // ── dispatch ───────────────────────────────────────────────────────────
   const CREATED = Symbol("created");

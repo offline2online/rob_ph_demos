@@ -36,6 +36,8 @@ const { createMemoryStore } = require(path.join(ROOT, 'config-api/src/adapters/m
 const { createMemoryBlobs } = require(path.join(ROOT, 'config-api/src/adapters/blobs.js'));
 const { createStaticAuth } = require(path.join(ROOT, 'config-api/src/adapters/auth.js'));
 const { seedConfig } = require(path.join(ROOT, 'seed/seed.js'));
+const { runVideoJob } = require(path.join(ROOT, 'config-api/src/video/jobs.js'));
+const { cloudRender } = require(path.join(ROOT, 'config-api/src/video/worker.js'));
 const { createApi: createPhApi } = require(path.join(ROOT, 'ph-proxy/src/create-api.js'));
 const { memorySettingsStore, memoryAuditLog } = require(path.join(ROOT, 'ph-proxy/src/stores.js'));
 const { createEnvelopeSecretStore, localKmsProvider } = require(path.join(ROOT, 'ph-proxy/src/secret-store.js'));
@@ -75,7 +77,17 @@ async function readBody(req) {
   return Buffer.concat(chunks);
 }
 
-export async function startDevServer({ port = 0, seed = true, quiet = false, phEmbed = false, phFallback = false } = {}) {
+// Download MP4 runs here too, in this process, with this machine's Chromium (Playwright's, or CHROMIUM_PATH) and
+// ffmpeg (FFMPEG_PATH, else the one on the PATH); the file is served from memory at /__exports/<job>/<file name>.
+// The seeded pharmacies get their mock screen device IDs (fixtures/campaign-data.json), so the video reads the
+// mock Location API data. A real deployment's seed sets none: an administrator enters each pharmacy's own.
+async function devLaunch() {
+  let pw;
+  try { pw = require('playwright'); } catch { pw = require('playwright-core'); }
+  return pw.chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
+}
+
+export async function startDevServer({ port = 0, seed = true, quiet = false, phEmbed = false, phFallback = false, video = true } = {}) {
   const logLines = [];
   const log = (level, msg) => { logLines.push(`[config-api] [${level}] ${msg}`); if (!quiet) console.error(`[${level}] ${msg}`); };
   const store = createMemoryStore();
@@ -87,8 +99,32 @@ export async function startDevServer({ port = 0, seed = true, quiet = false, phE
   const staticAuth = createStaticAuth(USERS);
   const bearerOf = (h) => { const m = /^Bearer\s+(.+)$/i.exec(String(h || '')); return m ? m[1].trim() : null; };
   const whoIs = async (header) => sessions.get(bearerOf(header)) || (phEmbed ? null : await staticAuth.identify(header));
-  const configApi = createConfigApi({ store, blobs, auth: { kind: 'dev', identify: whoIs }, log });
-  if (seed) await seedConfig({ store, blobs, log });
+  const exportsMap = new Map(); // "<job id>/<file name>" -> MP4 bytes
+  let server = null;
+  const videoConfig = video ? {
+    screenPageUrl: () => `http://127.0.0.1:${server.address().port}/pharmacy-screen.html`,
+    dispatch: async (jobId) => {
+      setImmediate(() => runVideoJob(jobId, {
+        store,
+        render: cloudRender({ launch: devLaunch, ffmpegPath: process.env.FFMPEG_PATH || 'ffmpeg' }),
+        upload: async (job, file, fileName, id) => {
+          exportsMap.set(`${id}/${fileName}`, fs.readFileSync(file));
+          fs.rmSync(file, { force: true });
+          return { url: `/__exports/${encodeURIComponent(id)}/${encodeURIComponent(fileName)}` };
+        },
+        log,
+      }));
+    },
+  } : {};
+  const configApi = createConfigApi({ store, blobs, auth: { kind: 'dev', identify: whoIs }, log, video: videoConfig });
+  if (seed) {
+    await seedConfig({ store, blobs, log });
+    const fixtures = JSON.parse(fs.readFileSync(path.join(ROOT, 'seed/fixtures/pharmacies.json'), 'utf8')).pharmacies || [];
+    for (const r of await store.list('pharmacies')) {
+      const fx = fixtures.find((f) => f.storeCode === r.storeCode && f.device);
+      if (fx) await store.transaction(async (tx) => { const { id, ...rest } = r; tx.set('pharmacies', id, { ...rest, device: fx.device }); });
+    }
+  }
 
   const devices = JSON.parse(fs.readFileSync(path.join(ROOT, 'fixtures/campaign-data.json'), 'utf8')).devices || {};
   const upstreamCalls = [];
@@ -125,7 +161,7 @@ export async function startDevServer({ port = 0, seed = true, quiet = false, phE
   });
 
   const idTtlSeconds = { value: 3600 }; // tests shorten it to exercise renewal
-  const server = http.createServer(async (req, res) => {
+  server = http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, 'http://localhost');
       const p = url.pathname;
@@ -157,6 +193,13 @@ export async function startDevServer({ port = 0, seed = true, quiet = false, phE
       if (p === '/api' || p.startsWith('/api/')) {
         const body = await readBody(req);
         return send(await configApi.handle({ method: req.method, path: p, headers: req.headers, query: Object.fromEntries(url.searchParams), body }));
+      }
+      if (p.startsWith('/__exports/')) {
+        const key = p.slice('/__exports/'.length).split('/').map(decodeURIComponent).join('/');
+        const bytes = exportsMap.get(key);
+        if (!bytes) { res.statusCode = 404; return res.end(); }
+        res.writeHead(200, { 'Content-Type': 'video/mp4', 'Content-Disposition': `attachment; filename="${key.split('/')[1]}"`, 'Cache-Control': 'no-store' });
+        return res.end(bytes);
       }
       if (p.startsWith('/media/')) {
         const obj = blobs.objects.get(decodeURIComponent(p.slice('/media/'.length)));

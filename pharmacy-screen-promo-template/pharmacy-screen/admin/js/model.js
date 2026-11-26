@@ -401,7 +401,7 @@ export const clampDur = (v) => { const n = parseFloat(v); return Number.isFinite
  */
 export function editsSince(sent, ph) {
   const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
-  const details = !same(sent.name, ph.name) || !same(sent.storeCode, ph.storeCode) || !same(sent.colours, ph.colours);
+  const details = !same(sent.name, ph.name) || !same(sent.storeCode, ph.storeCode) || !same(sent.colours, ph.colours) || !same(sent.device || '', ph.device || '');
   const was = sent.content || {}, now = ph.content || {};
   const content = Object.keys(now).filter((id) => !same(was[id], now[id]));
   return { details, content };

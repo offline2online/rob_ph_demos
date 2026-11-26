@@ -48,6 +48,15 @@ function getApi(env = process.env, deps = {}) {
     // credential. Only the route and the error.
     log: (level, msg) => (level === "error" ? console.error(msg) : console.warn(msg)),
     screensPerClientLimit: count(env.PS_RATE_LIMIT_SCREENS_PER_IP_PER_MIN, 600),
+    // Download MP4: the worker Lambda (video-worker.js), invoked asynchronously; unset on a stack without it.
+    video: env.PS_VIDEO_FUNCTION ? {
+      screenPageUrl: env.PS_SCREEN_PAGE_URL || "",
+      dispatch: async (jobId) => {
+        const sdk = deps.lambdaSdk || require("@aws-sdk/client-lambda");
+        const client = deps.lambda || new sdk.LambdaClient({});
+        await client.send(new sdk.InvokeCommand({ FunctionName: env.PS_VIDEO_FUNCTION, InvocationType: "Event", Payload: Buffer.from(JSON.stringify({ jobId })) }));
+      },
+    } : {},
   });
   return api;
 }
