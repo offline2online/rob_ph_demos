@@ -30,7 +30,7 @@ Then:
 1. Open the printed **Admin** URL, sign in (Cognito emails a temporary password).
 2. Admin → **Settings**: PH API base URL (default `https://ph.mipharmacy.net`) and the PH API token. The token
    is write-only and stored KMS-encrypted; never put it in a file.
-3. `npm run seed:aws -- --region ap-southeast-2` loads the five launch pharmacies, four promotions and the
+3. `npm run seed:aws -- --region ap-southeast-2` loads the five launch pharmacies, five promotions (Sales Promos first) and the
    service library.
 4. In PH, register each screen to its store and set the campaign's Experience URL to the printed **Campaign**
    URL (`…/pharmacy-screen.html?device=${UniqueDeviceID}&promo=morning&orientation=portrait`), with the playback

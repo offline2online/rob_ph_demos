@@ -125,7 +125,7 @@ test('the session renews from the parent before it runs out, and ends when PH si
 });
 
 // The PH content frame is not given clipboard access, so the Clipboard API rejects every write in it: Copy experience
-// URL falls back to the copy command. Every promotion (Morning, Afternoon, Closed and Seasonal in each season) and
+// URL falls back to the copy command. Every promotion (Sales Promos, Morning, Afternoon, Closed and Seasonal in each season) and
 // both orientations copy the URL of what is on the preview.
 test('Copy experience URL copies the right URL in the PH frame: every promotion, season and orientation', async () => {
   const { ctx, frame } = await host('as=hq');
@@ -146,7 +146,10 @@ test('Copy experience URL copies the right URL in the PH frame: every promotion,
     assert.deepEqual(r, { label: 'Copied', copied: want, field: false }, `${what} ${o}`);
     assert.equal(await frame.textContent('#cpTip'), want, `${what} ${o} tooltip`);
   };
-  for (const [tab, promo] of [['Morning', 'morning'], ['Afternoon', 'afternoon'], ['Closed', 'closed']]) {
+  // The tabs, in order: Sales Promos first (selected when the editor opens), then the other four defaults.
+  assert.deepEqual(await frame.$$eval('#dpTabs button', (b) => b.map((x) => x.textContent.replace(/^(sell|campaign|schedule|celebration)/, '').replace(/Sale has ended$/, ''))), ['Sales Promos', 'Morning', 'Afternoon', 'Closed', 'Seasonal']);
+  assert.equal(await frame.getAttribute('#dpTabs button:nth-child(1)', 'aria-selected'), 'true');
+  for (const [tab, promo] of [['Sales Promos', 'sale'], ['Morning', 'morning'], ['Afternoon', 'afternoon'], ['Closed', 'closed']]) {
     await frame.click(`#dpTabs button:has-text("${tab}")`);
     for (const o of ['portrait', 'landscape']) await check(promo, o, tab);
   }
@@ -183,5 +186,25 @@ test('Copy experience URL: when the browser refuses to copy at all, the URL is s
   assert.equal(await frame.inputValue('#cpField'), want.replace('orientation=landscape', 'orientation=portrait'));
   // The label goes back to "Copy experience URL".
   await frame.waitForFunction(() => document.getElementById('cpTx').textContent === 'Copy experience URL', null, { timeout: 6000 });
+  await ctx.close();
+});
+
+test('Retail Admin: a store user edits its own pharmacy\'s Sales Promos copy, and only its own', async () => {
+  const { ctx, frame } = await host('as=store&store=VIC-MP-003');
+  // Sales Promos is the first tab and opens selected; no promotion settings and no scene timings for a store user.
+  assert.equal(await frame.getAttribute('#dpTabs button[data-dp="seed-promotion-sale"]', 'aria-selected'), 'true');
+  assert.equal(await frame.isHidden('#promoMeta'), true);
+  assert.equal(await frame.isHidden('#sl1dur'), true);
+  await frame.fill('#slVal', '20');
+  await frame.fill('#slB0', 'SWISSE');
+  await frame.evaluate(() => window.pharmacyAdmin.flush());
+  await frame.waitForFunction(() => !window.pharmacyAdmin.pending());
+  const [idToken] = [...dev.sessions.entries()].find(([, a]) => a.stores.includes('VIC-MP-003'));
+  const call = (method, path, body) => fetch(dev.base + path, { method, headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+  const mine = await (await call('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-003')).json();
+  assert.deepEqual([mine.content['seed-promotion-sale'].sale.value, mine.content['seed-promotion-sale'].sale.brands[0]], [20, 'SWISSE']);
+  // Another pharmacy's copy, and the promotion itself, stay out of reach.
+  assert.equal((await call('PUT', '/api/admin/pharmacies/seed-pharmacy-vic-mp-001/content/seed-promotion-sale', { sale: { value: 5 } })).status, 403);
+  assert.equal((await call('DELETE', '/api/admin/promotions/seed-promotion-sale')).status, 403);
   await ctx.close();
 });

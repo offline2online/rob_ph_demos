@@ -11,7 +11,7 @@ import { createSaveQueue } from './save-queue.js';
 import { rt, pt, bindRichText, bindPlainText } from './rich-text.js';
 import { openPicker, closePicker } from './icon-picker.js';
 import * as M from './model.js';
-import { storeModel, resolvePromotion, sequence, sceneName, renderScene, renderMessage, DEFAULT_HTML, footerConfig, boost, tileTop, occasionOf, occasionFieldName, beatSeconds, seasonDates, seasonDatesOf, fmtMonthDay, scheduledOccasion, activationUntil, activationOn, FALLBACK_OCCASION } from '../../js/render.js';
+import { storeModel, resolvePromotion, sequence, sceneName, renderScene, renderMessage, saleCopy, saleFooter, saleFinishes, saleDateText, saleValue, cleanYmd, SALE_MAX_BRANDS, SALE_MAX_BRAND_LENGTH, DEFAULT_HTML, footerConfig, boost, tileTop, occasionOf, occasionFieldName, beatSeconds, seasonDates, seasonDatesOf, fmtMonthDay, scheduledOccasion, activationUntil, activationOn, FALLBACK_OCCASION } from '../../js/render.js';
 import { esc, TEMPLATE_TOKENS } from '../../js/tokens.js';
 import { geom } from '../../js/fit-text.js';
 import { nowInState, storeNow } from '../../js/hours.js';
@@ -60,6 +60,7 @@ const promo = (id = S.dpTab) => S.promotions.find((p) => p.id === id) || S.promo
 const baseOf = (id = S.dpTab) => (promo(id) ? M.baseOfTemplate(S.templates, promo(id).templateId) : 'scenes');
 const isHours = (id = S.dpTab) => baseOf(id) === 'hours';
 const isOcc = (id = S.dpTab) => baseOf(id) === 'occasion';
+const isSale = (id = S.dpTab) => baseOf(id) === 'sale';
 // A Seasonal promotion's "Currently active promotion" drop-down (23 Nov 2026). liveSeasonOf: what this pharmacy's
 // screens play today (M.seasonOf, as the screen works it out: a running "Activate on display", else the season whose
 // dates hold today, else the Fallback; the master template has no screens, so just its dates). seasonOf: what the
@@ -82,7 +83,8 @@ function content(id = S.dpTab) {
   const all = S.cur.content || (S.cur.content = {});
   if (S.cur.isMaster && !all[p.id]) all[p.id] = p.master || M.clone((S.masterSrc && S.masterSrc.content && S.masterSrc.content[p.id]) || M.newContentFor({ promoId: p.promoId }, baseOf(id)));
   const b = baseOf(id), c = all[p.id];
-  const fits = b === 'occasion' ? c && c.occasions && M.OCCASION_CHOICES.every((o) => c.occasions[o.id] && Array.isArray(c.occasions[o.id].beats) && c.occasions[o.id].beats.length === occasionOf(o.id).beats.length)
+  const fits = b === 'sale' ? c && c.sale && Array.isArray(c.sale.brands) && c.sale.brands.length > 0 && !!cleanYmd(c.sale.endDate)
+    : b === 'occasion' ? c && c.occasions && M.OCCASION_CHOICES.every((o) => c.occasions[o.id] && Array.isArray(c.occasions[o.id].beats) && c.occasions[o.id].beats.length === occasionOf(o.id).beats.length)
     : b === 'hours' ? c && Array.isArray(c.headlines) && c.headlines.length >= 3 : c && Array.isArray(c.slots) && c.close && typeof c.greeting === 'string';
   if (!fits) all[p.id] = c ? M.ensureContent(c, b) : M.newContentFor(p, b);
   if (!S.cur.isMaster && p.master) {
@@ -174,6 +176,7 @@ function setPlaying(v) { playing = v; $('playIc').textContent = v ? 'pause' : 'p
 
 function editorTarget(i) {
   if (isOcc()) return document.querySelector(`#occList .slot[data-o="${i}"]`);
+  if (isSale()) return document.querySelector(`#dpBody .slot[data-sc="${i}"]`);
   if (isHours()) return document.querySelector(`#hlSec .slot[data-h="${i}"]`);
   const s = seq()[i];
   if (!s) return null;
@@ -208,6 +211,7 @@ $('dpBody').addEventListener('focusin', (e) => {
   let i = -1;
   const sl = e.target.closest('.slot');
   if (isOcc()) { if (sl && sl.dataset.o !== undefined) i = +sl.dataset.o; }
+  else if (isSale()) { if (sl && sl.dataset.sc !== undefined) i = +sl.dataset.sc; }
   else if (isHours()) { if (sl && sl.dataset.h !== undefined) i = +sl.dataset.h; }
   else if (sl) { if (sl.dataset.i !== undefined) i = +sl.dataset.i + 1; else if (sl.querySelector('#dg')) i = 0; else if (sl.querySelector('#cdur')) i = content().slots.length + 1; }
   if (i < 0) return;
@@ -335,6 +339,7 @@ function renderDp() {
     return;
   }
   if (isOcc()) { renderOccasion(B, d); hideTimings(B); decorateSections(B); return; }
+  if (isSale()) { renderSale(B, d); hideTimings(B); decorateSections(B); return; }
   const f = pt; // every plain copy field has + Add token and its tokens used (rich-text.js)
   const F = footerConfig(d);
   B.innerHTML = `<span class="pill" id="loopLen" style="justify-self:start"></span><div><div class="slot"><div class="slot-h">Top: Greeting<label class="dur" style="margin-left:auto" title="How long this shows on screen"><span class="ms">timer</span><input type="number" id="ddur" min="1" max="60" step="0.5" value="${+d.introDur || 3}" aria-label="Seconds on screen">s</label></div><div class="stack">${rt('dg', 'Headline', d.greeting)}${f('dit', 'Line 1', d.introTitle)}${f('dis', 'Line 2', d.introSub)}</div></div></div>
@@ -537,7 +542,8 @@ async function restoreDefaults() {
   await Save.flush();
   ph.detached = seasonalOnly(ph.detached);
   S.note = null;
-  const ids = S.promotions.filter((p) => p.master && !isOcc(p.id)).map((p) => p.id);
+  // Sales Promos has no sections (its copy is the pharmacy's own), so it is left as it is, like Seasonal.
+  const ids = S.promotions.filter((p) => p.master && !isOcc(p.id) && !isSale(p.id)).map((p) => p.id);
   for (const id of ids) content(id); // each inherited section takes the master's copy again
   ver++; lastKey = ''; scene = 0; elapsed = 0; renderDp(); renderJson(); renderRestore();
   const id = ph.id;
@@ -699,6 +705,91 @@ function renderFallback(B, occ, o, field) {
   occ.beats.forEach((_, i) => bindRt(`o${i}text`, (v) => { o.beats[i].text = v; }));
 }
 
+// ───────────────────────── Sales Promos (promo=sale) ─────────────────────────
+
+/**
+ * The Sales Promos tab: this pharmacy's own sale copy (content.sale, js/render.js saleCopy). Scene 1 (the brands):
+ * the headline's two lines, the brands (1-6, added, removed and reordered here) and caption line 1. Scene 2 (the
+ * offer): the lead-in, the value (1-99, shown with %), the suffix, the end date (a date picker: its wording, with the
+ * weekday, is worked out from it and feeds caption line 2, the panel and the footer) and the panel label. Each scene's
+ * seconds (administrators only). The footer band's two lines are derived from the copy unless written by hand.
+ * "Sale has ended" shows at the top (and on the tab) once the end date is over at the store.
+ */
+function renderSale(B, d) {
+  const c = d.sale = saleCopy(d.sale);
+  const f = pt;
+  const ended = M.saleHasEnded(d);
+  const derived = saleFooter({ ...c, footer: undefined });
+  const custom = !!(c.footer && c.footer.custom);
+  const n = c.brands.length;
+  const endHelp = 'The screens play the sale up to and including this date, in the store\'s time zone. From the next day they show this pharmacy\'s Morning promotion before 12:00 and Afternoon after. The weekday is worked out from the date.';
+  const footHelp = 'The band at the bottom of both scenes. By default its two lines are made from the headline, the offer and the end date.';
+  B.innerHTML = `${ended ? `<div class="inh-alert warn" id="saleEnded" role="status"><span class="ms">event_busy</span><span><b>Sale has ended.</b> ${esc(saleDateText(c.endDate))} is over, so this pharmacy's screens show Morning or Afternoon instead. Choose a later end date to run it again.</span></div>` : ''}
+   <span class="pill" id="loopLen" style="justify-self:start">${loopText(M.loopSeconds(d, 'sale'))}</span>
+   <div class="slot" data-sc="0" id="slScene1"><div class="slot-h">Scene 1: The brands${durInput('sl1dur', c.s1)}</div>
+     <div class="stack"><div class="grid2">${f('slH1', 'Headline line 1', c.headline1)}${f('slH2', 'Headline line 2', c.headline2)}</div>
+     <div class="f"><span>Brands <span class="hint">(${n} of ${SALE_MAX_BRANDS})</span></span>
+       <div class="slbrands" id="slBrands">${c.brands.map((b, i) => `<div class="slbrand" data-b="${i}"><input id="slB${i}" value="${esc(b)}" maxlength="${SALE_MAX_BRAND_LENGTH}" aria-label="Brand ${i + 1}">
+         <button type="button" class="text mv" data-mv="-1" ${i ? '' : 'disabled'} title="Move up" aria-label="Move brand ${i + 1} up"><span class="ms">arrow_upward</span></button><button type="button" class="text mv" data-mv="1" ${i < n - 1 ? '' : 'disabled'} title="Move down" aria-label="Move brand ${i + 1} down"><span class="ms">arrow_downward</span></button>
+         <button type="button" class="text del" ${n > 1 ? '' : 'disabled'} style="color:var(--err)" title="Remove brand" aria-label="Remove brand ${i + 1}"><span class="ms">delete</span></button></div>`).join('')}</div>
+       <button type="button" id="slAdd" style="justify-self:start" ${n < SALE_MAX_BRANDS ? '' : 'disabled'}><span class="ms">add</span>Add brand</button></div>
+     ${f('slCap', 'Caption line 1', c.caption)}
+     <label class="f"><span>Caption line 2<span class="ms help" title="Worked out from the end date.">info</span></span><input id="slCap2" value="${esc(saleFinishes(c))}" readonly></label></div></div>
+   <div class="slot" data-sc="1" id="slScene2"><div class="slot-h">Scene 2: The offer${durInput('sl2dur', c.s2)}</div>
+     <div class="stack"><div class="grid3">${f('slLead', 'Offer lead-in', c.lead)}<label class="f"><span>Offer value</span><span class="slpct"><input type="number" id="slVal" min="1" max="99" step="1" value="${c.value}" aria-label="Offer value, per cent">%</span></label>${f('slSuf', 'Offer suffix', c.suffix)}</div>
+     <span class="hint err" id="slValErr" hidden>Use a whole number from 1 to 99.</span>
+     <div class="grid2"><label class="f"><span>End date<span class="ms help" title="${esc(endHelp)}">info</span></span><input type="date" id="slEnd" value="${esc(c.endDate)}" required></label>
+       <div class="f"><span>Shown as</span><span class="pill" id="slEndTx" style="justify-self:start;min-height:32px"><span class="ms" style="font-size:14px" aria-hidden="true">event</span><span>${esc(saleDateText(c.endDate))}</span></span></div></div>
+     ${f('slPanel', 'Panel label', c.panelLabel)}</div></div>
+   <div class="slot" id="slFoot"><div class="slot-h">Footer band<span class="ms help" title="${esc(footHelp)}">info</span><label class="chk" style="margin-left:auto;font-weight:400"><input type="checkbox" id="slFtOwn" ${custom ? 'checked' : ''}>Write my own</label></div>
+     <div class="stack">${custom ? `${f('slF1', 'Line 1', c.footer.line1)}${f('slF2', 'Line 2', c.footer.line2)}`
+       : `<label class="f"><span>Line 1</span><input id="slF1" value="${esc(derived.line1)}" readonly></label><label class="f"><span>Line 2</span><input id="slF2" value="${esc(derived.line2)}" readonly></label>`}</div></div>`;
+  // Lines worked out from the copy, refreshed as it changes.
+  const derive = () => {
+    $('loopLen').textContent = loopText(M.loopSeconds(d, 'sale'));
+    $('slCap2').value = saleFinishes(c);
+    if (!(c.footer && c.footer.custom)) { const x = saleFooter({ ...c, footer: undefined }); $('slF1').value = x.line1; $('slF2').value = x.line2; }
+  };
+  const edit = (fn) => { fn(); changed(); derive(); };
+  const text = (id, k) => { $(id).oninput = (e) => edit(() => { c[k] = e.target.value; }); bindPlainText(id); };
+  text('slH1', 'headline1'); text('slH2', 'headline2'); text('slCap', 'caption'); text('slLead', 'lead'); text('slSuf', 'suffix'); text('slPanel', 'panelLabel');
+  $('sl1dur').oninput = (e) => edit(() => { c.s1 = M.clampDur(e.target.value) ?? 3.5; });
+  $('sl2dur').oninput = (e) => edit(() => { c.s2 = M.clampDur(e.target.value) ?? 5.85; });
+  $('slVal').oninput = (e) => {
+    const v = saleValue(e.target.value);
+    $('slValErr').hidden = v !== undefined;
+    if (v !== undefined) edit(() => { c.value = v; });
+  };
+  $('slEnd').onchange = (e) => {
+    const v = cleanYmd(e.target.value);
+    if (!v) { e.target.value = c.endDate; return; }
+    c.endDate = v; changed();
+    keepPlace('#slEnd', () => { lastKey = ''; renderDp(); });
+  };
+  // The brands: a structural change redraws the tab (and the preview's grid), keeping the place on the page.
+  const restructure = (sel) => { changed(); keepPlace(sel, () => { lastKey = ''; renderDp(); }); };
+  c.brands.forEach((_, i) => { $(`slB${i}`).oninput = (e) => edit(() => { c.brands[i] = e.target.value; }); });
+  $('slBrands').querySelectorAll('.slbrand').forEach((row) => {
+    const i = +row.dataset.b;
+    row.querySelectorAll('.mv').forEach((b) => { b.onclick = () => { const j = i + +b.dataset.mv; [c.brands[i], c.brands[j]] = [c.brands[j], c.brands[i]]; restructure(`#slB${j}`); }; });
+    row.querySelector('.del').onclick = () => { if (c.brands.length > 1) { c.brands.splice(i, 1); restructure('#slAdd'); } };
+  });
+  $('slAdd').onclick = () => {
+    if (c.brands.length >= SALE_MAX_BRANDS) return;
+    c.brands.push('NEW BRAND');
+    restructure('#slAdd');
+    const inp = $(`slB${c.brands.length - 1}`); if (inp) { inp.focus(); inp.select(); }
+  };
+  $('slFtOwn').onchange = (e) => {
+    if (e.target.checked) { const x = saleFooter({ ...c, footer: undefined }); c.footer = { custom: true, line1: x.line1, line2: x.line2 }; } else delete c.footer;
+    restructure('#slFtOwn');
+  };
+  if (custom) {
+    $('slF1').oninput = (e) => edit(() => { c.footer.line1 = e.target.value; }); bindPlainText('slF1');
+    $('slF2').oninput = (e) => edit(() => { c.footer.line2 = e.target.value; }); bindPlainText('slF2');
+  }
+}
+
 // ───────────────────────── promotions (shared) ─────────────────────────
 
 function selectPromo(id) {
@@ -707,7 +798,9 @@ function selectPromo(id) {
 }
 $('dpTabs').onclick = (e) => { const b = e.target.closest('button'); if (b) selectPromo(b.dataset.dp); };
 function renderPromoTabs() {
-  $('dpTabs').innerHTML = S.promotions.map((x) => `<button role="tab" data-dp="${esc(x.id)}" aria-selected="${x.id === S.dpTab}" title="promo=${esc(x.promoId)}"><span class="ms" style="font-size:16px">${isHours(x.id) ? 'schedule' : isOcc(x.id) ? 'celebration' : 'campaign'}</span>${esc(x.name)}</button>`).join('');
+  // Sales Promos whose end date is over at the store says so on its tab ("Sale has ended").
+  const ended = (x) => isSale(x.id) && !!S.cur && M.saleHasEnded(S.cur.content && S.cur.content[x.id] ? S.cur.content[x.id] : x.master);
+  $('dpTabs').innerHTML = S.promotions.map((x) => `<button role="tab" data-dp="${esc(x.id)}" aria-selected="${x.id === S.dpTab}" title="promo=${esc(x.promoId)}"><span class="ms" style="font-size:16px">${isHours(x.id) ? 'schedule' : isOcc(x.id) ? 'celebration' : isSale(x.id) ? 'sell' : 'campaign'}</span>${esc(x.name)}${ended(x) ? '<span class="tabflag">Sale has ended</span>' : ''}</button>`).join('');
   tabsActiveIntoView();
 }
 
@@ -741,7 +834,8 @@ new ResizeObserver(tabsActiveIntoView).observe($('dpTabs'));
 function tplOptions(sel, withOccasions) {
   const g = (lab, arr) => (arr.length ? `<optgroup label="${lab}">${arr.map((t) => `<option value="${esc(t.id)}" ${t.id === sel ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</optgroup>` : '');
   const occ = (t) => t.kind === 'occasion';
-  return g('Built-in', S.templates.filter((t) => t.builtIn && !occ(t))) + g('Custom', S.templates.filter((t) => !t.builtIn)) + (withOccasions ? g('Seasonal', S.templates.filter(occ)) : '');
+  // The sale template is the Sales Promos promotion's own (the config API refuses it for any other promotion).
+  return g('Built-in', S.templates.filter((t) => t.builtIn && !occ(t) && t.kind !== 'sale')) + g('Custom', S.templates.filter((t) => !t.builtIn)) + (withOccasions ? g('Seasonal', S.templates.filter(occ)) : '');
 }
 // Each season shows its start and end dates after its name ("Christmas (15 Dec – 27 Dec)"), in both views: the dates
 // of the pharmacy (or master template) on screen, the same ones as its Dates card, so they follow a change there.
@@ -795,7 +889,9 @@ function renderPromoMeta() {
   const occ = !!x && isOcc(x.id);
   // Pharmacy view: the grey promotion section (name, promo ID, template, promo= line) is not shown on Morning,
   // Afternoon, Closed or any other non-seasonal promotion; Seasonal keeps only its Season drop-down.
-  $('promoMeta').hidden = !x || (!!S.lock && !occ);
+  // Sales Promos is a built-in like Morning, Afternoon and Closed: no promotion settings in either view (its name, promo ID
+  // and template are fixed, and it can't be deleted; the config API refuses both).
+  $('promoMeta').hidden = !x || (!!S.lock && !occ) || isSale(x.id);
   if (!x) return;
   $('pmName').value = x.name; $('pmToken').value = x.promoId; $('pmTpl').innerHTML = occ ? occasionOptions(M.occasionTemplateId(seasonOf(x))) : tplOptions(x.templateId);
   // Pharmacy view: the promotion's name, promo ID and template are shared by every pharmacy, so read-only (and the

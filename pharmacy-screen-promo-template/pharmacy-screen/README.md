@@ -92,6 +92,23 @@ editor is never touched).
   markup), so the loop's next pass over a scene, or a redraw with nothing changed, skips the fit loop
   (`fitMemoStats` in `js/render.js`; `test/ui/first-load.test.mjs`).
 
+## Sales Promos (`promo=sale`)
+
+The first default promotion (26 Nov 2026), on its own built-in template, **Sales promo** (`builtin-sale`, kind
+`sale`, drawn by `renderSale()` in `js/render.js`, styled under `.sale` in `css/screen.css`, fitted by `fitSale()`
+in `js/fit-text.js`). Two scenes on the brand shell in the pharmacy's own colours and logo, a 10 s loop at the
+defaults: **the brands** (3.5 s: the headline pops into the wedge, 1-6 brand cards pop in 0.3 s apart and float,
+the caption fades up) and **the offer** (0.65 s transition in which the wedge slides down until the brand colour
+fills the screen above the footer band, then 5.85 s: rotating rays, "UP TO", the value counting up from 0 over
+0.8 s with a bounce and a heartbeat, "OFF", the pulsing end-date panel with its glow, the brand list). The footer
+band shows the sale. Every animation is transform or opacity (the count-up changes only the number's text), the
+idle motion stops under reduced motion, and a redraw draws the scene as it ends. The copy is
+`content[<promotion id>].sale` ([docs/DATA-CONTRACT.md](../docs/DATA-CONTRACT.md)); its end date's wording
+("Wednesday 2nd December") is worked out from the date (`saleDateText()`). Once the end date is over in
+`store_timezone`, `resolvePromotion()` plays the pharmacy's Morning promotion before 12:00 and Afternoon from 12:00
+(`endedSale` in `window.pharmacyScreen.info`), and the player's minute tick switches at midnight and noon.
+Tests: `test/sale.test.mjs`, `test/ui/sale.test.mjs`.
+
 ## Seasonal (`promo=occasions`)
 
 A fourth default promotion for every pharmacy, named Seasonal (it was Occasions; the promo ID stays `occasions`
@@ -191,7 +208,7 @@ against `fixtures/config.json`, so the two cannot drift apart silently.
 | File | What it holds |
 |---|---|
 | `fixtures/campaign-data.json` | Mock Location API `campaign_data` responses keyed by device ID, in the real shape (`store_location`, `store_info.opening_hours[]`, `store_info.address_info`). Devices: `TEST` (Beaumaris), `DEVICE-VIC-MP-001` … `DEVICE-VIC-MP-005` (the five launch pharmacies), `TEST-NO-SUBURB` (no suburb, for the `${Suburb}` blanking rule), `TEST-LATE-NIGHT` (a session crossing midnight). |
-| `fixtures/config.json` | Config: promotions (`morning`, `afternoon`, `closed`, `occasions` on Christmas, plus a fixture-only `custom-demo` that uses a custom template), custom templates (HTML with `${…}` tokens, scoped CSS, portrait/landscape backgrounds) and per-pharmacy branding, logo and content, keyed by store code. |
+| `fixtures/config.json` | Config: promotions (`sale` with Beaumaris's sale copy, `morning`, `afternoon`, `closed`, `occasions` on Christmas, plus a fixture-only `custom-demo` that uses a custom template), custom templates (HTML with `${…}` tokens, scoped CSS, portrait/landscape backgrounds) and per-pharmacy branding, logo and content, keyed by store code. |
 
 ## Playback
 
@@ -218,7 +235,7 @@ The admin editor's preview is unchanged: it keeps looping. `scene=<n>` still hol
 | Parameter | Meaning |
 |---|---|
 | `device` | Required. The screen's device ID. Without it the screen shows "Invalid screen URL". An unknown device, or a store with no config, shows "Screen not set up" with the device ID. |
-| `promo` | The promo ID to play (`morning`, `afternoon`, `closed`, `occasions`, …). Defaults to the first promotion. An unknown ID shows "Promotion not found". |
+| `promo` | The promo ID to play (`sale`, `morning`, `afternoon`, `closed`, `occasions`, …). Defaults to the first promotion. An unknown ID shows "Promotion not found". |
 | `orientation` | `portrait` (default, 1080x1920) or `landscape` (1920x1080). |
 | `loop` | `loop=1` loops the promotion forever, for a screen that shows this one campaign only. Without it the promotion plays once and holds its last scene ("Playback" below). |
 | `scene` | Testing only: hold on scene *n* (0-based) instead of playing the promotion (an occasion: beat *n*, held still). |

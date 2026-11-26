@@ -83,8 +83,9 @@ In **Settings** → *Branding*, for the pharmacy picked in *Pharmacies*:
 ## Promotions
 
 Promotions are **shared by all pharmacies**: the tabs across the top. Each has a name, a **promo ID** (what the
-campaign URL's `promo=` names) and a template. The defaults are Morning (`morning`), Afternoon (`afternoon`),
-Closed (`closed`) and Seasonal (`occasions`). Each pharmacy fills in its own copy for each one.
+campaign URL's `promo=` names) and a template. The defaults, in tab order, are Sales Promos (`sale`), Morning
+(`morning`), Afternoon (`afternoon`), Closed (`closed`) and Seasonal (`occasions`). Each pharmacy fills in its own
+copy for each one. The editor opens on the first tab, Sales Promos.
 
 - **New promotion**: Name, Promo ID (lower-case letters, digits and hyphens, unique), Template, **Schedule** →
   **Create promotion**. It appears for every pharmacy. Schedule is **No schedule** by default; choose **Annual**
@@ -105,6 +106,32 @@ Which promotion plays when is set in Personalisation Hub's scheduling, not here.
 On a screen, a promotion plays once through and then stays on its last scene until the screen moves on to its
 next campaign; the next time it comes round, it plays from the start. A screen that shows only this one campaign
 can loop it instead: add `&loop=1` to the end of its campaign URL. The preview here always loops.
+
+## Sales Promos
+
+The first tab. A two-scene sale (a 10 s loop at the defaults, playback duration 11 s) drawn in each pharmacy's own
+colours and logo: **Scene 1: The brands** (the headline pops into the brand panel, the brand cards pop in one after
+another, then the caption) and **Scene 2: The offer** (the brand colour fills the screen, then "UP TO", the offer
+counting up to its value, "OFF", the pulsing "SALE FINISHES" panel with the end date, and the brand list). The
+footer band shows the sale instead of the opening hours. Campaign URL:
+`…/pharmacy-screen.html?device=${UniqueDeviceID}&promo=sale&orientation=portrait`.
+
+It is a built-in, like Morning, Afternoon and Closed: it has no promotion settings section (its name, promo ID and
+template are fixed) and it can't be deleted. Its copy is **each pharmacy's own**: a pharmacy that has not changed it
+shows the default (the Big Brand Sale, finishing Wednesday 2nd December); the first change makes it that pharmacy's,
+and no other pharmacy's copy changes. An administrator can change any pharmacy's; in the pharmacy view a store
+user changes their own.
+
+| Card | What you edit |
+|---|---|
+| **Scene 1: The brands** | Headline line 1 and line 2; **Brands** (1 to 6: **Add brand**, the arrows to reorder, the bin to remove); Caption line 1. Caption line 2 ("Finishes …") is worked out from the end date. Seconds on screen (administrators only) |
+| **Scene 2: The offer** | Offer lead-in ("UP TO"), **Offer value** (a whole number from 1 to 99, shown with %), Offer suffix ("OFF"); **End date**, chosen with the date picker: **Shown as** gives its wording with the weekday ("Wednesday 2nd December"), which is never typed, so it always matches the date; Panel label ("SALE FINISHES"). Seconds on screen (administrators only); the 0.65 s change between the scenes is added to scene 2 |
+| **Footer band** | Its two lines are made from the headline, the offer and the end date ("BIG BRAND SALE · UP TO 30% OFF" / "Finishes Wednesday 2nd December", shown in capitals). Tick **Write my own** to type them yourself |
+
+**After the end date.** The sale runs up to and including its end date, in the store's time zone. From the next
+day the screens show the pharmacy's Morning promotion before 12:00 and its Afternoon promotion from 12:00 instead,
+switching by themselves, and the tab reads **Sale has ended** (with a notice at the top of it). Choose a later end
+date to run the sale again; the preview always plays the sale so you can edit it.
 
 ## Promotion scenes (Morning, Afternoon and similar)
 
@@ -246,7 +273,9 @@ In the pharmacy view:
   season's copy, belong to this pharmacy: changing them changes only its screens, and nothing an administrator
   does to the master template changes them. **Copy from master** (click twice) replaces the copy and dates of
   the season on screen with the master's as they are now.
-- **No promotion settings on Morning, Afternoon or Closed.** The grey section with the promotion name, promo ID,
+- **Sales Promos is the pharmacy's own.** Change its headline, brands, offer, caption, end date (date picker),
+  panel label and footer; the scene seconds are set by an administrator.
+- **No promotion settings on Sales Promos, Morning, Afternoon or Closed.** The grey section with the promotion name, promo ID,
   template, **Edit HTML** and the `promo=` line is not shown on any promotion but Seasonal: they are shared by
   every pharmacy and only an administrator changes them, in the full editor.
 - **Not shown**: the promotion name, promo ID and template section (except the Currently active promotion drop-down and Activate on display), scene timings, Promo preview, Settings (the pharmacy's details, tokens and branding, the other pharmacies and

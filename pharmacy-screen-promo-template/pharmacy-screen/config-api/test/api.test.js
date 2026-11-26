@@ -114,7 +114,7 @@ test("promotions: create, read, list, update, delete", async () => {
 test("templates: built-ins listed and read-only; custom clone, edit, delete", async () => {
   const { call } = setup();
   const list = (await call("GET", "/api/admin/templates")).body;
-  assert.deepEqual(list.map((t) => [t.id, t.builtIn]), [["builtin-promotion-scenes", true], ["builtin-opening-hours", true],
+  assert.deepEqual(list.map((t) => [t.id, t.builtIn]), [["builtin-promotion-scenes", true], ["builtin-opening-hours", true], ["builtin-sale", true],
     ...["fallback", "christmas", "new-year", "australia-day", "valentines-day", "easter", "anzac-day"].map((o) => [`builtin-occasion-${o}`, true])]);
   assert.deepEqual(list.filter((t) => t.kind === "occasion").map((t) => [t.name, t.occasion]), [
     ["Fallback", "fallback"], ["Christmas", "christmas"], ["New Year's", "new-year"], ["Australia Day", "australia-day"], ["Valentine's Day", "valentines-day"], ["Easter", "easter"], ["Anzac Day", "anzac-day"]]);
@@ -124,6 +124,10 @@ test("templates: built-ins listed and read-only; custom clone, edit, delete", as
   assert.equal(occClone.status, 400);
   assert.match(occClone.body.error.message || JSON.stringify(occClone.body), /seasonal template: it has no editable HTML.*Currently active promotion drop-down/);
 
+  // The sale template is read-only and can't be cloned either.
+  const saleClone = await call("POST", "/api/admin/templates/builtin-sale/clone", { body: { name: "Sale copy" } });
+  assert.equal(saleClone.status, 400);
+  assert.match(saleClone.body.error.message, /Sales Promos template: it has no editable HTML/);
   assert.equal((await call("PATCH", "/api/admin/templates/builtin-promotion-scenes", { body: { name: "Mine" } })).status, 403);
   assert.equal((await call("DELETE", "/api/admin/templates/builtin-opening-hours")).status, 403);
   assert.equal((await call("PUT", "/api/admin/templates/builtin-opening-hours/backgrounds/portrait", { body: PNG, headers: { "content-type": "image/png" } })).status, 403);
@@ -151,7 +155,7 @@ test("templates: built-ins listed and read-only; custom clone, edit, delete", as
 
   assert.equal((await call("DELETE", `/api/admin/templates/${tid}`)).status, 200);
   assert.equal((await call("GET", `/api/admin/templates/${tid}`)).status, 404);
-  assert.equal((await call("GET", "/api/admin/templates")).body.length, 11, "nine built-ins and the two customs left");
+  assert.equal((await call("GET", "/api/admin/templates")).body.length, 12, "ten built-ins and the two customs left");
 });
 
 test("services: create, read, list, update, delete", async () => {
@@ -754,4 +758,39 @@ test("the screen read's default limit fits a shared-address estate: 600 a minute
   }
   assert.match(read(".env.example"), /^PS_RATE_LIMIT_SCREENS_PER_IP_PER_MIN=600$/m);
   assert.match(read("docs/CONFIGURATION.md"), /\| `PS_RATE_LIMIT_SCREENS_PER_IP_PER_MIN` \|[^\n]*\| `600` \| `600` \|/);
+});
+
+test("Sales Promos: a built-in that can't be deleted or re-pointed; the sale template is its own; its copy is checked and published", async () => {
+  const { call } = setup();
+  const ph = (await call("POST", "/api/admin/pharmacies", { body: beaumaris })).body;
+  // The sale template is reserved for promo ID sale.
+  assert.equal((await call("POST", "/api/admin/promotions", { body: { name: "Clearance", promoId: "clearance", templateId: "builtin-sale" } })).status, 400);
+  const master = { sale: { headline1: "BIG BRAND", headline2: "SALE", brands: ["TOSHI", "NATIO"], value: 30, endDate: "2026-12-02" } };
+  const sale = (await call("POST", "/api/admin/promotions", { body: { name: "Sales Promos", promoId: "sale", templateId: "builtin-sale", master } })).body;
+  assert.equal(sale.templateId, "builtin-sale");
+  // Its promo ID and template stay; its name can change.
+  const moved = await call("PATCH", `/api/admin/promotions/${sale.id}`, { body: { promoId: "sales" } });
+  assert.equal(moved.status, 409);
+  assert.equal(moved.body.error.code, "builtin-promotion");
+  assert.equal((await call("PATCH", `/api/admin/promotions/${sale.id}`, { body: { templateId: "builtin-promotion-scenes" } })).status, 409);
+  const renamed = await call("PATCH", `/api/admin/promotions/${sale.id}`, { body: { name: "Sales" } });
+  assert.equal(renamed.status, 200);
+  // It can't be deleted.
+  const del = await call("DELETE", `/api/admin/promotions/${sale.id}`);
+  assert.equal(del.status, 409);
+  assert.match(del.body.error.message, /built-in promotion and can't be deleted/);
+  // A pharmacy with no sale copy of its own publishes the master's; its own copy, once saved, wins.
+  let pub = (await call("GET", "/api/screens/VIC-MP-001", { auth: null })).body;
+  assert.equal(pub.promotions.sale.template.kind, "sale");
+  assert.deepEqual(pub.promotions.sale.content.sale.brands, ["TOSHI", "NATIO"]);
+  const own = { sale: { ...master.sale, value: 25, brands: ["CETAPHIL"], endDate: "2026-12-09" } };
+  assert.equal((await call("PUT", `/api/admin/pharmacies/${ph.id}/content/${sale.id}`, { body: own })).status, 200);
+  pub = (await call("GET", "/api/screens/VIC-MP-001", { auth: null })).body;
+  assert.deepEqual([pub.promotions.sale.content.sale.value, pub.promotions.sale.content.sale.brands, pub.promotions.sale.content.sale.endDate], [25, ["CETAPHIL"], "2026-12-09"]);
+  // Bad copy is refused: a date that doesn't exist, an offer out of range, too many brands.
+  const put = (body) => call("PUT", `/api/admin/pharmacies/${ph.id}/content/${sale.id}`, { body });
+  for (const bad of [{ endDate: "2026-02-30" }, { endDate: "2 Dec" }, { value: 0 }, { value: 100 }, { value: 12.5 }, { brands: [] }, { brands: ["A", "B", "C", "D", "E", "F", "G"] }, { brands: ["X".repeat(31)] }, { s1: 0 }, { footer: { line1: "x" } }]) {
+    const r = await put({ sale: { ...master.sale, ...bad } });
+    assert.equal(r.status, 400, JSON.stringify(bad));
+  }
 });

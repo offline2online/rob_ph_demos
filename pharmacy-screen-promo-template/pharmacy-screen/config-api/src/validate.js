@@ -206,10 +206,43 @@ function normaliseTokens(value) {
   return out;
 }
 
+// The Sales Promos copy (content.sale, js/render.js saleCopy): the fields the
+// screen reads are checked here, so a bad end date or offer never reaches a
+// screen. Missing fields are fine (the screen fills them from its defaults).
+const SALE_LIMITS = { brands: 6, brand: 30, text: 200 };
+const SALE_DATE_RE = /^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+function saleValue(sale, field) {
+  if (sale === undefined) return;
+  if (!isPlainObject(sale)) throw bad(`${field} must be an object`);
+  for (const k of ["headline1", "headline2", "lead", "suffix", "caption", "panelLabel"]) {
+    if (sale[k] !== undefined && (typeof sale[k] !== "string" || sale[k].length > SALE_LIMITS.text)) throw bad(`${field}.${k} must be text of at most ${SALE_LIMITS.text} characters`);
+  }
+  if (sale.brands !== undefined) {
+    const b = sale.brands;
+    if (!Array.isArray(b) || b.length < 1 || b.length > SALE_LIMITS.brands) throw bad(`${field}.brands must list 1 to ${SALE_LIMITS.brands} brands`);
+    for (const x of b) if (typeof x !== "string" || x.length > SALE_LIMITS.brand) throw bad(`${field}.brands must be names of at most ${SALE_LIMITS.brand} characters`);
+  }
+  if (sale.value !== undefined && !(Number.isInteger(sale.value) && sale.value >= 1 && sale.value <= 99)) throw bad(`${field}.value must be a whole number from 1 to 99`);
+  if (sale.endDate !== undefined) {
+    const m = SALE_DATE_RE.exec(String(sale.endDate));
+    const ok = typeof sale.endDate === "string" && m && new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).getUTCDate() === +m[3];
+    if (!ok) throw bad(`${field}.endDate must be a date, YYYY-MM-DD`);
+  }
+  for (const k of ["s1", "s2"]) {
+    if (sale[k] !== undefined && sale[k] !== null && !(typeof sale[k] === "number" && sale[k] >= 1 && sale[k] <= 60)) throw bad(`${field}.${k} must be 1 to 60 seconds`);
+  }
+  if (sale.footer !== undefined && sale.footer !== null) {
+    const f = sale.footer;
+    if (!isPlainObject(f) || typeof f.custom !== "boolean") throw bad(`${field}.footer must be {custom, line1, line2}`);
+    for (const k of ["line1", "line2"]) if (f[k] !== undefined && (typeof f[k] !== "string" || f[k].length > SALE_LIMITS.text)) throw bad(`${field}.footer.${k} must be text of at most ${SALE_LIMITS.text} characters`);
+  }
+}
+
 // One promotion's content (a pharmacy's, or a promotion's master template).
 function contentValue(value, field) {
   if (!isPlainObject(value)) throw bad(`${field} must be an object`);
   const clean = safeJson(value, field);
+  saleValue(clean.sale, `${field}.sale`);
   if (JSON.stringify(clean).length > LIMITS.content) throw bad(`${field} is larger than ${LIMITS.content / 1024} KB`);
   return clean;
 }

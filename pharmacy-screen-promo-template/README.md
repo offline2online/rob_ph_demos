@@ -5,6 +5,10 @@ app to configure pharmacies, promotions and templates, and the back end behind t
 API token, Location API proxy). Requirements and the concept README are on the board (project "Pharmacy Screen
 Promo Template").
 
+The default promotions, in the editor's tab order: **Sales Promos** (`promo=sale`, a two-scene brand sale with an
+end date, each pharmacy's own copy), Morning, Afternoon, Closed (opening hours) and Seasonal (`promo=occasions`).
+See [docs/USER-GUIDE.md](docs/USER-GUIDE.md) and [pharmacy-screen/README.md](pharmacy-screen/README.md).
+
 ## Handover package
 
 New here? **[START-HERE.md](START-HERE.md)** is one page: deploy to AWS in one command, connect PH, test.

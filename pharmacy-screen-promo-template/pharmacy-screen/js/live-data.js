@@ -98,7 +98,7 @@ export function classifyConfig(r) {
 }
 
 // Built-in templates in the published config -> the render engine's built-in ids (js/render.js BUILTIN_TEMPLATES).
-const BUILTIN_BY_KIND = { 'promotion-scenes': 't_scenes', 'opening-hours': 't_hours' };
+const BUILTIN_BY_KIND = { 'promotion-scenes': 't_scenes', 'opening-hours': 't_hours', sale: 't_sale' };
 
 /**
  * The published screen config (config-api/src/publish.js) -> the render engine's config shape
