@@ -250,8 +250,9 @@ export function occasionCopy(id, saved) {
 // The copy is each pharmacy's own (content.sale, saleCopy()): it is not a master section, so a pharmacy's own copy
 // always wins and a promotion's master only supplies the copy of pharmacies that have none. The end date is a
 // "YYYY-MM-DD" (a date picker in the editor); its wording ("Wednesday 2nd December") is generated from it, so the
-// weekday always agrees with the date. Once the end date is over in the store's time zone, the screen plays the
-// pharmacy's Morning promotion (before 12:00) or Afternoon (from 12:00) instead (resolvePromotion).
+// weekday always agrees with the date. The end date is wording only (caption line 2, the panel, the footer): it never
+// decides when the sale plays. Personalisation Hub's campaign schedules decide that, so promo=sale always plays this
+// template, before, on and after its end date (resolvePromotion). Only the Seasonal promotion has a schedule here.
 export const SALE_TRANSITION = 0.65;
 export const SALE_MAX_BRANDS = 6;
 export const SALE_MAX_BRAND_LENGTH = 30;
@@ -300,8 +301,9 @@ export function saleDateText(ymd) {
   const [y, m, d] = v.split('-').map(Number);
   return `${WEEKDAY_NAMES[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]} ${ordinal(d)} ${MONTH_NAMES[m - 1]}`;
 }
-/** Whether the sale's end date is over on `today` ({y, m, d}, the store's date): it runs to the end of its end date. */
-export function saleEnded(copy, today) {
+/** Whether the sale's end date is before `today` ({y, m, d}, the store's date). Only the editor's hint under the
+ *  date field reads it ("This date has passed"); it never changes what the screen plays. */
+export function saleDatePassed(copy, today) {
   if (!today || !today.y) return false;
   return `${today.y}-${String(today.m).padStart(2, '0')}-${String(today.d).padStart(2, '0')}` > saleCopy(copy).endDate;
 }
@@ -318,8 +320,6 @@ export function saleFooter(c) {
 }
 /** One loop of the sale in seconds: scene 1, the transition, scene 2 (10 s at the defaults). */
 export const saleSeconds = (c) => Math.round((c.s1 + SALE_TRANSITION + c.s2) * 1000) / 1000;
-/** The promotions a finished sale falls back to, in order: Morning before 12:00 store time, else Afternoon. */
-export const saleFallbackOrder = (now) => (now && Number.isFinite(now.min) && now.min < 720 ? ['morning', 'afternoon'] : ['afternoon', 'morning']);
 
 // ---------- built-in templates ----------
 export const BUILTIN_TEMPLATES = [
@@ -447,14 +447,8 @@ export function resolvePromotion(config, store, promoId, opts = {}) {
     return { promo, promoId: promoIdOf(promo), template, base: 'occasion', occasion, auto, content: { beats: copy.beats } };
   }
   if (template.base === 'sale') {
+    // Always the sale, whatever opts.today: its end date is copy, and Personalisation Hub schedules when it plays.
     const copy = saleCopy(content && content.sale);
-    // The end date is over at the store (opts.today, the store's date; the player passes it): the pharmacy's Morning
-    // promotion before 12:00 store time, else its Afternoon (whichever of the two it has), with endedSale saying which
-    // sale it stands in for. Without opts.today (the editor's preview) the sale plays as it is.
-    if (opts.today && !opts.noSaleFallback && saleEnded(copy, opts.today)) {
-      const fb = saleFallbackOrder(opts.now || storeNow(store.tz)).find((id) => id !== promoIdOf(promo) && promos.some((p) => promoIdOf(p) === id));
-      if (fb) return { ...resolvePromotion(config, store, fb, { ...opts, noSaleFallback: true }), endedSale: promoIdOf(promo) };
-    }
     return { promo, promoId: promoIdOf(promo), template, base: 'sale', content: { sale: copy } };
   }
   const base = template.base === 'hours' ? 'hours' : 'scenes';

@@ -128,10 +128,12 @@ user changes their own.
 | **Scene 2: The offer** | Offer lead-in ("UP TO"), **Offer value** (a whole number from 1 to 99, shown with %), Offer suffix ("OFF"); **End date**, chosen with the date picker: **Shown as** gives its wording with the weekday ("Wednesday 2nd December"), which is never typed, so it always matches the date; Panel label ("SALE FINISHES"). Seconds on screen (administrators only); the 0.65 s change between the scenes is added to scene 2 |
 | **Footer band** | Its two lines are made from the headline, the offer and the end date ("BIG BRAND SALE · UP TO 30% OFF" / "Finishes Wednesday 2nd December", shown in capitals). Tick **Write my own** to type them yourself |
 
-**After the end date.** The sale runs up to and including its end date, in the store's time zone. From the next
-day the screens show the pharmacy's Morning promotion before 12:00 and its Afternoon promotion from 12:00 instead,
-switching by themselves, and the tab reads **Sale has ended** (with a notice at the top of it). Choose a later end
-date to run the sale again; the preview always plays the sale so you can edit it.
+**When it plays.** Personalisation Hub's campaign schedules decide when Sales Promos plays, as they do for
+Morning, Afternoon and Closed; only Seasonal carries dates of its own here (each season's). The end date is wording
+only: it fills "Finishes …" in caption line 2, the panel and the footer, and never starts or stops the sale. A
+screen sent `promo=sale` plays the sale before, on and after its end date. If you choose a date that has already
+passed, a small hint under the date field says so ("This date has passed. The screen still plays whenever
+Personalisation Hub schedules it."); end the sale by ending its campaign schedule in Personalisation Hub.
 
 ## Promotion scenes (Morning, Afternoon and similar)
 

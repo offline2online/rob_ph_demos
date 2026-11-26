@@ -8,6 +8,16 @@ release handed to miPharmacy is tagged and packaged with this file and the `docs
 Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 ([docs/RELEASING.md](docs/RELEASING.md)).
 
+### Changed
+
+- **Sales Promos: Personalisation Hub owns scheduling; the end date is wording only.** `promo=sale` now always
+  plays the Sales Promos template, before, on and after its end date, at any hour. Removed: the after-end-date
+  switch to Morning (before 12:00) or Afternoon (from 12:00) in `resolvePromotion()`, `endedSale` in
+  `window.pharmacyScreen.info` and the sale check in the player's minute tick; `date=` no longer affects Sales
+  Promos. In the editor the "Sale has ended" tab chip and notice are gone; a date already over shows only the hint
+  "This date has passed. The screen still plays whenever Personalisation Hub schedules it." under the date field.
+  Personalisation Hub schedules every promotion except Seasonal, whose seasons keep their own dates.
+
 ### Added
 
 - **Sales Promos (`promo=sale`), the first promotion tab.** A new default promotion on its own built-in template
@@ -21,8 +31,7 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
   date with a date picker (its wording, weekday included, is worked out from it and feeds caption line 2, the panel
   and the footer), the panel label, the scene seconds (administrators) and, optionally, the footer text. Copy is
   stored as `content[<promotion id>].sale` and checked by the config API; a pharmacy that has not edited it plays
-  the promotion's master (the Big Brand Sale). After the end date (store time zone) the screen plays Morning before
-  12:00 and Afternoon after, and the editor's tab reads "Sale has ended". Like Morning it has no promotion
+  the promotion's master (the Big Brand Sale). The end date is wording only (see Changed). Like Morning it has no promotion
   settings; the config API refuses deleting it or changing its promo ID or template, and the sale template is
   reserved for it. Tabs now read Sales Promos, Morning, Afternoon, Closed, Seasonal. On an upgrade, re-running the
   seed adds it and changes nothing else.

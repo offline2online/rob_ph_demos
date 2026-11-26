@@ -5,8 +5,10 @@ app to configure pharmacies, promotions and templates, and the back end behind t
 API token, Location API proxy). Requirements and the concept README are on the board (project "Pharmacy Screen
 Promo Template").
 
-The default promotions, in the editor's tab order: **Sales Promos** (`promo=sale`, a two-scene brand sale with an
-end date, each pharmacy's own copy), Morning, Afternoon, Closed (opening hours) and Seasonal (`promo=occasions`).
+The default promotions, in the editor's tab order: **Sales Promos** (`promo=sale`, a two-scene brand sale whose end date is
+wording only, each pharmacy's own copy), Morning, Afternoon, Closed (opening hours) and Seasonal (`promo=occasions`).
+Personalisation Hub's campaign schedules decide when every promotion plays, except Seasonal, which plays its seasons
+by their dates.
 See [docs/USER-GUIDE.md](docs/USER-GUIDE.md) and [pharmacy-screen/README.md](pharmacy-screen/README.md).
 
 ## Handover package

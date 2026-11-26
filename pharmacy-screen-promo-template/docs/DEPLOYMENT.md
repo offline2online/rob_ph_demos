@@ -148,10 +148,9 @@ The KMS key rotates itself every 90 days; nothing to do.
    campaign per promotion, each with its own campaign URL (step 3) and playback duration (step 4). Sales Promos is
    `promo=sale`, e.g.
    `https://<site>/pharmacy-screen.html?device=${UniqueDeviceID}&promo=sale&orientation=portrait`. The template
-   does no scheduling of its own, except that Seasonal plays the season whose dates hold the store's date, and
-   Sales Promos, once its end date is over in the store's time zone, plays the pharmacy's Morning promotion before
-   12:00 and Afternoon from 12:00, switching by itself (`js/player.js`). So the Sales Promos campaign can stay
-   scheduled after the sale ends; choosing a later end date in the editor runs the sale again.
+   does no scheduling of its own, except that Seasonal plays the season whose dates hold the store's date.
+   Sales Promos plays whenever its campaign is scheduled, before, on and after its end date (the end date is
+   wording only), so end the sale by ending its campaign schedule.
 6. A screen that shows **"Screen not set up"** with a device ID at the bottom is not registered to a store in PH,
    or its store has no pharmacy in the editor. "Invalid screen URL" means the campaign URL lost `device=`.
 

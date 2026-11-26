@@ -147,7 +147,7 @@ test('Copy experience URL copies the right URL in the PH frame: every promotion,
     assert.equal(await frame.textContent('#cpTip'), want, `${what} ${o} tooltip`);
   };
   // The tabs, in order: Sales Promos first (selected when the editor opens), then the other four defaults.
-  assert.deepEqual(await frame.$$eval('#dpTabs button', (b) => b.map((x) => x.textContent.replace(/^(sell|campaign|schedule|celebration)/, '').replace(/Sale has ended$/, ''))), ['Sales Promos', 'Morning', 'Afternoon', 'Closed', 'Seasonal']);
+  assert.deepEqual(await frame.$$eval('#dpTabs button', (b) => b.map((x) => x.textContent.replace(/^(sell|campaign|schedule|celebration)/, ''))), ['Sales Promos', 'Morning', 'Afternoon', 'Closed', 'Seasonal']);
   assert.equal(await frame.getAttribute('#dpTabs button:nth-child(1)', 'aria-selected'), 'true');
   for (const [tab, promo] of [['Sales Promos', 'sale'], ['Morning', 'morning'], ['Afternoon', 'afternoon'], ['Closed', 'closed']]) {
     await frame.click(`#dpTabs button:has-text("${tab}")`);

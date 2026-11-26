@@ -181,14 +181,14 @@ https://<site>/pharmacy-screen.html?device=${UniqueDeviceID}&promo=<promo id>&or
 | Parameter | Type | Default | Example | Used in the campaign |
 |---|---|---|---|---|
 | `device` | Device ID, `[A-Za-z0-9._:-]`, 1–128 characters | None: "Invalid screen URL" | `${UniqueDeviceID}` (PH swaps in the screen's ID) | **Yes** |
-| `promo` | A promo ID (see [DATA-CONTRACT.md](DATA-CONTRACT.md) → "Promo IDs"): the defaults are `sale` (Sales Promos), `morning`, `afternoon`, `closed` and `occasions` (Seasonal). `promo=sale` plays the pharmacy's sale until its end date, then Morning before 12:00 and Afternoon after, in the store's time zone | The first promotion | `morning`, `sale` | **Yes** |
+| `promo` | A promo ID (see [DATA-CONTRACT.md](DATA-CONTRACT.md) → "Promo IDs"): the defaults are `sale` (Sales Promos), `morning`, `afternoon`, `closed` and `occasions` (Seasonal). `promo=sale` always plays the pharmacy's sale, whatever its end date (the end date is wording only). Personalisation Hub's campaign schedules decide when every promotion plays, except Seasonal, which plays its seasons by their dates | The first promotion | `morning`, `sale` | **Yes** |
 | `orientation` | `portrait` (1080x1920) or `landscape` (1920x1080) | `portrait` | `landscape` | **Yes** |
 | `loop` | Flag: loop the promotion forever, for a screen that shows this one campaign only. Without it the promotion plays once through and stays on its last scene (a Seasonal promotion: its last beat) until the player loads the next campaign; it plays from the start again when the page is loaded or shown again, or a season changes at midnight | Off: plays once, then holds its last scene | `loop=1` | Optional: only on a screen with no rotation |
 | `mockapi` | Flag: read the fixtures (`pharmacy-screen/fixtures/`) instead of the API | Off | `mockapi=1` | No, testing only |
 | `debug` | Flag: show the debug panel (device, store code, last fetches, server used, store time, bar state) with a test time override | Off | `debug=1` | No, testing only |
 | `scene` | Hold on scene *n* (0-based) instead of playing the promotion | Plays the promotion (once, then holds its last scene; `loop=1` loops) | `scene=2` | No, testing only |
 | `now` | Pretend the store's local time is this (`<day>-<HH:MM>`), for the "Open today" bar | Real time in `store_timezone` | `now=fri-18:45` | No, testing only |
-| `date` | Pretend the store's date is this (`YYYY-MM-DD`, or `MM-DD` for this year), for which season the Seasonal promotion plays and whether a Sales Promos end date is over | Today in `store_timezone` | `date=2026-12-20` | No, testing only |
+| `date` | Pretend the store's date is this (`YYYY-MM-DD`, or `MM-DD` for this year), for which season the Seasonal promotion plays (it does not affect Sales Promos) | Today in `store_timezone` | `date=2026-12-20` | No, testing only |
 | `nosw` | Flag: don't keep the screen on the device (no service worker) | Off | `nosw=1` | No |
 | `sw` | Flag: use the service worker on `localhost` too (off there by default) | Off on localhost | `sw=1` | No, local testing only |
 

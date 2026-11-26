@@ -104,9 +104,9 @@ fills the screen above the footer band, then 5.85 s: rotating rays, "UP TO", the
 band shows the sale. Every animation is transform or opacity (the count-up changes only the number's text), the
 idle motion stops under reduced motion, and a redraw draws the scene as it ends. The copy is
 `content[<promotion id>].sale` ([docs/DATA-CONTRACT.md](../docs/DATA-CONTRACT.md)); its end date's wording
-("Wednesday 2nd December") is worked out from the date (`saleDateText()`). Once the end date is over in
-`store_timezone`, `resolvePromotion()` plays the pharmacy's Morning promotion before 12:00 and Afternoon from 12:00
-(`endedSale` in `window.pharmacyScreen.info`), and the player's minute tick switches at midnight and noon.
+("Wednesday 2nd December") is worked out from the date (`saleDateText()`). The end date is wording only:
+`resolvePromotion()` always plays the sale for `promo=sale`, whatever the date (`date=` does not affect it), because
+Personalisation Hub's campaign schedules decide when every promotion plays except Seasonal.
 Tests: `test/sale.test.mjs`, `test/ui/sale.test.mjs`.
 
 ## Seasonal (`promo=occasions`)

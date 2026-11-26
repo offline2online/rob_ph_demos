@@ -112,7 +112,7 @@ are 1–40 lower-case letters, digits and hyphens, unique across promotions.
 
 | Promo ID | Name | Template | Plays |
 |---|---|---|---|
-| `sale` | Sales Promos (the first tab; a built-in: it can't be deleted and its promo ID and template are fixed) | Sales promo (`builtin-sale`, kind `sale`, reserved for this promotion) | Two scenes on the brand shell in the pharmacy's own colours and logo, a 10 s loop at the defaults (playback duration 11 s): **the brands** (headline in the wedge, 1–6 brand cards popping in, a caption; 3.5 s) and, after a 0.65 s transition in which the brand colour fills the screen above the footer band, **the offer** (rays, "UP TO", the value counting up from 0, "OFF", the pulsing end-date panel, the brand list; 5.85 s). The footer band shows the sale. Copy in `content[<promotion id>].sale` (below). Once `endDate` is over in `store_timezone` the screen plays the pharmacy's `morning` promotion before 12:00 and `afternoon` from 12:00 instead |
+| `sale` | Sales Promos (the first tab; a built-in: it can't be deleted and its promo ID and template are fixed) | Sales promo (`builtin-sale`, kind `sale`, reserved for this promotion) | Two scenes on the brand shell in the pharmacy's own colours and logo, a 10 s loop at the defaults (playback duration 11 s): **the brands** (headline in the wedge, 1–6 brand cards popping in, a caption; 3.5 s) and, after a 0.65 s transition in which the brand colour fills the screen above the footer band, **the offer** (rays, "UP TO", the value counting up from 0, "OFF", the pulsing end-date panel, the brand list; 5.85 s). The footer band shows the sale. Copy in `content[<promotion id>].sale` (below). It plays whatever its `endDate`: Personalisation Hub schedules it, and the end date is wording only |
 | `morning` | Morning | Promotion scenes (`builtin-promotion-scenes`) | Greeting, service chips, one scene per service, "Walk in today" close; "Open today" bar |
 | `afternoon` | Afternoon | Promotion scenes | The same, with afternoon copy |
 | `closed` | Closed | Opening hours (`builtin-opening-hours`) | Rotating headlines, the full week's hours, "Public Holidays: Please call to confirm", phone |
@@ -121,14 +121,15 @@ are 1–40 lower-case letters, digits and hyphens, unique across promotions.
 **Sales Promos copy** (`content[<promotion id>].sale`, every field optional; the screen fills a missing one from
 the defaults, the Big Brand Sale): `headline1`, `headline2` (text), `brands` (1–6 names, at most 30 characters
 each), `lead` ("UP TO"), `value` (whole number 1–99, shown with %), `suffix` ("OFF"), `caption` (caption line 1),
-`endDate` (`"YYYY-MM-DD"`, inclusive; its wording, "Wednesday 2nd December", is worked out from it and feeds caption
-line 2, the panel and the footer), `panelLabel` ("SALE FINISHES"), `s1` / `s2` (seconds of scene 1 and 2, 1–60;
+`endDate` (`"YYYY-MM-DD"`; its wording, "Wednesday 2nd December", is worked out from it and feeds caption
+line 2, the panel and the footer; it never decides when the sale plays), `panelLabel` ("SALE FINISHES"), `s1` / `s2` (seconds of scene 1 and 2, 1–60;
 the transition adds 0.65 s) and `footer` (`{custom: true, line1, line2}` only while the footer is written by hand).
 The config API refuses a bad value (400). `sale` belongs to no master section: a pharmacy's own copy, once saved,
 always wins, and the promotion's master supplies the copy of a pharmacy that has none (seeded: the Big Brand Sale).
 
 Admins can add more (Admin → New promotion). Which promotion plays when is scheduled in Personalisation Hub
-Core, not here. A promotion can carry a **Schedule**: No schedule (the default, nothing stored) or Annual, a start
+Core, not here: Morning, Afternoon, Sales Promos and Closed carry no schedule in the template or the editor; only
+Seasonal plays by dates of its own (each season's). A promotion can carry a **Schedule**: No schedule (the default, nothing stored) or Annual, a start
 and an end date (`"MM-DD"`, inclusive) that repeat every year. The dates are saved with the promotion and published
 in its screen config (`schedule`) for scheduling; the screen itself still plays whatever promotion `promo=` names.
 

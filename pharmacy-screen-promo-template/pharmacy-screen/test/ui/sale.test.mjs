@@ -1,6 +1,6 @@
 // The Sales Promos screen (promo=sale) in headless Chromium, on mock data: both scenes in portrait and landscape with
 // nothing leaving its box (the default four brands, six long brand names, one brand), the loop playing scene 1, the
-// offer and back, the value counting up from 0, reduced motion, and Morning / Afternoon after the end date.
+// offer and back, the value counting up from 0, reduced motion, and the sale still playing after its end date (Personalisation Hub schedules it).
 //   npm run test:ui     (uses the sandbox's preinstalled Playwright/Chromium; CHROMIUM_PATH for another binary)
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -111,15 +111,35 @@ test('reduced motion: no animation, everything drawn at once, the value at its n
   await ctx.close();
 });
 
-test('after the end date the screen shows Morning before 12:00 and Afternoon after, and the sale again with a later date', async () => {
-  for (const [q, want] of [['date=2026-12-02&now=wed-23:00', 'sale'], ['date=2026-12-03&now=thu-09:30', 'morning'], ['date=2026-12-03&now=thu-13:00', 'afternoon']]) {
-    const { ctx, page } = await screen(q);
-    const info = await page.evaluate(() => window.pharmacyScreen.info);
-    assert.equal(info.promo, want, q);
-    assert.equal(info.endedSale, want === 'sale' ? null : 'sale', q);
-    await ctx.close();
+test('after its end date the sale still plays (Personalisation Hub schedules it), in portrait and landscape, morning and afternoon', async () => {
+  for (const orientation of ['portrait', 'landscape']) {
+    for (const q of ['date=2026-12-03&now=thu-09:30', 'date=2026-12-03&now=thu-13:00', 'date=2027-02-10&now=wed-00:01']) {
+      const { ctx, page, errors } = await screen(`${q}&scene=0`, { orientation });
+      const info = await page.evaluate(() => window.pharmacyScreen.info);
+      assert.deepEqual([info.promo, info.base, 'endedSale' in info], ['sale', 'sale', false], `${orientation} ${q}`);
+      // The end date is wording only: caption line 2 still names it, with its own weekday.
+      assert.equal(await page.$eval('#screen .sl-c2', (e) => e.textContent), 'Finishes Wednesday 2nd December', `${orientation} ${q}`);
+      assert.deepEqual(errors, []);
+      await ctx.close();
+    }
   }
-  const { ctx, page } = await screen('date=2026-12-03&now=thu-09:30', { sale: { endDate: '2026-12-10' } });
-  assert.equal(await page.evaluate(() => window.pharmacyScreen.info.promo), 'sale');
+});
+
+test('left running past its end date, across 12:00 and midnight, the screen keeps playing the sale', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1080, height: 1920 } });
+  const page = await ctx.newPage();
+  // 11:58 on Thursday 3 Dec 2026 in Melbourne (UTC+11): the day after the fixture's end date (2 Dec).
+  await page.clock.install({ time: new Date('2026-12-03T00:58:00Z') });
+  await page.goto(`${base}?mockapi=1&device=TEST&promo=sale&loop=1`);
+  // Fake time in small steps with real time between them, so the mock data's fetches answer in time.
+  const run = async (ms) => { for (let t = 0; t < ms; t += 2000) { await page.clock.runFor(2000); await new Promise((r) => setTimeout(r, 30)); } };
+  for (let i = 0; i < 100 && !(await page.evaluate(() => !!(window.pharmacyScreen && window.pharmacyScreen.info))); i++) await run(2000);
+  const now = () => page.evaluate(() => { const i = window.pharmacyScreen.info; return i && { promo: i.promo, base: i.base }; });
+  assert.deepEqual(await now(), { promo: 'sale', base: 'sale' }, 'before 12:00');
+  await run(4 * 60000); // past 12:00
+  assert.deepEqual(await now(), { promo: 'sale', base: 'sale' }, 'after 12:00');
+  await page.clock.setSystemTime(new Date('2026-12-03T12:58:00Z')); // 23:58
+  await run(4 * 60000); // past midnight, into Friday 4 Dec
+  assert.deepEqual(await now(), { promo: 'sale', base: 'sale' }, 'after midnight');
   await ctx.close();
 });

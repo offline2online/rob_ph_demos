@@ -75,7 +75,7 @@ test('loads the pharmacies, promotions and a live preview from the server', asyn
   assert.match(opts[0], /Beaumaris Pharmacy · VIC-MP-001/);
   // Promo preview offers the master template first, then the same pharmacies.
   assert.deepEqual(await page.$$eval('#pvSel option', (o) => o.map((x) => x.textContent)), ['Master template', ...opts]);
-  assert.deepEqual(await page.$$eval('#dpTabs button', (b) => b.map((x) => x.textContent.replace(/^(sell|campaign|schedule|celebration)/, '').replace(/Sale has ended$/, ''))), ['Sales Promos', 'Morning', 'Afternoon', 'Closed', 'Seasonal']);
+  assert.deepEqual(await page.$$eval('#dpTabs button', (b) => b.map((x) => x.textContent.replace(/^(sell|campaign|schedule|celebration)/, ''))), ['Sales Promos', 'Morning', 'Afternoon', 'Closed', 'Seasonal']);
   assert.equal(await page.$$eval('#tl button', (b) => b.length), 5);
   await page.click('#playBtn'); // pause
   await page.click('#tl button[data-i="0"]');
@@ -1421,7 +1421,7 @@ test('seasonal master: editing its copy, dates or timings changes no store\'s sc
   await ctx.close();
 });
 
-test('Sales Promos: the first tab, no promotion settings; a pharmacy\'s own copy (offer, brands, end date by date picker) drives the preview and its screens; others keep the defaults in their own colours; "Sale has ended" once the date is over', async () => {
+test('Sales Promos: the first tab, no promotion settings; a pharmacy\'s own copy (offer, brands, end date by date picker) drives the preview and its screens; others keep the defaults in their own colours; a past date is only a hint (Personalisation Hub schedules it)', async () => {
   const { ctx, page, errors, firstTab } = await open(undefined, { stay: true, date: '2026-11-26T10:00:00' });
   assert.equal(firstTab, 'seed-promotion-sale');
   await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-001');
@@ -1477,18 +1477,25 @@ test('Sales Promos: the first tab, no promotion settings; a pharmacy\'s own copy
   const primary = await page.evaluate(() => window.pharmacyAdmin.state.cur.colours.primary);
   assert.equal(await page.$eval('#screen', (e) => e.style.getPropertyValue('--s-p')), primary);
   assert.equal((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-004')).body.content['seed-promotion-sale'], undefined, 'nothing saved for it');
-  // Back on Beaumaris: an end date before today ("yesterday") and the tab says the sale has ended.
+  // Back on Beaumaris: an end date before today ("yesterday"). Personalisation Hub schedules the sale, so nothing reads
+  // as a schedule: no "Sale has ended" on the tab or at the top, just one small hint under the date field, and the
+  // preview still plays the sale with that date's own weekday.
   await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-001');
   await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-001');
   await page.click('#dpTabs button:has-text("Sales Promos")');
-  assert.equal(await page.isVisible('#saleEnded'), false);
+  assert.equal(await page.isVisible('#slEndPast'), false);
   await page.fill('#slEnd', '2026-11-25');
-  await page.waitForSelector('#saleEnded');
-  assert.match(await page.textContent('#dpTabs button[data-dp="seed-promotion-sale"]'), /Sale has ended$/);
-  assert.match(await page.textContent('#saleEnded'), /Sale has ended\./);
-  // Put the copy back for the other tests.
+  await page.waitForSelector('#slEndPast');
+  assert.equal(await page.textContent('#slEndPast'), 'This date has passed. The screen still plays whenever Personalisation Hub schedules it.');
+  assert.equal(await page.getAttribute('#slEnd', 'aria-describedby'), 'slEndPast');
+  assert.equal(await page.textContent('#dpTabs button[data-dp="seed-promotion-sale"]'), 'sellSales Promos');
+  assert.equal(await page.$('#saleEnded'), null);
+  assert.doesNotMatch(await page.textContent('#dpBody'), /Sale has ended|Morning or Afternoon/);
+  await page.waitForFunction(() => document.querySelector('#screen .sl-pd') && document.querySelector('#screen .sl-pd').textContent === 'Wednesday 25th November');
+  assert.equal(await page.textContent('#screen .sl-foot .f2'), 'Finishes Wednesday 25th November');
+  // A future date: the hint goes. (And puts the copy back for the other tests.)
   await page.fill('#slEnd', '2026-12-02');
-  await page.waitForSelector('#saleEnded', { state: 'detached' });
+  await page.waitForSelector('#slEndPast', { state: 'detached' });
   await page.fill('#slVal', '30');
   await settle(page);
   assert.deepEqual(errors, []);

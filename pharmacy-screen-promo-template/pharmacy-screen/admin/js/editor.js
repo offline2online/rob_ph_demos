@@ -713,19 +713,20 @@ function renderFallback(B, occ, o, field) {
  * offer): the lead-in, the value (1-99, shown with %), the suffix, the end date (a date picker: its wording, with the
  * weekday, is worked out from it and feeds caption line 2, the panel and the footer) and the panel label. Each scene's
  * seconds (administrators only). The footer band's two lines are derived from the copy unless written by hand.
- * "Sale has ended" shows at the top (and on the tab) once the end date is over at the store.
+ * The end date is wording only: Personalisation Hub's campaign schedule decides when the sale plays, so nothing here
+ * reads as a schedule. A date already over at the store gets one small hint under the field (#slEndPast), never a
+ * warning: the screen still plays the sale whenever it is scheduled.
  */
 function renderSale(B, d) {
   const c = d.sale = saleCopy(d.sale);
   const f = pt;
-  const ended = M.saleHasEnded(d);
+  const passed = M.saleDatePassed(d);
   const derived = saleFooter({ ...c, footer: undefined });
   const custom = !!(c.footer && c.footer.custom);
   const n = c.brands.length;
-  const endHelp = 'The screens play the sale up to and including this date, in the store\'s time zone. From the next day they show this pharmacy\'s Morning promotion before 12:00 and Afternoon after. The weekday is worked out from the date.';
+  const endHelp = 'The date the sale finishes, shown in caption line 2, the panel and the footer. The weekday is worked out from the date. It changes only the wording: Personalisation Hub schedules when the sale plays.';
   const footHelp = 'The band at the bottom of both scenes. By default its two lines are made from the headline, the offer and the end date.';
-  B.innerHTML = `${ended ? `<div class="inh-alert warn" id="saleEnded" role="status"><span class="ms">event_busy</span><span><b>Sale has ended.</b> ${esc(saleDateText(c.endDate))} is over, so this pharmacy's screens show Morning or Afternoon instead. Choose a later end date to run it again.</span></div>` : ''}
-   <span class="pill" id="loopLen" style="justify-self:start">${loopText(M.loopSeconds(d, 'sale'))}</span>
+  B.innerHTML = `<span class="pill" id="loopLen" style="justify-self:start">${loopText(M.loopSeconds(d, 'sale'))}</span>
    <div class="slot" data-sc="0" id="slScene1"><div class="slot-h">Scene 1: The brands${durInput('sl1dur', c.s1)}</div>
      <div class="stack"><div class="grid2">${f('slH1', 'Headline line 1', c.headline1)}${f('slH2', 'Headline line 2', c.headline2)}</div>
      <div class="f"><span>Brands <span class="hint">(${n} of ${SALE_MAX_BRANDS})</span></span>
@@ -738,7 +739,7 @@ function renderSale(B, d) {
    <div class="slot" data-sc="1" id="slScene2"><div class="slot-h">Scene 2: The offer${durInput('sl2dur', c.s2)}</div>
      <div class="stack"><div class="grid3">${f('slLead', 'Offer lead-in', c.lead)}<label class="f"><span>Offer value</span><span class="slpct"><input type="number" id="slVal" min="1" max="99" step="1" value="${c.value}" aria-label="Offer value, per cent">%</span></label>${f('slSuf', 'Offer suffix', c.suffix)}</div>
      <span class="hint err" id="slValErr" hidden>Use a whole number from 1 to 99.</span>
-     <div class="grid2"><label class="f"><span>End date<span class="ms help" title="${esc(endHelp)}">info</span></span><input type="date" id="slEnd" value="${esc(c.endDate)}" required></label>
+     <div class="grid2"><label class="f"><span>End date<span class="ms help" title="${esc(endHelp)}">info</span></span><input type="date" id="slEnd" value="${esc(c.endDate)}" required${passed ? ' aria-describedby="slEndPast"' : ''}>${passed ? '<span class="hint" id="slEndPast">This date has passed. The screen still plays whenever Personalisation Hub schedules it.</span>' : ''}</label>
        <div class="f"><span>Shown as</span><span class="pill" id="slEndTx" style="justify-self:start;min-height:32px"><span class="ms" style="font-size:14px" aria-hidden="true">event</span><span>${esc(saleDateText(c.endDate))}</span></span></div></div>
      ${f('slPanel', 'Panel label', c.panelLabel)}</div></div>
    <div class="slot" id="slFoot"><div class="slot-h">Footer band<span class="ms help" title="${esc(footHelp)}">info</span><label class="chk" style="margin-left:auto;font-weight:400"><input type="checkbox" id="slFtOwn" ${custom ? 'checked' : ''}>Write my own</label></div>
@@ -798,9 +799,7 @@ function selectPromo(id) {
 }
 $('dpTabs').onclick = (e) => { const b = e.target.closest('button'); if (b) selectPromo(b.dataset.dp); };
 function renderPromoTabs() {
-  // Sales Promos whose end date is over at the store says so on its tab ("Sale has ended").
-  const ended = (x) => isSale(x.id) && !!S.cur && M.saleHasEnded(S.cur.content && S.cur.content[x.id] ? S.cur.content[x.id] : x.master);
-  $('dpTabs').innerHTML = S.promotions.map((x) => `<button role="tab" data-dp="${esc(x.id)}" aria-selected="${x.id === S.dpTab}" title="promo=${esc(x.promoId)}"><span class="ms" style="font-size:16px">${isHours(x.id) ? 'schedule' : isOcc(x.id) ? 'celebration' : isSale(x.id) ? 'sell' : 'campaign'}</span>${esc(x.name)}${ended(x) ? '<span class="tabflag">Sale has ended</span>' : ''}</button>`).join('');
+  $('dpTabs').innerHTML = S.promotions.map((x) => `<button role="tab" data-dp="${esc(x.id)}" aria-selected="${x.id === S.dpTab}" title="promo=${esc(x.promoId)}"><span class="ms" style="font-size:16px">${isHours(x.id) ? 'schedule' : isOcc(x.id) ? 'celebration' : isSale(x.id) ? 'sell' : 'campaign'}</span>${esc(x.name)}</button>`).join('');
   tabsActiveIntoView();
 }
 

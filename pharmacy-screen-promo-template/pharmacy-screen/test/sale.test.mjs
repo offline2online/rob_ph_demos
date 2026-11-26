@@ -1,10 +1,10 @@
 // Sales Promos (promo=sale, js/render.js "sales promos"): the copy with its defaults, the end date's wording (the
 // weekday worked out from the date), the sale's two scenes and their seconds, the published config reaching the
-// screen, and the screen playing Morning (before 12:00) or Afternoon instead once the end date is over.
+// screen, and the screen playing the sale whatever its end date (Personalisation Hub schedules it; the date is wording).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { saleCopy, defaultSale, saleDateText, ordinal, saleEnded, saleFooter, saleOffer, saleFinishes, saleSeconds, saleValue, cleanYmd, saleFallbackOrder, storeModel, resolvePromotion, sequence, sceneName, BUILTIN_TEMPLATES } from '../js/render.js';
+import { saleCopy, defaultSale, saleDateText, ordinal, saleDatePassed, saleFooter, saleOffer, saleFinishes, saleSeconds, saleValue, cleanYmd, storeModel, resolvePromotion, sequence, sceneName, BUILTIN_TEMPLATES } from '../js/render.js';
 import { fromPublishedConfig } from '../js/live-data.js';
 import * as M from '../admin/js/model.js';
 
@@ -71,28 +71,26 @@ test('two scenes: the brands (3.5 s) and the offer (0.65 s transition + 5.85 s):
   assert.ok(BUILTIN_TEMPLATES.some((t) => t.id === 't_sale' && t.base === 'sale'));
 });
 
-test('after the end date (the store\'s date) the screen plays Morning before 12:00 and Afternoon from 12:00', () => {
+test('Personalisation Hub schedules the sale: promo=sale plays the sale before, on and after its end date, at any hour', () => {
   const cfg = config({ endDate: '2026-12-02' }), store = storeModel(campaign('VIC-MP-001'), cfg);
   const at = (d, min) => resolvePromotion(cfg, store, 'sale', { today: day(d), now: { day: 'thu', min } });
-  // Up to and including the end date: the sale.
-  assert.equal(at('2026-12-02', 23 * 60 + 59).base, 'sale');
-  assert.equal(at('2026-11-30', 600).promoId, 'sale');
-  // From the next day: Morning, then Afternoon at noon.
-  const morning = at('2026-12-03', 11 * 60 + 59);
-  assert.deepEqual([morning.promoId, morning.base, morning.endedSale], ['morning', 'scenes', 'sale']);
-  assert.equal(at('2026-12-03', 12 * 60).promoId, 'afternoon');
-  assert.deepEqual(saleFallbackOrder({ min: 0 }), ['morning', 'afternoon']);
+  // Before, on and long after the end date; before 12:00, from 12:00, across midnight: always the sale, never Morning
+  // or Afternoon standing in for it.
+  for (const d of ['2026-11-30', '2026-12-02', '2026-12-03', '2027-03-15']) {
+    for (const min of [0, 11 * 60 + 59, 12 * 60, 23 * 60 + 59]) {
+      const p = at(d, min);
+      assert.deepEqual([p.promoId, p.base, p.endedSale], ['sale', 'sale', undefined], `${d} ${min}`);
+    }
+  }
+  // Its wording still follows the end date, whatever the day it plays.
+  assert.equal(saleFinishes(at('2026-12-05', 600).content.sale), 'Finishes Wednesday 2nd December');
   // No date known (the editor's preview): the sale plays.
   assert.equal(resolvePromotion(cfg, store, 'sale').base, 'sale');
-  // A pharmacy with no Afternoon promotion falls back to Morning all day.
-  const noAft = { ...cfg, promotions: cfg.promotions.filter((p) => p.id !== 'afternoon') };
-  assert.equal(resolvePromotion(noAft, storeModel(campaign('VIC-MP-001'), noAft), 'sale', { today: day('2026-12-05'), now: { day: 'sat', min: 900 } }).promoId, 'morning');
-  // With neither, the sale keeps playing rather than nothing.
-  const none = { ...cfg, promotions: cfg.promotions.filter((p) => p.id === 'sale') };
-  assert.equal(resolvePromotion(none, storeModel(campaign('VIC-MP-001'), none), 'sale', { today: day('2026-12-05') }).base, 'sale');
-  assert.equal(saleEnded({ endDate: '2026-12-02' }, day('2026-12-03')), true);
-  assert.equal(saleEnded({ endDate: '2026-12-02' }, day('2026-12-02')), false);
-  assert.equal(M.saleHasEnded({ sale: { endDate: '2026-12-02' } }, day('2027-01-01')), true);
+  // The date check is the editor's hint only.
+  assert.equal(saleDatePassed({ endDate: '2026-12-02' }, day('2026-12-03')), true);
+  assert.equal(saleDatePassed({ endDate: '2026-12-02' }, day('2026-12-02')), false);
+  assert.equal(M.saleDatePassed({ sale: { endDate: '2026-12-02' } }, day('2027-01-01')), true);
+  assert.equal(M.saleDatePassed({ sale: { endDate: '2026-12-09' } }, day('2026-12-03')), false);
 });
 
 test('published config: the sale template reaches the screen as t_sale with the pharmacy\'s copy, else the master\'s', () => {
