@@ -268,27 +268,3 @@ test("infra: the screen's fingerprinted assets/ are uploaded first, kept a year 
   const stack = new PharmacyScreenStack(app, params.stackName, { env: { account: "111122223333", region: "ap-southeast-2" }, params });
   assert.equal(ofType(app.synth().getStackByName(stack.stackName).template, "Custom::CDKBucketDeployment").length, 1);
 });
-
-test("infra: Download MP4's worker — x86_64, 6 GB, 15 min, async with no retries, exports expire, config API may invoke it", () => {
-  fs.mkdirSync(path.join(assets, "video-lambda"), { recursive: true });
-  fs.writeFileSync(path.join(assets, "video-lambda/index.js"), "");
-  const { template, json } = synth({ videoLambdaAsset: path.join(assets, "video-lambda") });
-  const fns = ofType(json, "AWS::Lambda::Function");
-  const worker = fns.find(([, f]) => f.Properties.Handler === "aws/lambda/video-worker.handler");
-  assert.ok(worker, "the worker exists");
-  const w = worker[1].Properties;
-  assert.deepEqual(w.Architectures, ["x86_64"]);
-  assert.equal(w.MemorySize, 6144);
-  assert.equal(w.Timeout, 900);
-  assert.equal(w.EphemeralStorage.Size, 2048);
-  template.hasResourceProperties("AWS::Lambda::EventInvokeConfig", { MaximumRetryAttempts: 0 });
-  template.hasResourceProperties("AWS::S3::Bucket", { LifecycleConfiguration: { Rules: [{ Id: "ExpireVideoExports", Prefix: "exports/", ExpirationInDays: 1, Status: "Enabled" }] } });
-  const config = fns.find(([, f]) => f.Properties.Handler === "aws/lambda/config-api.handler")[1].Properties;
-  assert.ok(config.Environment.Variables.PS_VIDEO_FUNCTION, "the config API knows the worker");
-  assert.match(JSON.stringify(config.Environment.Variables.PS_SCREEN_PAGE_URL), /pharmacy-screen\.html/);
-  const policies = JSON.stringify(ofType(json, "AWS::IAM::Policy"));
-  assert.match(policies, /lambda:InvokeFunction/);
-  // Without the staged worker (an older deploy script): no worker, and Download MP4 answers "not set up".
-  const plain = synth().json;
-  assert.ok(!ofType(plain, "AWS::Lambda::Function").some(([, f]) => f.Properties.Handler === "aws/lambda/video-worker.handler"));
-});

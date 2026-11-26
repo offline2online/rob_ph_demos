@@ -372,36 +372,6 @@ class PharmacyScreenStack extends cdk.Stack {
     originVerify.grantRead(configFn);
     originVerify.grantRead(phFn);
 
-    // Download MP4's worker (aws/lambda/video-worker.js), when the deploy staged it (.deploy-aws/video-lambda):
-    // x86_64 for @sparticuz/chromium and ffmpeg-static, 6 GB (about 3.5 vCPUs) for Chromium and the encoder side by
-    // side, 15 minutes, 2 GB of /tmp for Chromium and the MP4. The config API invokes it asynchronously with no
-    // retries; one render at a time is the config API's lease (pharmacy-screen/config-api/src/video/jobs.js).
-    // The MP4s go under exports/ in the media bucket, deleted after a day; CloudFront never serves that prefix.
-    if (p.videoLambdaAsset) {
-      const videoFn = new lambda.Function(this, "VideoWorker", {
-        functionName: name("VideoWorker"),
-        description: "Pharmacy screen Download MP4: renders a promotion to the Android 12 signage MP4",
-        runtime: lambda.Runtime.NODEJS_24_X,
-        architecture: lambda.Architecture.X86_64,
-        code: lambda.Code.fromAsset(p.videoLambdaAsset),
-        handler: "aws/lambda/video-worker.handler",
-        memorySize: 6144,
-        timeout: Duration.minutes(15),
-        ephemeralStorageSize: cdk.Size.mebibytes(2048),
-        environment: { NODE_OPTIONS: "--enable-source-maps", PS_TABLE: table.tableName, PS_ROOT: STORE_ROOT, PS_MEDIA_BUCKET: mediaBucket.bucketName },
-        logGroup: new logs.LogGroup(this, "VideoWorkerLogs", { retention: logs.RetentionDays.ONE_MONTH, removalPolicy: keepData }),
-        ...vpcProps,
-      });
-      videoFn.configureAsyncInvoke({ retryAttempts: 0, maxEventAge: Duration.minutes(5) });
-      table.grantReadWriteData(videoFn);
-      mediaBucket.grantReadWrite(videoFn, "exports/*");
-      mediaBucket.addLifecycleRule({ id: "ExpireVideoExports", prefix: "exports/", expiration: Duration.days(1) });
-      videoFn.grantInvoke(configFn);
-      configFn.addEnvironment("PS_VIDEO_FUNCTION", videoFn.functionName);
-      configFn.addEnvironment("PS_SCREEN_PAGE_URL", `${siteUrl}/pharmacy-screen.html`);
-      new CfnOutput(this, "VideoWorkerFunction", { value: videoFn.functionName, description: "Download MP4 worker function" });
-    }
-
     const configInt = new integrations.HttpLambdaIntegration("ConfigApiIntegration", configFn);
     const phInt = new integrations.HttpLambdaIntegration("PhApiIntegration", phFn);
     for (const path of CONFIG_ROUTES) httpApi.addRoutes({ path, methods: [apigw.HttpMethod.ANY], integration: configInt });

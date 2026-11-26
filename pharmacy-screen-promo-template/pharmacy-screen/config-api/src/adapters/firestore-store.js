@@ -9,8 +9,6 @@
 //   pharmacyScreen/config/promotions/{id}      admin only
 //   pharmacyScreen/config/templates/{id}       admin only (custom templates)
 //   pharmacyScreen/config/services/{id}        admin only (service library)
-//   pharmacyScreen/video/jobs/{id}             server only (Download MP4 jobs)
-//   pharmacyScreen/video/locks/render          server only (one render at a time)
 //   pharmacyScreen/audit/entries/{id}          admin only (audit log)
 //   pharmacyScreen/published/screens/{code}    public read (rules), the screen config
 //
@@ -27,9 +25,6 @@ const PATHS = {
   services: ["config", "services"],
   audit: ["audit", "entries"],
   screens: ["published", "screens"],
-  // Download MP4 (src/video/jobs.js): the jobs and the one-render-at-a-time lease. Server only.
-  videoJobs: ["video", "jobs"],
-  videoLocks: ["video", "locks"],
 };
 
 function createFirestoreStore(db, { root = "pharmacyScreen" } = {}) {

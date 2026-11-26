@@ -39,7 +39,6 @@ const PARAMS = [
   ["retainData", "true: keep the table, media bucket, KMS key and user pool when the stack is deleted"],
   ["siteAsset", "staged static files (written by the deploy script)"],
   ["lambdaAsset", "staged function code (written by the deploy script)"],
-  ["videoLambdaAsset", "staged Download MP4 worker with Chromium and ffmpeg (written by the deploy script; unset: no Download MP4)"],
 ];
 
 const bool = (v) => v === true || v === "true" || v === "1" || v === "yes";
@@ -78,7 +77,6 @@ function normaliseParams(raw = {}, { endpointsLater = false } = {}) {
     retainData: bool(raw.retainData),
     siteAsset: get("siteAsset"),
     lambdaAsset: get("lambdaAsset"),
-    videoLambdaAsset: get("videoLambdaAsset"),
   };
   if (!p.adminClaim) p.adminClaim = p.oidcIssuer ? "groups" : "cognito:groups";
 

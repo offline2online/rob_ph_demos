@@ -136,7 +136,6 @@
       <div class="grid2">
         <label class="f"><span>Pharmacy name * <code class="tok" id="sNameTok" title="On screens ${StoreName} is the store name from the Location API. This name is shown only when the store has none there.">${StoreName}</code></span><input id="sName" placeholder="e.g. Brighton Pharmacy"></label>
         <label class="f"><span>Store code *</span><input id="sCode" placeholder="e.g. VIC-MP-006" autocapitalize="characters"></label>
-        <label class="f" id="sDevRow"><span>Screen device ID <span class="ms help" title="The Personalisation Hub device ID of one of this pharmacy's screens. Download MP4 uses it to read the store's own name, opening hours and suburb from Personalisation Hub, as that screen does.">info</span></span><input id="sDev" placeholder="e.g. DEVICE-VIC-MP-001" autocomplete="off" spellcheck="false"></label>
       </div>
       <span class="hint" id="codeErr" style="color:var(--err)" hidden></span>
     </div>
@@ -189,9 +188,7 @@
         <span class="pill" id="pvData">Sample opening hours</span>
         <span class="infowrap"><span class="ms" id="pvInfo" tabindex="0" role="img" aria-label="About the sample opening hours" aria-describedby="pvTip">info</span><span class="infotip" id="pvTip" role="tooltip">The preview uses sample opening hours (Monday to Friday 9:00 am to 5:30 pm, Saturday 9:00 am to 1:00 pm). Each screen uses its own store's actual opening and closing hours from Personalisation Hub, for the day and time the promotion plays.</span></span>
       </div>
-      <button type="button" id="dlBtn" class="dl" aria-disabled="true"><span class="ms" id="dlIc">download</span><span id="dlTx">Download MP4</span></button>
     </div>
-    <span class="hint dlmsg" id="dlMsg" role="status" hidden></span>
     <div class="cprow" id="cpRow">
       <div class="cpwrap"><button type="button" id="cpUrl" aria-describedby="cpTip"><span class="ms">link</span><span id="cpTx">Copy experience URL</span></button>
         <div class="cptip" id="cpTip" role="tooltip"></div></div>

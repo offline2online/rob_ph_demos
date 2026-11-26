@@ -20,8 +20,6 @@ const bad = (message, details) => new ApiError(400, "invalid-request", message, 
 const { SECTION_IDS } = require("./inherit");
 
 const STORE_CODE_RE = /^[A-Z0-9][A-Z0-9-]{1,31}$/;
-// A Personalisation Hub device ID, as the PH API proxy accepts it (ph-proxy/src/location-proxy.js).
-const DEVICE_ID_RE = /^[A-Za-z0-9._:-]{1,128}$/;
 const PROMO_ID_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const COLOUR_RE = /^#[0-9a-fA-F]{6}$/;
 const TEMPLATE_KINDS = ["promotion-scenes", "opening-hours"];
@@ -139,17 +137,6 @@ function safeJson(value, field, depth = 0) {
   throw bad(`${field} must be JSON`);
 }
 
-// The screen device ID a pharmacy's Download MP4 reads its store data with (optional; '' when unset). PH's
-// Location API is looked up by device only, so this is how the video gets the store's own name and hours.
-function normaliseDevice(value) {
-  if (value === undefined || value === null) return "";
-  if (typeof value !== "string") throw bad("device must be text");
-  const v = value.trim();
-  if (!v) return "";
-  if (v.includes("${") || !DEVICE_ID_RE.test(v)) throw bad("device must be a Personalisation Hub device ID: 1-128 letters, digits, dots, colons, underscores or hyphens");
-  return v;
-}
-
 function normaliseStoreCode(value) {
   const v = str(value, "storeCode", { max: 32 }).toUpperCase();
   if (!STORE_CODE_RE.test(v)) throw bad("storeCode must be 2-32 characters: letters, digits and hyphens (e.g. VIC-MP-001)");
@@ -186,7 +173,6 @@ function normalisePharmacy(input, stored = {}) {
   for (const [promotionId, value] of Object.entries(content)) cleanContent[promotionId] = contentValue(value, `content.${promotionId}`);
   const detached = normaliseDetached(merged.detached);
   const tokens = normaliseTokens(merged.tokens);
-  const device = normaliseDevice(merged.device);
   return {
     storeCode: normaliseStoreCode(merged.storeCode),
     name: str(merged.name, "name"),
@@ -198,8 +184,6 @@ function normalisePharmacy(input, stored = {}) {
     ...(Object.keys(detached).length ? { detached } : {}),
     // Only when the pharmacy sets a token by hand.
     ...(Object.keys(tokens).length ? { tokens } : {}),
-    // Only when set: the screen device ID Download MP4 reads the store's data with.
-    ...(device ? { device } : {}),
   };
 }
 
@@ -367,7 +351,6 @@ module.exports = {
   ORIENTATIONS,
   isPlainObject,
   normaliseStoreCode,
-  normaliseDevice,
   normalisePromoId,
   normalisePharmacy,
   normalisePromotion,

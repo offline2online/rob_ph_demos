@@ -18,7 +18,6 @@ New here? **[START-HERE.md](START-HERE.md)** is one page: deploy to AWS in one c
 | Document | For |
 |---|---|
 | [START-HERE.md](START-HERE.md) | The one-page quick start |
-| [REQUIREMENTS.md](REQUIREMENTS.md) | The numbered requirements (the board's Requirements document is copied from this file) |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Architecture, prerequisites, install, PH token and rotation, registering screens and the campaign URL, upgrade, rollback, uninstall |
 | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) + [.env.example](.env.example) | Every setting, deploy option, environment variable and query parameter |
 | [docs/DATA-CONTRACT.md](docs/DATA-CONTRACT.md) | The Location API request and fields used, a full sample, promo IDs, template tokens, config schema, error states |
@@ -52,7 +51,7 @@ npm run deploy:aws -- --region ap-southeast-2 --admin-email <your sign-in addres
 | `ci/deploy-pharmacy-screen.yml` | GitHub Actions workflow to install (see "Continuous deploy") |
 | `test/` | Deploy config checks and the deployed admin sign-in gate (`test/ui/admin-gate.test.mjs`) |
 | `aws/` | The deployment target for the retailer's own AWS account: AWS adapters, Lambda entries, CDK stack, one-command install and teardown ([README](aws/README.md)) |
-| `docs/`, `START-HERE.md`, `REQUIREMENTS.md`, `AGENTS.md`, `CLAUDE.md`, `.env.example`, `CHANGELOG.md` | The handover package (above); not published |
+| `docs/`, `START-HERE.md`, `AGENTS.md`, `CLAUDE.md`, `.env.example`, `CHANGELOG.md` | The handover package (above); not published |
 
 ## Our test environment (Firebase project `rob-ph-demos`)
 
@@ -99,72 +98,6 @@ without changing the API.
 The screen polls its store data (the Location API through `/api/device/…`) every 20 s and its published config
 (`/api/screens/{store_code}`) every 15 s (a `304` with no body while nothing changed), one request in flight per endpoint, re-rendering only on change
 (`pharmacy-screen/README.md` → "How the screen gets its data (live)").
-
-## Download MP4 (Android 12 signage format)
-
-Under the editor's preview, at the end of the Play/Pause row, **Download MP4** makes a video of the promotion on
-the preview, for the selected pharmacy, in the orientation on the Portrait/Landscape tabs, so a pharmacy can load
-the MP4 into a campaign on the Android 12 DMP signage players instead of the live web experience. Scheduling is
-unchanged: Personalisation Hub decides when a promotion plays; the download is just the promotion as a file.
-
-- **What it shows**: exactly what `pharmacy-screen.html` shows for that pharmacy, promotion and orientation: one
-  full loop from the first scene (as `loop=1`), with all animation and the template's background, logo, colours and
-  copy as saved. A Seasonal promotion plays the season the preview shows (`occasion=`).
-- **The pharmacy's own details, not the sample hours**: the video is made from the real screen page with the
-  pharmacy's **Screen device ID** (Settings → Pharmacy details), so its store name, opening hours, suburb and logo
-  come from Personalisation Hub through the PH API proxy, as on that screen. The button is disabled, with a tooltip
-  saying what to do, for the master template (pick a pharmacy) and for a pharmacy with no device ID. The "Open
-  today" bar shows the store's state at the time the video is made.
-- **Saved version**: the editor saves as it goes; Download MP4 first sends any edit still waiting, and makes
-  nothing if a save failed. Its tooltip says it uses the saved version.
-- **File name**: `<pharmacy-name>-<promotion>-<portrait|landscape>-<seconds>s_android.mp4`, lower case and
-  hyphenated (`beaumaris-pharmacy-sales-promos-portrait-10s_android.mp4`); a Seasonal one adds the season
-  (`…-seasonal-christmas-portrait-7s_android.mp4`).
-- **How it is made**: `POST /api/admin/videos` (admin only, the same sign-in as the rest of `/api/admin`) starts a
-  job; the editor reads `GET /api/admin/videos/{id}` until it is done ("Preparing video… 40%" under the row) and
-  then downloads the file from a link that expires after an hour (a V4 signed URL on Firebase, a presigned URL on
-  AWS). The editor stops waiting, with a plain message, as soon as the server refuses a poll (for example a 401 once
-  the sign-in has ended), after 8 failed polls in a row, or after 20 minutes. A worker opens the screen page with `capture=1` in headless
-  Chromium, steps it frame by frame at 25 fps under a stepped clock (timers, `requestAnimationFrame`, `Date`,
-  `performance.now()` and every CSS animation follow it, so no frame is dropped or doubled however long a
-  screenshot takes), and pipes the frames into ffmpeg (`pharmacy-screen/config-api/src/video/`). **One render at a
-  time** per deployment: a second request meanwhile gets "A video is already being made. Try again in a minute."
-  (a 20-minute lease, so a worker that died cannot block it). A loop longer than **120 seconds** is refused (every
-  default promotion is 7 to 12 s; a render takes about 2 s per second of video on the workers).
-- **Where it runs**: Firebase: the Cloud Tasks queue function `pharmacyScreenVideoWorker` (4 GiB, 2 vCPU, one at a
-  time, no retries, 15 min), the MP4 in the media bucket under `exports/` (a one-day lifecycle rule set by the
-  deploy's setup, and anything older than a day is also removed when the next render starts) with a one-hour signed
-  link; signing needs Service Account Token Creator on the functions' runtime service account, which the setup
-  grants on that account only (a deployment without it fails the job with a plain message rather than handing out a
-  link that never expires). AWS: the `VideoWorker` Lambda (x86_64, 6 GB, 15 min, invoked asynchronously with no retries), the MP4 in the
-  media bucket under `exports/` (a one-day lifecycle rule; CloudFront never serves that prefix) with a one-hour
-  presigned link. Locally the dev server runs it in process with the machine's Chromium and ffmpeg.
-
-The format, measured from a video that plays on the real Android 12 player (25 Nov 2026; an earlier export in
-H.264 High, 30 fps, with a silent AAC track did not play). Required, not a preference:
-
-| | |
-|---|---|
-| Container | MP4, major brand `mp42`, `moov` before `mdat` (faststart), no metadata |
-| Video | H.264, profile **Main**, level **4.0**, `yuv420p`, square pixels |
-| Size | 1080x1920 (portrait) or 1920x1080 (landscape) |
-| Frame rate | **25 fps constant**, video track timescale 12800 |
-| Keyframes | exactly every 2 s (GOP 50, no scene-cut keyframes), up to 3 B-frames |
-| Audio | **none** (no track at all, not a silent one) |
-| Colour | BT.709 matrix, limited (TV) range |
-| Bitrate | quality-based (CRF 18) with a 6 Mbit/s ceiling (buffer 12 Mbit) |
-| SEI | SEI NAL units removed |
-| Duration | one whole loop: the promotion's seconds × 25 frames, the last frame cutting back to the first |
-
-```
--an -vf "scale=W:H:out_color_matrix=bt709:out_range=tv,fps=25,format=yuv420p,setsar=1" -c:v libx264 -preset slow
--profile:v main -level:v 4.0 -crf 18 -maxrate 6M -bufsize 12M -g 50 -keyint_min 50 -sc_threshold 0 -bf 3
--colorspace bt709 -color_range tv -bsf:v filter_units=remove_types=6 -fps_mode cfr -video_track_timescale 12800
--map_metadata -1 -fflags +bitexact -movflags +faststart -brand mp42
-```
-
-(`-fflags +bitexact` is added to the measured arguments: without it ffmpeg still writes an `encoder` tag.)
-`pharmacy-screen/test/e2e/video.test.mjs` renders portrait and landscape files and checks every row with ffprobe.
 
 ## Security
 
