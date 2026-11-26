@@ -69,6 +69,15 @@ jobs:
           npm install --no-save --no-audit --no-fund --no-package-lock playwright@1.56.1
           npx playwright install --with-deps chromium
 
+      - name: Install ffmpeg (Download MP4's video test encodes and probes a real file)
+        if: steps.scope.outputs.run == 'true'
+        # The runner image has no ffmpeg, and Playwright's own copy is not on the PATH: without this the render
+        # in test/e2e/video.test.mjs never starts (26 Nov 2026, two train runs stuck at "rendering 0%").
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          ffmpeg -version | head -1
+
       - name: Browser tests (live screen, copy-fit audit)
         if: steps.scope.outputs.run == 'true'
         run: npm run test:ui
