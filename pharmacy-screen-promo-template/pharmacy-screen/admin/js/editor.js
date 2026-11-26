@@ -228,6 +228,7 @@ function loop(now) {
   $('tl').querySelectorAll('.bar i').forEach((f, i) => { f.style.width = (i < scene ? 100 : i > scene ? 0 : Math.min(1, elapsed / ((s[scene] && s[scene].t) || 1)) * 100) + '%'; });
   $('tlTime').innerHTML = `<b>${secs(pos)}</b> / ${secs(tot)} · ${s.length} scenes`;
   renderPlayback(tot);
+  renderDl();
   requestAnimationFrame(loop);
 }
 
@@ -1180,7 +1181,7 @@ function saveDetails(ph) {
   const id = ph.id;
   Save.later(`ph:${id}:details`, `ph:${id}`, async () => {
     try {
-      const res = await api.updatePharmacy(id, { name: ph.name, storeCode: ph.storeCode, colours: ph.colours }, ph.version);
+      const res = await api.updatePharmacy(id, { name: ph.name, storeCode: ph.storeCode, colours: ph.colours, device: ph.device || '' }, ph.version);
       ph.version = res.version;
       if (S.cur === ph) { syncListRow(); renderStoreSel(); }
     } catch (e) {
@@ -1190,6 +1191,89 @@ function saveDetails(ph) {
   });
 }
 
+// ───────────────────────── Download MP4 ─────────────────────────
+// Under the preview, at the end of the Play/Pause row: an MP4 of the promotion on the preview, for the selected
+// pharmacy and orientation, in the Android 12 signage format (config-api/src/video/). Made on the server from the
+// real screen page with the pharmacy's screen device ID, so it shows the store's own name and opening hours, not the
+// sample hours. It uses what is saved: waiting edits are saved first, and nothing is made if a save failed.
+
+let dlBusy = false, dlKey = '';
+function dlBlocked() {
+  if (!S.cur || S.cur.isMaster || !S.cur.id) return 'Pick a pharmacy to download its video.';
+  if (!String(S.cur.device || '').trim()) return "Add this pharmacy's screen device ID in Settings to download its video.";
+  return '';
+}
+function renderDl() {
+  const why = dlBlocked();
+  const tip = dlBusy ? 'Preparing video…' : why || `Download this promotion as an MP4 (${orient}) for ${S.cur.name}. It uses the saved version.`;
+  const key = [dlBusy, tip].join('|');
+  if (key === dlKey) return;
+  dlKey = key;
+  const b = $('dlBtn');
+  b.setAttribute('aria-disabled', String(!!why || dlBusy));
+  b.setAttribute('aria-busy', String(dlBusy));
+  b.title = tip;
+  $('dlIc').textContent = dlBusy ? 'hourglass_top' : 'download';
+  $('dlTx').textContent = dlBusy ? 'Preparing video…' : 'Download MP4';
+}
+function dlMsg(text, { err = false, link = null } = {}) {
+  const m = $('dlMsg');
+  m.hidden = !text;
+  m.classList.toggle('err', err);
+  m.textContent = text || '';
+  if (link) {
+    const a = document.createElement('a');
+    a.href = link.url; a.download = link.fileName; a.textContent = link.fileName; a.rel = 'noopener';
+    m.append(' ', a);
+  }
+}
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+// How long the editor waits for a video: the server's render lease (config-api/src/video/jobs.js LEASE_MS), after
+// which the job reads as failed anyway. A poll the server refuses (4xx: signed out, no such video) stops at once;
+// a network or server error is tried again, but not more than DL_POLL_ERRORS times in a row.
+const DL_WAIT_MS = 20 * 60 * 1000, DL_POLL_MS = 1500, DL_POLL_ERRORS = 8;
+function pollError(e) {
+  if (e && e.status === 401) return 'Your sign-in has ended, so the video could not be fetched. Sign in again and try again.';
+  if (e && e.status >= 400 && e.status < 500) return e.message || 'The video could not be fetched. Try again.';
+  return null;
+}
+async function downloadMp4() {
+  if (dlBusy || dlBlocked()) return;
+  const ph = S.cur, p = promo(), orientation = orient;
+  const body = { pharmacyId: ph.id, promotionId: p.id, orientation, ...(isOcc(p.id) ? { occasion: seasonOf(p) } : {}) };
+  dlBusy = true; renderDl();
+  try {
+    if (Save.pending()) { dlMsg('Saving your changes first…'); await Save.flush(); }
+    if (Save.failed()) throw new Error('Your latest change is not saved, so no video was made. Reload the page and try again.');
+    dlMsg('Preparing video…');
+    let job = await api.startVideo(body);
+    const until = Date.now() + DL_WAIT_MS;
+    for (let errors = 0; job.status === 'queued' || job.status === 'rendering';) {
+      if (Date.now() > until) throw new Error('The video took too long and was stopped. Try again.');
+      await pause(DL_POLL_MS);
+      try {
+        job = await api.getVideo(job.id); errors = 0;
+      } catch (e) {
+        const msg = pollError(e);
+        if (msg) throw new Error(msg);
+        if (++errors >= DL_POLL_ERRORS) throw new Error('The connection to the server was lost while the video was being made. Try again.');
+        continue;
+      }
+      dlMsg(job.status === 'rendering' ? `Preparing video… ${Math.round((job.progress || 0) * 100)}%` : 'Preparing video…');
+    }
+    if (job.status !== 'done' || !job.url) throw new Error(job.error || 'The video could not be made. Try again.');
+    const a = document.createElement('a');
+    a.href = job.url; a.download = job.fileName; a.rel = 'noopener';
+    document.body.append(a); a.click(); a.remove();
+    dlMsg('Downloaded:', { link: { url: job.url, fileName: job.fileName } });
+  } catch (e) {
+    dlMsg((e && e.message) || 'The video could not be made. Try again.', { err: true });
+  } finally {
+    dlBusy = false; renderDl();
+  }
+}
+$('dlBtn').onclick = downloadMp4;
+
 // A new pharmacy is created once its name and store code are valid. The editor stays live while the create is
 // in flight, so the create posts a copy of the draft and, when it resolves, saves whatever was edited in the
 // meantime (details, and each promotion's content) on the new pharmacy's own chain. Those saves are queued
@@ -1197,7 +1281,7 @@ function saveDetails(ph) {
 async function createPharmacy() {
   const draft = S.cur;
   if (draft.id || detailsError()) return;
-  const sent = M.clone({ storeCode: draft.storeCode, name: draft.name, colours: draft.colours, content: draft.content || {} });
+  const sent = M.clone({ storeCode: draft.storeCode, name: draft.name, colours: draft.colours, content: draft.content || {}, ...(draft.device ? { device: draft.device } : {}) });
   try {
     const rec = await api.createPharmacy(sent);
     draft.id = rec.id; draft.version = rec.version;
@@ -1224,11 +1308,14 @@ function loadStore() {
   bindVal('sName', () => s.name, (v) => { s.name = v; renderStoreSel(); });
   $('sCode').readOnly = !!S.lock;
   bindVal('sCode', () => s.storeCode, (v) => { if (S.lock) return; s.storeCode = M.normStoreCode(v); $('sCode').value = s.storeCode; renderStoreSel(); });
+  bindVal('sDev', () => s.device, (v) => { if (S.lock) return; s.device = v.trim(); renderDl(); });
+  $('sDev').readOnly = !!S.lock;
   bindVal('cP', () => s.colours.primary, (v) => { s.colours.primary = v.toLowerCase(); renderLogo(); renderDp(); });
   bindVal('cA', () => s.colours.accent, (v) => { s.colours.accent = v.toLowerCase(); });
   showCodeErr(s.id ? '' : detailsError());
   $('logoIn').value = ''; $('logoErr').hidden = true;
   renderLogo(); renderTokens(); renderDp(); renderUrl(); renderJson(); renderRestore();
+  dlMsg(''); renderDl();
   scene = 0; elapsed = 0; lastKey = '';
 }
 // Tokens set by hand: every token this pharmacy's promotions and templates use (master template included), each
@@ -1487,7 +1574,7 @@ function applyLock() {
   for (const id of ['newPromoBtn', 'newPromo', 'settingsView']) $(id).hidden = true;
   // Administrator-only page furniture: the ${Suburb} hint, the remote config, and Copy experience URL with the
   // playback duration and its tooltip (the campaign is set up by an administrator in the full editor).
-  for (const id of ['dpHint', 'cfgBox', 'cpRow']) $(id).hidden = true;
+  for (const id of ['dpHint', 'cfgBox', 'cpRow', 'dlBtn', 'dlMsg']) $(id).hidden = true;
 }
 
 // Hook for the editor's end-to-end tests.

@@ -39,7 +39,8 @@
 // first deploy (pharmacy-screen/ph-proxy/README.md).
 
 import { spawn, spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync, mkdirSync, copyFileSync, cpSync, rmSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, copyFileSync, cpSync, rmSync, readdirSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -254,6 +255,9 @@ export function writeAdminConfig(web, out = join(ROOT, STAGE_DIR), opts = { admi
   return file;
 }
 
+// Download MP4 files (exports/ in the media bucket) are deleted a day after they are made.
+export const EXPORTS_LIFECYCLE = { rule: [{ action: { type: "Delete" }, condition: { age: 1, matchesPrefix: ["exports/"] } }] };
+
 export const APIS = [
   "cloudfunctions.googleapis.com",
   "run.googleapis.com",
@@ -266,6 +270,8 @@ export const APIS = [
   "firebasestorage.googleapis.com",
   "identitytoolkit.googleapis.com",
   "firebase.googleapis.com",
+  "cloudtasks.googleapis.com", // Download MP4's worker is a Cloud Tasks queue function
+  "iamcredentials.googleapis.com", // ...and signs its one-hour download links (signBlob)
 ];
 
 export function readTargets(projectId, root = ROOT) {
@@ -369,6 +375,27 @@ export function buildPlan({ project, site, bucket, skipSetup = false }) {
       task: "grantKmsToRuntime",
       label: `Let the functions' runtime service account use ${KMS.key} (on that key only)`,
       args: { project, kmsKey },
+    });
+    steps.push({
+      phase: "setup",
+      kind: "task",
+      task: "grantTasksToRuntime",
+      label: "Let the functions' runtime service account queue Download MP4 renders (Cloud Tasks Enqueuer)",
+      args: { project },
+    });
+    steps.push({
+      phase: "setup",
+      kind: "task",
+      task: "grantSignToRuntime",
+      label: "Let the functions' runtime service account sign Download MP4's one-hour links (Token Creator, on itself only)",
+      args: { project },
+    });
+    steps.push({
+      phase: "setup",
+      kind: "task",
+      task: "expireVideoExports",
+      label: `Delete Download MP4 files under exports/ in gs://${bucket} after a day (lifecycle rule)`,
+      args: { project, bucket },
     });
     steps.push({
       phase: "setup",
@@ -532,6 +559,43 @@ const TASKS = {
     ], { quiet: true });
     if (!ok) throw new Error("could not grant roles/cloudkms.cryptoKeyEncrypterDecrypter on the key");
     return "granted (idempotent)";
+  },
+  async grantTasksToRuntime({ project }) {
+    // The config API enqueues one task per video on pharmacyScreenVideoWorker's queue (config-api/index.js).
+    const number = capture(["gcloud", "projects", "describe", project, "--format=value(projectNumber)"]);
+    const member = `serviceAccount:${number}-compute@developer.gserviceaccount.com`;
+    const ok = run([
+      "gcloud", "projects", "add-iam-policy-binding", project,
+      `--member=${member}`, "--role=roles/cloudtasks.enqueuer", "--condition=None", "--quiet",
+    ], { quiet: true });
+    if (!ok) throw new Error("could not grant roles/cloudtasks.enqueuer");
+    return "granted (idempotent)";
+  },
+  async grantSignToRuntime({ project }) {
+    // pharmacyScreenVideoWorker signs a V4 link for each MP4 (config-api/index.js signedLink); with no key file it
+    // signs through the IAM Credentials API as itself, which needs Token Creator on its own account only.
+    const number = capture(["gcloud", "projects", "describe", project, "--format=value(projectNumber)"]);
+    const sa = `${number}-compute@developer.gserviceaccount.com`;
+    const ok = run([
+      "gcloud", "iam", "service-accounts", "add-iam-policy-binding", sa, `--project=${project}`,
+      `--member=serviceAccount:${sa}`, "--role=roles/iam.serviceAccountTokenCreator", "--quiet",
+    ], { quiet: true });
+    if (!ok) throw new Error("could not grant roles/iam.serviceAccountTokenCreator");
+    return "granted (idempotent)";
+  },
+  async expireVideoExports({ project, bucket }) {
+    // The same rule as AWS's ExpireVideoExports (aws/infra/stack.js). The media bucket has no other lifecycle rule
+    // (this script creates it with none), so setting the whole configuration replaces nothing else.
+    const dir = mkdtempSync(join(tmpdir(), "ps-lifecycle-"));
+    const file = join(dir, "lifecycle.json");
+    writeFileSync(file, JSON.stringify(EXPORTS_LIFECYCLE));
+    try {
+      const ok = run(["gcloud", "storage", "buckets", "update", `gs://${bucket}`, `--project=${project}`, `--lifecycle-file=${file}`], { quiet: true });
+      if (!ok) throw new Error(`could not set the lifecycle rule on gs://${bucket}`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+    return "set (idempotent)";
   },
   async adminConfig({ project }) {
     const base = `https://firebase.googleapis.com/v1beta1/projects/${project}/webApps`;

@@ -50,5 +50,5 @@ export function createSaveQueue(render = () => {}) {
     error = e && e.code === 'version-conflict' ? 'Someone else changed this. Reload to see their changes.' : `Not saved: ${(e && e.message) || e}`;
     draw();
   }
-  return { queue, later, flush, fail, clear() { error = null; draw(); }, pending: () => timers.size + inflight };
+  return { queue, later, flush, fail, clear() { error = null; draw(); }, pending: () => timers.size + inflight, failed: () => !!error };
 }

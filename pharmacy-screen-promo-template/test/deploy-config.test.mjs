@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { hasGit } from "../scripts/release.mjs";
 import { createRequire } from "node:module";
-import { ROOT, buildPlan, readTargets, urls, parseArgs, stage, stagePublic, adminConfigJs, writeAdminConfig, CODEBASES, RULES_SOURCE, STAGE_DIR, ADMIN_WEB_APP, REGION, CLEANUP_POLICY_ARGS, functionsDeployOutcome, checkApi } from "../scripts/deploy.mjs";
+import { ROOT, buildPlan, readTargets, urls, parseArgs, stage, stagePublic, adminConfigJs, writeAdminConfig, CODEBASES, RULES_SOURCE, STAGE_DIR, ADMIN_WEB_APP, REGION, CLEANUP_POLICY_ARGS, functionsDeployOutcome, checkApi, EXPORTS_LIFECYCLE, APIS } from "../scripts/deploy.mjs";
 
 const csp = createRequire(import.meta.url)("../aws/infra/csp.js");
 
@@ -373,4 +373,24 @@ test("the API check fails the 23 Nov 2026 first deploy, where one function faile
   await assert.rejects(checkApi({ site: "s", fetchImpl: routes(() => hosting404, () => json(404)), tries: 2, waitMs: 1 }), /does not answer after the deploy: health 404/);
   // Neither: every /api route is Hosting's page.
   await assert.rejects(checkApi({ site: "s", fetchImpl: routes(() => hosting404, () => hosting404), tries: 2, waitMs: 1 }), /does not answer after the deploy/);
+});
+
+test("Download MP4 on Firebase: setup lets the worker sign one-hour links and deletes exports after a day", () => {
+  const t = readTargets();
+  const plan = buildPlan(t);
+  const step = (task) => plan.find((s) => s.task === task);
+  for (const task of ["grantTasksToRuntime", "grantSignToRuntime", "expireVideoExports"]) {
+    assert.equal(step(task) && step(task).phase, "setup", `${task} is a setup step`);
+  }
+  assert.equal(step("expireVideoExports").args.bucket, t.bucket);
+  assert.deepEqual(EXPORTS_LIFECYCLE, { rule: [{ action: { type: "Delete" }, condition: { age: 1, matchesPrefix: ["exports/"] } }] });
+  assert.ok(APIS.includes("iamcredentials.googleapis.com"), "signing a link uses the IAM Credentials API");
+  // The worker hands out a signed link, never a Firebase download token (a token link never expires).
+  const index = read("pharmacy-screen/config-api/index.js");
+  assert.match(index, /getSignedUrl\(\{ version: "v4", action: "read", expires: Date\.now\(\) \+ LINK_SECONDS \* 1000/);
+  assert.match(index, /const LINK_SECONDS = 3600;/);
+  assert.doesNotMatch(index, /firebaseStorageDownloadTokens/);
+  // The worker's time limit stays inside the render lease (src/video/jobs.js LEASE_MS, 20 minutes).
+  assert.match(index, /const WORKER_SECONDS = 900;/);
+  assert.match(index, /timeoutSeconds: WORKER_SECONDS/);
 });

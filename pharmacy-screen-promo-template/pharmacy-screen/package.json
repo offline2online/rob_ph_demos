@@ -8,7 +8,7 @@
     "test": "node --test test/*.test.mjs",
     "test:units": "node --test test/*.test.mjs && npm --prefix ph-proxy test && npm --prefix config-api test && npm --prefix seed test",
     "test:ui": "node --test --test-concurrency=1 test/ui/*.test.mjs",
-    "test:e2e": "node --test --test-concurrency=1 test/e2e/*.test.mjs && npm --prefix admin test",
+    "test:e2e": "node tools/ffmpeg-bin.mjs --ensure && node --test --test-concurrency=1 test/e2e/*.test.mjs && npm --prefix admin test",
     "test:ci": "npm run test:units && npm run test:ui && npm run test:e2e",
     "audit": "node tools/overflow-audit.mjs",
     "fonts": "node tools/fetch-fonts.mjs",
