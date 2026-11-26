@@ -22,9 +22,13 @@ recorded in the audit log.
 
 The right-hand side is a **live preview** drawn by the screen's own code: Portrait and Landscape tabs, the
 scene timeline with its total time, Play and Pause. Click a scene to jump to its fields; click into a field to
-show its scene. The **Sample opening hours** label, under the preview to the right of the Pause button, says the preview's hours are sample ones (Monday to
-Friday 9:00 am to 5:30 pm, Saturday 9:00 am to 1:00 pm); its info tooltip explains that each screen uses its own
-store's actual opening and closing hours from Personalisation Hub, for the day and time the promotion plays.
+show its scene. The label under the preview, to the right of the Pause button, says whose opening hours it shows. For a pharmacy
+with a **Screen device ID** (Settings → Pharmacy details) it reads **Live opening hours**: every promotion, in both
+orientations, is drawn with that store's own opening hours, suburb, store name and logo, read from Personalisation
+Hub when you pick the pharmacy (its info tooltip says for which store and when). Without one, and for the master
+template, it reads **Sample opening hours** (Monday to Friday 9:00 am to 5:30 pm, Saturday 9:00 am to 1:00 pm); its
+tooltip says to add the Screen device ID in Settings for live data, and that each screen uses its own store's actual
+opening and closing hours from Personalisation Hub, for the day and time the promotion plays.
 It stays beside the editor when Personalisation Hub's left menu is expanded (it just gets narrower), so you can
 keep the menu open while you edit.
 
@@ -319,11 +323,21 @@ to get a new one.
 **Settings** (the cog beside Promo preview) shows:
 
 - **Pharmacies**: the pharmacy picker, **Add pharmacy**, **Reset** and **Delete** ("Add a pharmacy" above).
-- **Pharmacy details**: name, store code and **Screen device ID**. On screens `${StoreName}` is the store name from Personalisation
-  Hub's Location API for the screen's device; the **Pharmacy name** (the token is shown beside its label) is used
-  only when Personalisation Hub has no store name for the store. The Screen device ID is the Personalisation Hub
-  device ID of one of the pharmacy's screens; **Download MP4** needs it to read the store's own name and opening
-  hours ("Download MP4" below). Optional; nothing else uses it.
+- **Pharmacy details**: **Screen device ID** first, then name and store code. Paste the Personalisation Hub device
+  ID of one of the pharmacy's screens (or type it and press Enter; **Check** reads it again). Its store details
+  appear under the field, marked "Live from Personalisation Hub" with the time they were read: store name, store
+  code, address, phone, timezone, today's opening hours and logo. An empty name and store code are filled in for
+  you, so a new pharmacy can be added from its device ID alone (**Add pharmacy** puts you in that field). A name you
+  typed, or a `${Suburb}` you set by hand, that differs from Personalisation Hub's is never overwritten: click
+  **Use Personalisation Hub's** beside it to take Personalisation Hub's (for the suburb, that clears your value so
+  the store's own suburb shows). Opening hours, suburb and logo are always read live, never copied. The ID is
+  saved only once Personalisation Hub confirms the device belongs to this pharmacy's store: a device of another
+  store is refused ("This device belongs to Beaumaris Pharmacy (VIC-MP-001), not this pharmacy."), and a
+  malformed ID, an ID Personalisation Hub does not know, Personalisation Hub not answering, or its API not set up
+  below each say so under the field and save nothing. A pharmacy without an ID is marked "no screen device ID" in
+  the pharmacy list and prompted here: its preview uses sample data and **Download MP4** is off ("Download MP4"
+  below). On screens `${StoreName}` is the store name from Personalisation Hub for the screen's device; the
+  **Pharmacy name** (the token is shown beside its label) is used only when Personalisation Hub has none.
 - **Tokens**: every `${…}` token this pharmacy's promotions and templates use, including the master template's
   sections it inherits, with the promotions that use each. Leave a token blank to show the store's own data
   (the placeholder says where it comes from, e.g. "Suburb from store details": the suburb, phone number, state

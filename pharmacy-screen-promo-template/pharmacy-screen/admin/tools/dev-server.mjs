@@ -94,6 +94,10 @@ async function devLaunch() {
   return pw.chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
 }
 
+// Extra mock devices the dev server's Location API knows (see startDevServer).
+export const DEV_DEVICES = { beaumaris: '6890ee6121f42e90ded7baa4d80cc63b2a2b4eb4bfad71c88601712b5397aece', newStore: 'DEVICE-VIC-MP-006' };
+const clone = (v) => JSON.parse(JSON.stringify(v));
+
 export async function startDevServer({ port = 0, seed = true, quiet = false, phEmbed = false, phFallback = false, video = true } = {}) {
   const logLines = [];
   const log = (level, msg) => { logLines.push(`[config-api] [${level}] ${msg}`); if (!quiet) console.error(`[${level}] ${msg}`); };
@@ -134,6 +138,12 @@ export async function startDevServer({ port = 0, seed = true, quiet = false, phE
   }
 
   const devices = JSON.parse(fs.readFileSync(path.join(ROOT, 'fixtures/campaign-data.json'), 'utf8')).devices || {};
+  // Dev only, for Settings → Screen device ID: the example device from the test site (Beaumaris, no logo), and a
+  // store that no seeded pharmacy has yet, so "Add pharmacy" can start from a device ID alone.
+  devices[DEV_DEVICES.beaumaris] = devices['DEVICE-VIC-MP-001'];
+  devices[DEV_DEVICES.newStore] = { data: { ...clone(devices['DEVICE-VIC-MP-001'].data || devices['DEVICE-VIC-MP-001']),
+    store_location: { store_code: 'VIC-MP-006', store_name: 'Brighton Pharmacy', store_timezone: 'Australia/Melbourne' } } };
+  devices[DEV_DEVICES.newStore].data.store_info.address_info = { address: '12 Bay Street', suburb: 'Brighton', postcode: '3186', state: 'Victoria', phone_number: '03 9000 0006' };
   const upstreamCalls = [];
   const downHosts = new Set();
   const fetchImpl = async (url, opts) => {

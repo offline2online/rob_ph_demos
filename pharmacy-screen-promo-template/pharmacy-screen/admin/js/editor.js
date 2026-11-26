@@ -102,7 +102,10 @@ function previewModel() {
   const ph = { ...M.previewPharmacy(S.cur), storeCode: previewCode() };
   const cfg = M.renderConfig({ pharmacies: [ph], promotions: S.promotions, templates: S.templates });
   content();
-  const store = storeModel(M.campaignForPreview(null, previewCode(), ph.name), cfg);
+  // A pharmacy with a Screen device ID previews its store's own data, read live from Personalisation Hub (liveFor),
+  // through the screen's own store mapping (storeModel); otherwise, and for the master template, sample data.
+  const live = liveFor(S.cur);
+  const store = storeModel(M.campaignForPreview(live ? live.data : null, previewCode(), ph.name), cfg);
   // A Seasonal promotion previews the one in the Currently active promotion drop-down.
   const play = resolvePromotion(cfg, store, promo().promoId, isOcc() ? { occasion: seasonOf() } : {});
   return { cfg, store, play };
@@ -153,6 +156,7 @@ function renderScreen(force) {
   if (occLoop) { scene = 0; elapsed = 0; }
   const sceneChanged = !lastKey.startsWith([S.cur.id, S.dpTab, scene].join('|') + '|');
   lastKey = key;
+  renderPill();
   const el = $('screen');
   try {
     model = previewModel();
@@ -165,6 +169,18 @@ function renderScreen(force) {
   fit();
   renderSceneBtns();
   if (sceneChanged) markEditor(false);
+}
+
+/** The pill under the preview: "Live opening hours" when the preview has this pharmacy's store data from
+ *  Personalisation Hub, else "Sample opening hours"; its tooltip says where the data came from, or how to get it. */
+let pillKey = '';
+function renderPill() {
+  const d = M.previewDataLabel({ live: liveFor(S.cur), master: !!(S.cur && S.cur.isMaster), hasDevice: !!(S.cur && S.cur.device) });
+  if (d.tip === pillKey) return;
+  pillKey = d.tip;
+  $('pvData').textContent = d.label;
+  $('pvData').classList.toggle('live', d.live);
+  $('pvTip').textContent = d.tip;
 }
 
 function sceneLabel(i) { return model ? sceneName(model.play, i) : ''; }
@@ -1134,7 +1150,9 @@ $('hdReset').onclick = async () => {
 // ───────────────────────── pharmacies ─────────────────────────
 
 function renderStoreSel() {
-  const rows = S.pharmacies.map((s) => `<option value="${esc(s.id)}">${esc(s.name || 'New pharmacy')}${s.storeCode ? ' · ' + esc(s.storeCode) : ''}</option>`);
+  // A pharmacy with no Screen device ID is marked: its preview is sample data and Download MP4 is off.
+  const noDev = (s) => (String(s.device || '').trim() ? '' : ' · no screen device ID');
+  const rows = S.pharmacies.map((s) => { const x = s.id === S.cur.id ? S.cur : s; return `<option value="${esc(s.id)}">${esc(x.name || 'New pharmacy')}${x.storeCode ? ' · ' + esc(x.storeCode) : ''}${esc(noDev(x))}</option>`; });
   if (!S.cur.id && !S.cur.isMaster) rows.push(`<option value="">${esc(S.cur.name || 'New pharmacy')}${S.cur.storeCode ? ' · ' + esc(S.cur.storeCode) : ''} (not saved yet)</option>`);
   // The same list feeds Settings' pharmacy picker and the promotions page's Promo preview drop-down; Promo preview
   // also offers the master template, first.
@@ -1160,12 +1178,12 @@ function detailsError() {
 function showCodeErr(msg) { $('codeErr').textContent = msg; $('codeErr').hidden = !msg; $('sCode').style.borderColor = msg && /code/i.test(msg) ? 'var(--err)' : ''; }
 function syncListRow() {
   const row = S.pharmacies.find((p) => p.id === S.cur.id);
-  if (row) Object.assign(row, { name: S.cur.name, storeCode: S.cur.storeCode, colours: S.cur.colours, logo: S.cur.logo, version: S.cur.version });
+  if (row) Object.assign(row, { name: S.cur.name, storeCode: S.cur.storeCode, colours: S.cur.colours, logo: S.cur.logo, device: S.cur.device || '', version: S.cur.version });
 }
 
 /** Pharmacy details or branding changed: create the pharmacy once it is valid, or save the change. */
 function detailsChanged() {
-  ver++; renderJson();
+  ver++; renderJson(); renderDevInfo();
   const er = detailsError();
   showCodeErr(er);
   if (er) return;
@@ -1190,6 +1208,159 @@ function saveDetails(ph) {
     }
   });
 }
+
+// ───────────────────────── Screen device ID ─────────────────────────
+// Settings → Pharmacy details, first field. Entering an ID (paste, Enter, or leaving the field; Check reads it again)
+// reads the device's store data through the PH API proxy (GET /api/device/{id}/campaign_data, the route the screen
+// uses, with the proxy's own cache in front of PH), shows it under the field, fills the pharmacy's empty name and
+// store code from it, and gives every preview of this pharmacy that store's own data (liveFor). The ID is saved only
+// once Personalisation Hub confirms its store is this pharmacy's: never for a malformed or unknown ID, a device of
+// another store, or while PH cannot answer. Opening hours, suburb and logo are never copied into the pharmacy: the
+// preview reads them live, as the screen does. Read when a pharmacy is picked and on Check; nothing polls.
+
+const LIVE = new Map(); // device ID -> {data, readAt}: the last store data read for it (kept through an outage)
+const devState = new WeakMap(); // pharmacy record -> {state, typed, error, filled}
+const devUi = (ph) => { let u = devState.get(ph); if (!u) devState.set(ph, (u = { state: 'idle', typed: null, error: null, filled: [] })); return u; };
+const inflight = new Map();
+let devSeq = 0;
+
+/** The live store data the preview uses for `ph`: its device's last read, when that store is this pharmacy's. */
+function liveFor(ph) {
+  if (!ph || ph.isMaster || !ph.device) return null;
+  const e = LIVE.get(ph.device);
+  if (!e) return null;
+  const code = M.normStoreCode(e.data && e.data.store_location && e.data.store_location.store_code);
+  return code && code === M.normStoreCode(ph.storeCode) ? e : null;
+}
+
+/** One read of a device's store data at a time. -> {ok: true, entry} | {ok: false, err} */
+function readDevice(id) {
+  if (inflight.has(id)) return inflight.get(id);
+  const p = api.campaignData(id).then((r) => {
+    if (!r || !r.data || !r.data.store_location) throw Object.assign(new Error('No store data'), { status: 502, code: 'UPSTREAM_UNAVAILABLE' });
+    const entry = { data: r.data, readAt: Date.parse(r.meta && r.meta.fetchedAt) || Date.now() };
+    LIVE.set(id, entry);
+    return { ok: true, entry };
+  }, (err) => {
+    if (err && (err.code === 'DEVICE_NOT_FOUND' || err.code === 'INVALID_DEVICE_ID')) LIVE.delete(id);
+    return { ok: false, err };
+  }).finally(() => inflight.delete(id));
+  inflight.set(id, p);
+  return p;
+}
+
+function liveChanged() { ver++; lastKey = ''; renderDevInfo(); renderTokens(); renderPill(); }
+
+/** Read the saved device's store data again (a pharmacy picked, or Check). */
+async function refreshLive(ph) {
+  const ui = devUi(ph);
+  ui.typed = null;
+  if (!ph || ph.isMaster || !ph.device) { ui.state = 'idle'; ui.error = null; if (S.cur === ph) liveChanged(); return; }
+  const id = ph.device;
+  ui.state = 'checking'; ui.error = null;
+  if (S.cur === ph) renderDevInfo();
+  const r = await readDevice(id);
+  if (ph.device !== id || ui.typed) return;
+  ui.state = r.ok ? 'ok' : 'error';
+  ui.error = r.ok ? null : M.lookupError(r.err, { readAt: LIVE.has(id) ? LIVE.get(id).readAt : null });
+  if (S.cur === ph) liveChanged();
+}
+
+/** The ID in the field was entered: check it with Personalisation Hub, fill in, and save it if it is this store's. */
+async function commitDevice() {
+  if (S.lock || !S.cur || S.cur.isMaster) return;
+  const ph = S.cur, ui = devUi(ph), id = $('sDev').value.trim();
+  if (ui.state === 'checking' && (ui.typed || ph.device) === id) return; // Enter, then leaving the field
+  if (id === (ph.device || '')) { if (id) refreshLive(ph); return; }
+  const seq = ++devSeq;
+  if (!id) {
+    // Cleared: saved at once. The preview goes back to sample data and Download MP4 is off.
+    ph.device = ''; ui.state = 'idle'; ui.typed = null; ui.error = null; ui.filled = [];
+    renderStoreSel(); renderDl(); detailsChanged(); liveChanged();
+    return;
+  }
+  ui.typed = id; ui.filled = [];
+  const bad = M.deviceIdError(id);
+  if (bad) { ui.state = 'error'; ui.error = { kind: 'invalid', message: bad }; renderDevInfo(); return; }
+  ui.state = 'checking'; ui.error = null; renderDevInfo();
+  const r = await readDevice(id);
+  // A slow answer for an ID the field no longer holds (or another pharmacy now picked) is dropped.
+  if (seq !== devSeq || S.cur !== ph || $('sDev').value.trim() !== id) return;
+  if (!r.ok) {
+    const e = M.lookupError(r.err);
+    ui.state = e.kind === 'down' || e.kind === 'not-set-up' ? 'held' : 'error';
+    ui.error = e;
+    renderDevInfo();
+    return;
+  }
+  const plan = M.fillPlan(ph, r.entry.data, S.pharmacies);
+  if (plan.refusal) { ui.state = 'refused'; ui.error = { kind: 'wrong-store', message: plan.refusal }; renderDevInfo(); return; }
+  ui.filled = M.applyFill(ph, plan);
+  ph.device = id; ui.typed = null; ui.state = 'ok'; ui.error = null;
+  $('sName').value = ph.name; $('sCode').value = ph.storeCode;
+  renderStoreSel(); renderDl(); detailsChanged(); liveChanged();
+}
+
+const STATE_TEXT = { checking: 'Reading the store details from Personalisation Hub…' };
+function renderDevInfo() {
+  const ph = S.cur, box = $('sDevInfo');
+  if (!ph || ph.isMaster) { box.innerHTML = ''; return; }
+  const ui = devUi(ph), out = [];
+  const alert = (kind, icon, html, btn = '') => `<div class="inh-alert ${kind}" data-dev="${kind}"><span class="ms">${icon}</span><span>${html}</span>${btn}</div>`;
+  const entry = ph.device && !ui.typed ? LIVE.get(ph.device) : null;
+  const plan = entry ? M.fillPlan(ph, entry.data, S.pharmacies) : null;
+  $('sDev').setAttribute('aria-invalid', String(!!ui.typed && ['error', 'refused'].includes(ui.state)));
+  if (ui.state === 'checking') out.push(`<span class="hint" data-dev="checking"><span class="ms" style="font-size:16px">sync</span> ${STATE_TEXT.checking}</span>`);
+  else if (ui.typed && ui.error) {
+    const held = ui.state === 'held';
+    const tail = held ? ' Not saved yet: the device ID is saved once Personalisation Hub confirms which store it belongs to.' : ' The device ID was not saved.';
+    out.push(alert(held ? 'warn' : 'err', held ? 'cloud_off' : 'error', `${esc(ui.error.message)}${tail}`, held ? '<button type="button" class="text" data-dev-retry>Check again</button>' : ''));
+  } else if (!ph.device) {
+    out.push(alert('warn', 'info', 'No screen device ID yet. Until one is added, the preview shows sample data and Download MP4 is off.'));
+  } else if (plan && plan.refusal) {
+    out.push(alert('err', 'error', esc(plan.refusal.replace(/\.$/, '')) + '. The preview shows sample data until the device ID or the store code is corrected.'));
+  } else if (ui.error) {
+    out.push(alert(ui.error.kind === 'down' ? 'warn' : 'err', ui.error.kind === 'down' ? 'cloud_off' : 'error', esc(ui.error.message), '<button type="button" class="text" data-dev-retry>Check again</button>'));
+  }
+  if (entry && plan && !plan.refusal && ui.state !== 'checking') {
+    const s = plan.summary, stale = !!(ui.error && ui.error.kind === 'down');
+    const tag = (t, ok) => `<span class="devfill${ok ? ' ok' : ''}">${t}</span>`;
+    const use = (field, mine) => `<span class="devdiff">This pharmacy: <b>${esc(mine)}</b><button type="button" class="text" data-use="${field}">Use Personalisation Hub's</button></span>`;
+    const filled = (label) => ui.filled.includes(label);
+    const rows = [
+      ['Store name', esc(s.name || '–') + (plan.name === 'differs' ? ' ' + use('name', ph.name) : filled('Pharmacy name') ? tag('filled in', true) : '')],
+      ['Store code', esc(s.code || '–') + (filled('Store code') ? tag('filled in', true) : '')],
+      ['Address', esc(s.address || '–')],
+      ['Suburb', esc(s.suburb || '–') + (plan.suburb === 'differs' ? ' ' + use('suburb', plan.handSuburb) : plan.suburb === 'live' ? tag('used for ${Suburb}') : '')],
+      ['Phone', esc(s.phone || '–')],
+      ['Timezone', esc(s.timezone || '–')],
+      ['Today', esc(s.today || 'No opening hours in Personalisation Hub')],
+      ['Logo', s.logo ? `<img class="devlogo" src="${esc(s.logo)}" alt="">${tag('shown on screens')}` : `None in Personalisation Hub, so screens show the logo uploaded under Branding${ph.logo ? '' : ' (none yet)'}`],
+    ];
+    out.push(`<div class="devcard" data-dev="live"><div class="devcard-h"><span class="dot" style="background:var(--${stale ? 'warn' : 'ok'})"></span><b>${stale ? 'Last read from Personalisation Hub' : 'Live from Personalisation Hub'}</b><span>· read ${esc(M.readAtText(entry.readAt))}</span></div>`
+      + `<dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd data-f="${k}">${v}</dd>`).join('')}</dl>`
+      + (ui.filled.length ? `<span class="hint" data-dev="filled">Filled in from Personalisation Hub: ${esc(ui.filled.join(', '))}.</span>` : '')
+      + '</div>');
+  }
+  box.innerHTML = out.join('');
+  box.querySelectorAll('[data-dev-retry]').forEach((b) => { b.onclick = () => (ui.typed ? commitDevice() : refreshLive(ph)); });
+  box.querySelectorAll('[data-use]').forEach((b) => {
+    b.onclick = () => {
+      if (S.lock || !plan) return;
+      if (b.dataset.use === 'name') { ph.name = plan.summary.name; $('sName').value = ph.name; renderStoreSel(); detailsChanged(); }
+      else { ph.tokens = M.setToken(ph, 'Suburb', ''); saveTokens(ph); }
+      liveChanged(); renderJson();
+    };
+  });
+}
+$('sDev').addEventListener('input', (e) => {
+  if (e.inputType === 'insertFromPaste' || e.inputType === 'insertFromDrop') { commitDevice(); return; }
+  const ui = devUi(S.cur);
+  if (ui.typed && ui.state !== 'checking') { ui.typed = null; ui.error = null; ui.state = 'idle'; renderDevInfo(); } // typing again clears the last message
+});
+$('sDev').addEventListener('change', () => commitDevice());
+$('sDev').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitDevice(); } });
+$('sDevCheck').onclick = () => { if (S.cur && $('sDev').value.trim() !== (S.cur.device || '')) commitDevice(); else if (S.cur) refreshLive(S.cur); };
 
 // ───────────────────────── Download MP4 ─────────────────────────
 // Under the preview, at the end of the Play/Pause row: an MP4 of the promotion on the preview, for the selected
@@ -1308,8 +1479,9 @@ function loadStore() {
   bindVal('sName', () => s.name, (v) => { s.name = v; renderStoreSel(); });
   $('sCode').readOnly = !!S.lock;
   bindVal('sCode', () => s.storeCode, (v) => { if (S.lock) return; s.storeCode = M.normStoreCode(v); $('sCode').value = s.storeCode; renderStoreSel(); });
-  bindVal('sDev', () => s.device, (v) => { if (S.lock) return; s.device = v.trim(); renderDl(); });
-  $('sDev').readOnly = !!S.lock;
+  $('sDev').value = s.device || '';
+  $('sDev').readOnly = !!S.lock; $('sDevCheck').disabled = !!S.lock;
+  if (!s.isMaster) refreshLive(s);
   bindVal('cP', () => s.colours.primary, (v) => { s.colours.primary = v.toLowerCase(); renderLogo(); renderDp(); });
   bindVal('cA', () => s.colours.accent, (v) => { s.colours.accent = v.toLowerCase(); });
   showCodeErr(s.id ? '' : detailsError());
@@ -1324,7 +1496,8 @@ function renderTokens() {
   const s = S.cur, list = M.usedTokens(s, S.promotions, S.templates);
   $('tokEmpty').hidden = list.length > 0;
   $('tokList').innerHTML = list.map((t) => {
-    const ph = t.data ? M.TOKEN_SOURCES[t.name] : 'Not set, shows nothing';
+    const live = t.name === 'Suburb' && liveFor(s), sub = live ? M.storeSummary(live.data).suburb : '';
+    const ph = sub ? `${sub} (from Personalisation Hub)` : t.data ? M.TOKEN_SOURCES[t.name] : 'Not set, shows nothing';
     const used = t.promotions.length ? `Used in ${t.promotions.join(', ')}` : 'Not used by any promotion';
     return `<label class="f"><span>\${${esc(t.name)}}</span><input data-token="${esc(t.name)}" value="${esc(t.value)}" placeholder="${esc(ph)}" maxlength="200" autocomplete="off"${s.id ? '' : ' disabled title="Add the pharmacy name and store code first"'}><span class="hint">${esc(used)}</span></label>`;
   }).join('');
@@ -1388,7 +1561,7 @@ $('addBtn').onclick = async () => {
   await Save.flush();
   S.cur = newDraft(); renderStoreSel(); loadStore();
   if ($('settingsView').hidden) $('setBtn').click();
-  $('sName').focus();
+  $('sDev').focus(); // a new pharmacy can start from its Screen device ID alone: the rest fills in
 };
 $('delBtn').onclick = async () => {
   if (S.lock) return;

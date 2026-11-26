@@ -20,6 +20,21 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Added
 
+- **Screen device ID fills in the pharmacy and gives the preview live data.** Settings → Pharmacy details: the
+  Screen device ID is now the first field, full width, with a help line. Pasting an ID (or Enter / leaving the
+  field; **Check** reads it again) reads the device's store data through the PH API proxy and shows it under the
+  field (store name, code, address, phone, timezone, today's hours, logo; "Live from Personalisation Hub", read
+  time), fills an empty pharmacy name and store code, and offers **Use Personalisation Hub's** where a typed name or
+  a hand-set `${Suburb}` differs. It is saved only when the store is this pharmacy's: another store's device ("This
+  device belongs to … not this pharmacy"), a malformed or unknown ID, PH unreachable or not set up each get their
+  own message and save nothing. A pharmacy without an ID is prompted and marked "· no screen device ID" in the
+  pharmacy lists; Add pharmacy starts from the device ID. Every preview of a pharmacy with an ID (every promotion,
+  both orientations, the pharmacy view too) now uses its store's live opening hours, suburb, store name and logo
+  through the screen's own `storeModel()`, and the pill reads **Live opening hours** (tooltip: for which store,
+  read when); otherwise **Sample opening hours**, whose tooltip now says to add the device ID. Read when a pharmacy
+  is picked and on Check; nothing polls. Opening hours, suburb and logo are never copied into the pharmacy. The
+  master template keeps sample data. Settings' pharmacy bar no longer runs past its card at 390px. Dev server: mock
+  devices `DEVICE-VIC-MP-006` and the test site's Beaumaris device.
 - **Download MP4 (Android 12 signage format).** Under the editor's preview, at the end of the Play/Pause row:
   an MP4 of the promotion on the preview, for the selected pharmacy and orientation, made on the server from the
   real screen page stepped frame by frame at 25 fps (headless Chromium and ffmpeg) in the format the Android 12 DMP

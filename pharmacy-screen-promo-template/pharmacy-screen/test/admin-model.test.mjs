@@ -376,3 +376,91 @@ test('Currently active promotion: what the screens play today (activation, else 
   assert.equal(M.loopSeconds({ beats: [{ dur: 9 }, {}, {}] }, undefined, 'fallback'), 7);
   assert.equal(M.loopSeconds({ beats: [{}, {}, {}] }, undefined, 'easter'), 12);
 });
+
+// ── Screen device ID: the store details read live from Personalisation Hub (Settings → Pharmacy details) ──
+
+import { readFileSync } from 'node:fs';
+const DEVICES = JSON.parse(readFileSync(new URL('../fixtures/campaign-data.json', import.meta.url), 'utf8')).devices;
+const BEAUMARIS = DEVICES['DEVICE-VIC-MP-001'];
+
+test('device ID: well-formed as the proxy accepts it; each failed lookup has its own plain message', () => {
+  assert.equal(M.deviceIdError(''), '');
+  assert.equal(M.deviceIdError('6890ee6121f42e90ded7baa4d80cc63b2a2b4eb4bfad71c88601712b5397aece'), '');
+  assert.equal(M.deviceIdError(' DEVICE-VIC-MP-001 '), '');
+  for (const bad of ['bad id', 'a/b', '${UniqueDeviceID}', 'x'.repeat(129)]) assert.match(M.deviceIdError(bad), /not a valid screen device ID/, bad);
+  const err = (status, code) => M.lookupError({ status, code });
+  assert.deepEqual(err(400, 'INVALID_DEVICE_ID').kind, 'invalid');
+  assert.match(err(404, 'DEVICE_NOT_FOUND').message, /^Personalisation Hub does not know this device/);
+  assert.equal(err(404, 'DEVICE_NOT_FOUND').kind, 'not-found');
+  assert.equal(err(503, 'NOT_CONFIGURED').kind, 'not-set-up');
+  assert.match(err(503, 'NOT_CONFIGURED').message, /API is not set up/);
+  assert.equal(err(502, 'UPSTREAM_AUTH_FAILED').kind, 'not-set-up');
+  // A bare 404 (a static host, a missing rewrite) is a server that could not answer, not an unknown device.
+  for (const [s, c] of [[502, 'UPSTREAM_UNAVAILABLE'], [0, 'network'], [404, '404'], [429, 'RATE_LIMITED']]) assert.equal(err(s, c).kind, 'down', `${s} ${c}`);
+  assert.match(err(0, 'network').message, /could not be reached\. Try again in a minute\.$/);
+  const at = new Date(); at.setHours(10, 42, 0, 0);
+  assert.match(M.lookupError({ status: 502, code: 'UPSTREAM_UNAVAILABLE' }, { readAt: at.getTime() }).message, /could not be reached\. Showing the details read at 10:42 am\.$/);
+});
+
+test('storeSummary: name, code, address without the suburb twice, phone, timezone and today\'s hours in the store\'s time zone', () => {
+  // 01:00 UTC on Monday 23 Nov 2026 is 12:00 Monday in Melbourne.
+  const s = M.storeSummary(BEAUMARIS, new Date('2026-11-23T01:00:00Z'));
+  assert.deepEqual(s, { name: 'Beaumaris Pharmacy', code: 'VIC-MP-001', address: '1A East Concourse, Beaumaris, Victoria', suburb: 'Beaumaris', phone: '03 9589 2676', timezone: 'Australia/Melbourne', today: 'Monday, 8.30am – 7.00pm', hasHours: true, logo: null });
+  assert.equal(M.storeSummary(BEAUMARIS, new Date('2026-11-22T01:00:00Z')).today, 'Sunday, closed');
+  const withLogo = { data: { ...BEAUMARIS.data, store_info: { ...BEAUMARIS.data.store_info, logo_url: 'https://cdn.example.com/l.png', address_info: { address: '12 Bay St', suburb: 'Brighton', state: 'VIC', postcode: '3186' } } } };
+  const w = M.storeSummary(withLogo);
+  assert.equal(w.address, '12 Bay St, Brighton, VIC 3186');
+  assert.equal(w.logo, 'https://cdn.example.com/l.png');
+});
+
+test('fillPlan: fills only what is empty, offers PH\'s value where a person typed another, and refuses another store\'s device', () => {
+  const phs = [{ id: 'a', storeCode: 'VIC-MP-001', name: 'Beaumaris Pharmacy' }, { id: 'b', storeCode: 'VIC-MP-004', name: 'Vermont South Pharmacy' }];
+  // A new pharmacy from the device alone: name and store code fill in, the suburb follows PH live.
+  const draft = { id: null, name: '', storeCode: '' };
+  const brighton = { data: { ...BEAUMARIS.data, store_location: { store_code: 'vic-mp-006', store_name: 'Brighton Pharmacy', store_timezone: 'Australia/Melbourne' } } };
+  const p0 = M.fillPlan(draft, brighton, phs);
+  assert.deepEqual([p0.name, p0.storeCode, p0.suburb, p0.logo, p0.refusal], ['fill', 'fill', 'live', 'none', '']);
+  assert.deepEqual(M.applyFill(draft, p0), ['Pharmacy name', 'Store code']);
+  assert.deepEqual([draft.name, draft.storeCode], ['Brighton Pharmacy', 'VIC-MP-006']);
+  // The right pharmacy: nothing overwritten; a different name and a hand-set suburb are offered, not replaced.
+  const own = { id: 'a', name: 'Beaumaris Pharmacy Plus', storeCode: 'VIC-MP-001', tokens: { Suburb: 'Sandringham' } };
+  const p1 = M.fillPlan(own, BEAUMARIS, phs);
+  assert.deepEqual([p1.name, p1.storeCode, p1.suburb, p1.handSuburb, p1.refusal], ['differs', 'same', 'differs', 'Sandringham', '']);
+  assert.deepEqual(M.applyFill(own, p1), []);
+  assert.equal(own.name, 'Beaumaris Pharmacy Plus');
+  assert.equal(M.fillPlan({ ...own, name: 'Beaumaris Pharmacy', tokens: { Suburb: 'beaumaris' } }, BEAUMARIS, phs).suburb, 'same');
+  // Another store's device: refused, in plain words, and nothing filled.
+  const vermont = { id: 'b', name: 'Vermont South Pharmacy', storeCode: 'VIC-MP-004' };
+  const p2 = M.fillPlan(vermont, BEAUMARIS, phs);
+  assert.equal(p2.refusal, 'This device belongs to Beaumaris Pharmacy (VIC-MP-001), not this pharmacy.');
+  assert.deepEqual(M.applyFill(vermont, p2), []);
+  // A new pharmacy from a device whose store is already set up here: refused, naming that pharmacy.
+  assert.match(M.fillPlan({ id: null, name: '', storeCode: '' }, BEAUMARIS, phs).refusal, /already set up here as Beaumaris Pharmacy/);
+});
+
+test('the preview pill: live opening hours with when they were read, else sample data and how to get live data', () => {
+  const now = new Date(); const at = new Date(now); at.setHours(9, 5, 0, 0);
+  const live = M.previewDataLabel({ live: { data: BEAUMARIS.data, readAt: at.getTime() } }, now);
+  assert.equal(live.live, true);
+  assert.equal(live.label, 'Live opening hours');
+  assert.match(live.tip, /^Read from Personalisation Hub for Beaumaris Pharmacy at 9:05 am\./);
+  const none = M.previewDataLabel({ hasDevice: false });
+  assert.equal(none.label, 'Sample opening hours');
+  assert.match(none.tip, /add its Screen device ID in Settings/);
+  assert.match(none.tip, /for the day and time the promotion plays\.$/);
+  assert.match(M.previewDataLabel({ hasDevice: true }).tip, /could not be read from Personalisation Hub/);
+  assert.match(M.previewDataLabel({ master: true }).tip, /master template always previews sample data/);
+  assert.match(M.readAtText(new Date('2026-01-02T03:04:00').getTime(), new Date('2026-05-05T10:00:00')), /^2 Jan, 3:04 am$/);
+});
+
+test('the preview of a pharmacy with live data uses the store\'s own hours, through the screen\'s store mapping', () => {
+  const content = M.newPharmacyContent(promotions, templates);
+  const ph = { id: 'ph1', storeCode: 'VIC-MP-001', name: 'Beaumaris Pharmacy', colours: { primary: '#112233', accent: '#ddeeff' }, logo: null, content };
+  const cfg = M.renderConfig({ pharmacies: [ph], promotions, templates });
+  const live = storeModel(M.campaignForPreview(BEAUMARIS.data, 'VIC-MP-001', ph.name), cfg);
+  const sample = storeModel(M.campaignForPreview(null, 'VIC-MP-001', ph.name), cfg);
+  assert.equal(live.suburb, 'Beaumaris');
+  assert.equal(sample.suburb, '');
+  assert.deepEqual(live.sessions.filter((x) => x.day === 'mon').map((x) => [x.open, x.close]), [['08:30', '19:00']]);
+  assert.deepEqual(sample.sessions.filter((x) => x.day === 'mon').map((x) => [x.open, x.close]), [['09:00', '17:30']]);
+});

@@ -98,12 +98,20 @@ What the proxy returns to the screen (`GET /api/device/DEVICE-VIC-MP-001/campaig
 }
 ```
 
-(`opening_hours` shortened here; every active session is returned.) A session crossing midnight looks like
+(`opening_hours` shortened here; every active session is returned.) The admin editor reads the same route for a
+pharmacy's **Screen device ID** (Settings → Pharmacy details) and previews with this exact shape through the
+screen's own `storeModel()`; it compares `store_location.store_code` with the pharmacy's store code before saving
+the ID, and treats `DEVICE_NOT_FOUND` (404), `INVALID_DEVICE_ID` (400), `NOT_CONFIGURED` (503) /
+`UPSTREAM_AUTH_FAILED` (502) and any other failure ("could not be reached") as its four messages
+(`admin/js/model.js` → `lookupError`). `meta.fetchedAt` is shown as when the details were read. A session crossing midnight looks like
 `{"open_day": "FRIDAY", "open_time": "18:00:00", "close_day": "SATURDAY", "close_time": "02:00:00"}`; fixture
 device `TEST-LATE-NIGHT` has one, and `TEST-NO-SUBURB` has no suburb.
 
 Mock devices in `fixtures/campaign-data.json` (used with `mockapi=1`, by the local dev server and by the
-tests): `TEST`, `DEVICE-VIC-MP-001` … `DEVICE-VIC-MP-005`, `TEST-NO-SUBURB`, `TEST-LATE-NIGHT`.
+tests): `TEST`, `DEVICE-VIC-MP-001` … `DEVICE-VIC-MP-005`, `TEST-NO-SUBURB`, `TEST-LATE-NIGHT`. The local dev server
+(`admin/tools/dev-server.mjs`) also knows `DEVICE-VIC-MP-006` (Brighton Pharmacy, a store no seeded pharmacy has,
+for adding a pharmacy from its device ID) and the test site's Beaumaris device
+`6890ee6121f42e90ded7baa4d80cc63b2a2b4eb4bfad71c88601712b5397aece`.
 
 ## 2. Promo IDs
 

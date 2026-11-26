@@ -9,7 +9,10 @@
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { startDevServer } from '../tools/dev-server.mjs';
+import { startDevServer, DEV_DEVICES } from '../tools/dev-server.mjs';
+import * as M from '../js/model.js';
+import fs from 'node:fs';
+const CAMPAIGN_DEVICES = JSON.parse(fs.readFileSync(new URL('../../fixtures/campaign-data.json', import.meta.url), 'utf8')).devices;
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -165,11 +168,13 @@ test('Settings holds the pharmacies, their details and branding, and the API; pr
   await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-003');
   await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-003');
   assert.equal(await page.inputValue('#storeSel'), 'seed-pharmacy-vic-mp-003');
-  // The pill says the hours are sample ones. It sits under the preview, directly to the right of Pause on the
+  // The pill says whose opening hours the preview uses. It sits under the preview, directly to the right of Pause on the
   // controls row (nothing about it above the preview any more), and always shows in full; the scene time is on its
   // own line under the scene bar. Its info tooltip says each screen uses its store's actual hours for the day and
   // time the promotion plays, opens above the row on hover and keyboard focus, and is not clipped.
-  assert.equal(await page.textContent('#pvData'), 'Sample opening hours');
+  // VIC-MP-003 has a Screen device ID and the PH API token is saved (an earlier test), so the preview has its live
+  // store data and the pill says so (Settings → Screen device ID).
+  await page.waitForFunction(() => document.getElementById('pvData').textContent === 'Live opening hours');
   const pvRow = await page.evaluate(() => {
     const r = (s) => document.querySelector(s).getBoundingClientRect();
     const p = document.getElementById('pvData'), row = p.parentElement, b = p.getBoundingClientRect(), play = r('#playBtn');
@@ -206,9 +211,9 @@ test('Settings holds the pharmacies, their details and branding, and the API; pr
   assert.equal(pvNarrow.dlSameLine, true, JSON.stringify(pvNarrow));
   assert.equal(pvNarrow.sameLine, true, JSON.stringify(pvNarrow));
   assert.equal(pvNarrow.overlap, false, JSON.stringify(pvNarrow));
-  assert.equal(pvNarrow.text, 'Sample opening hours');
+  assert.equal(pvNarrow.text, 'Live opening hours');
   assert.ok(['Pause', 'Play'].includes(pvNarrow.playName) && pvNarrow.playW < 60, `Pause as its icon, named for screen readers: ${JSON.stringify(pvNarrow)}`);
-  assert.match(await page.textContent('#pvTip'), /sample opening hours .*Each screen uses its own store's actual opening and closing hours from Personalisation Hub, for the day and time the promotion plays\.$/);
+  assert.match(await page.textContent('#pvTip'), /^Read from Personalisation Hub for Ocean Grove Terrace Pharmacy at \d{1,2}:\d{2} [ap]m\. The preview shows its own opening hours, suburb, store name and logo, as its screens do\.$/);
   await page.hover('#pvInfo');
   await page.waitForFunction(() => getComputedStyle(document.getElementById('pvTip')).opacity === '1');
   const pvTip = await page.$eval('#pvTip', (e) => { const r = e.getBoundingClientRect(), c = e.closest('.controls').getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom, cl: c.left, cr: c.right, ct: c.top, h: r.height }; });
@@ -248,9 +253,10 @@ test('Settings → Tokens: lists the tokens the pharmacy uses (master included);
   assert.equal((await page.textContent('#detailsCard label:has(#sName) > span')).trim(), 'Pharmacy name * ${StoreName}');
   assert.equal(await page.textContent('#sNameTok'), '${StoreName}');
   assert.ok(!names.some((n) => ['Headline', 'Logo', 'Content', 'Footer'].includes(n)), 'layout slots are not listed');
-  assert.equal(await page.getAttribute('#tokList input[data-token="Suburb"]', 'placeholder'), 'Suburb from store details');
+  // A pharmacy with live store data shows its Personalisation Hub suburb as the placeholder; else where it comes from.
+  assert.equal(await page.getAttribute('#tokList input[data-token="Suburb"]', 'placeholder'), (await page.textContent('#pvData')) === 'Live opening hours' ? 'Beaumaris (from Personalisation Hub)' : 'Suburb from store details');
   assert.match(await page.textContent('#tokList'), /Used in Morning/);
-  // The preview has no store data, so ${Suburb} is blank until a value is set by hand.
+  // A value set by hand wins over the store's suburb, in the preview as on the screens.
   assert.doesNotMatch(await headline(page), /Testville/);
   await page.fill('#tokList input[data-token="Suburb"]', 'Testville');
   await page.waitForFunction(() => /Testville/.test(document.querySelector('#screen .s-head h2').textContent));
@@ -450,8 +456,9 @@ test('seasonal: Currently active promotion opens on what plays (the Fallback out
   await page.click('#tl button[data-i="1"]');
   await page.waitForFunction(() => document.querySelector('#screen .occ.occ-christmas.hold .b2.on'));
   assert.equal(await page.$$eval('#screen .s-top, #screen .s-logo, #screen .s-foot', (e) => e.length), 0);
-  // ${StoreName} is the pharmacy's name as saved (an earlier test may have renamed it).
-  const name = await page.evaluate(() => window.pharmacyAdmin.state.cur.name);
+  // ${StoreName} is the store name Personalisation Hub returns for the pharmacy's screen device, as on its screens
+  // (the preview reads it live); the pharmacy's name as saved only without live store data.
+  const name = await page.evaluate(() => { const ph = window.pharmacyAdmin.state.cur; return document.getElementById('pvData').textContent === 'Live opening hours' ? 'Beaumaris Pharmacy' : ph.name; });
   assert.equal(await page.$eval('#screen .b2 .sub', (e) => e.textContent), `from the whole ${name} team`);
   assert.equal(await page.$eval('#screen .b2 .kicker', (e) => e.textContent), 'With warm wishes');
   // Edit Christmas's second beat, then switch to Easter and edit a line there.
@@ -1544,12 +1551,16 @@ test('Download MP4: on the Pause row at 1024, 1180 and 390px; disabled with a to
   await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-002');
   await page.click('#setBtn');
   assert.equal(await page.inputValue('#sDev'), 'DEVICE-VIC-MP-002');
+  // The ID is taken on Enter, paste or leaving the field (Settings → Screen device ID); clearing it saves at once.
   await page.fill('#sDev', '');
+  await page.press('#sDev', 'Enter');
   await page.waitForFunction(() => /screen device ID in Settings/.test(document.getElementById('dlBtn').title));
   assert.equal(await page.getAttribute('#dlBtn', 'aria-disabled'), 'true');
   await settle(page);
   assert.equal((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-002')).body.device, undefined, 'cleared on the server');
   await page.fill('#sDev', 'DEVICE-VIC-MP-002');
+  await page.press('#sDev', 'Enter'); // checked with Personalisation Hub (its store is VIC-MP-002), then saved
+  await page.waitForSelector('#sDevInfo [data-dev="live"]');
   await settle(page);
   assert.equal((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-002')).body.device, 'DEVICE-VIC-MP-002', 'saved on the server');
   await page.click('#setBtn');
@@ -1596,6 +1607,187 @@ test('Download MP4: on the Pause row at 1024, 1180 and 390px; disabled with a to
   assert.equal(await page.getAttribute('#dlBtn', 'aria-disabled'), 'false');
   await page.unroute('**/api/admin/videos');
   await page.unroute('**/api/admin/videos/job-x');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+// ── Settings → Screen device ID (ticket LCmvnIfZA6ZoVjLr7p8P): the store's details read live from Personalisation Hub
+// (the dev server's mock Location API, through the real proxy), the pharmacy filled in from them, and every preview
+// drawn with them. ──
+const EXAMPLE_DEVICE = DEV_DEVICES.beaumaris; // the test site's Beaumaris screen
+const paste = (page, sel, text) => page.evaluate(([s, t]) => {
+  const e = document.querySelector(s); e.focus(); e.value = t;
+  e.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertFromPaste', data: t }));
+}, [sel, text]);
+const enter = async (page, sel, text) => { await page.fill(sel, text); await page.press(sel, 'Enter'); };
+const devInfo = (page) => page.textContent('#sDevInfo');
+const deviceOf = async (id) => (await api('GET', `/api/admin/pharmacies/${id}`)).body.device;
+
+test('Screen device ID: the first field of Settings; fits at 1024, 1180 and 390px with the live pill on the Pause row', async () => {
+  assert.equal((await api('PUT', '/api/settings/ph-api', { body: { token: 'device-id-token-1234' } })).status, 200);
+  for (const viewport of [{ width: 1024, height: 768 }, { width: 1180, height: 820 }, { width: 390, height: 800 }]) {
+    const { ctx, page, errors } = await open('dev-admin', { viewport });
+    await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-001');
+    await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-001');
+    await page.waitForFunction(() => document.getElementById('pvData').textContent === 'Live opening hours');
+    const row = await page.evaluate(() => {
+      const r = document.querySelector('.controls').getBoundingClientRect();
+      const rs = ['playBtn', 'pvData', 'pvInfo', 'dlBtn'].map((id) => document.getElementById(id).getBoundingClientRect());
+      const c = rs.map((x) => (x.top + x.bottom) / 2);
+      return { sameLine: c.every((x) => Math.abs(x - c[0]) <= 1), inside: rs.every((x) => x.left >= r.left - 0.5 && x.right <= r.right + 0.5), cut: document.getElementById('pvData').scrollWidth > document.getElementById('pvData').clientWidth };
+    });
+    assert.ok(row.sameLine && row.inside && !row.cut, `${viewport.width}px: ${JSON.stringify(row)}`);
+    await page.click('#setBtn');
+    await page.waitForSelector('#sDevInfo [data-dev="live"]');
+    const m = await page.evaluate(() => {
+      const box = (id) => document.getElementById(id).getBoundingClientRect();
+      const card = box('detailsCard'), dev = box('sDev'), name = box('sName'), info = box('sDevInfo'), check = box('sDevCheck');
+      const first = document.querySelector('#detailsCard .sect').nextElementSibling;
+      return { first: first && first.id, above: dev.bottom <= name.top, wide: dev.right - card.left > (card.right - card.left) * 0.75 && name.right - name.left < (card.right - card.left) * 0.75 + 1,
+        inside: [dev, info, check, box('delBtn'), box('addBtn')].every((x) => x.left >= card.left - 0.5 && x.right <= card.right + 0.5),
+        overflow: document.documentElement.scrollWidth - innerWidth, help: document.getElementById('sDevHelp').textContent };
+    });
+    const where = `${viewport.width}px: ${JSON.stringify(m)}`;
+    assert.equal(m.first, 'sDevRow', `the first field of the pharmacy's details: ${where}`);
+    assert.ok(m.above, where);
+    assert.equal(m.inside, true, where);
+    assert.equal(m.overflow, 0, where);
+    if (viewport.width > 600) assert.ok(m.wide, `full width: ${where}`);
+    assert.equal(m.help, "Paste the Personalisation Hub device ID of one of this pharmacy's screens. Its store details are then read live from Personalisation Hub.");
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  }
+});
+
+test('Screen device ID: a pasted ID is read from Personalisation Hub, shown under the field and fills in; a different name or suburb is offered, not overwritten; every preview uses the live data', async () => {
+  const { ctx, page, errors } = await open();
+  await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-001');
+  await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-001');
+  await page.click('#setBtn');
+  // No device ID: a prompt in Settings, a marker in the pharmacy list, sample data in the preview.
+  await enter(page, '#sDev', '');
+  await settle(page);
+  assert.equal(await deviceOf('seed-pharmacy-vic-mp-001'), undefined);
+  assert.match(await page.textContent('#sDevInfo [data-dev="warn"]'), /No screen device ID yet\. Until one is added, the preview shows sample data and Download MP4 is off\./);
+  assert.match(await page.$eval('#storeSel option:checked', (o) => o.textContent), /Beaumaris Pharmacy.* · VIC-MP-001 · no screen device ID$/);
+  assert.equal(await page.textContent('#pvData'), 'Sample opening hours');
+  assert.match(await page.textContent('#pvTip'), /add its Screen device ID in Settings\./);
+  // A name typed by hand and a suburb set by hand, both different from Personalisation Hub's.
+  await page.fill('#sName', 'Beaumaris Pharmacy Plus');
+  await page.fill('#tokList input[data-token="Suburb"]', 'Sandringham');
+  await settle(page);
+  // Paste the test site's example ID: the store's details appear under the field, marked live.
+  await paste(page, '#sDev', EXAMPLE_DEVICE);
+  await page.waitForFunction((d) => window.pharmacyAdmin.state.cur.device === d, EXAMPLE_DEVICE);
+  const info = await devInfo(page);
+  for (const want of ['Live from Personalisation Hub', 'Beaumaris Pharmacy', 'VIC-MP-001', '1A East Concourse, Beaumaris, Victoria', '03 9589 2676', 'Australia/Melbourne', M.storeSummary(CAMPAIGN_DEVICES['DEVICE-VIC-MP-001']).today, 'None in Personalisation Hub']) assert.ok(info.includes(want), `${want} in ${info}`);
+  assert.match(info, /· read \d{1,2}:\d{2} [ap]m/);
+  await settle(page);
+  assert.equal(await deviceOf('seed-pharmacy-vic-mp-001'), EXAMPLE_DEVICE, 'saved: the store is this pharmacy\'s');
+  assert.doesNotMatch(await page.$eval('#storeSel option:checked', (o) => o.textContent), /no screen device ID/);
+  // Not overwritten: PH's value is offered beside each.
+  assert.equal(await page.inputValue('#sName'), 'Beaumaris Pharmacy Plus');
+  assert.match(await page.textContent('#sDevInfo dd[data-f="Store name"]'), /This pharmacy: Beaumaris Pharmacy Plus\s*Use Personalisation Hub's/);
+  assert.match(await page.textContent('#sDevInfo dd[data-f="Suburb"]'), /This pharmacy: Sandringham\s*Use Personalisation Hub's/);
+  await page.click('#sDevInfo [data-use="name"]');
+  assert.equal(await page.inputValue('#sName'), 'Beaumaris Pharmacy');
+  await page.click('#sDevInfo [data-use="suburb"]');
+  await settle(page);
+  const rec = (await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-001')).body;
+  assert.equal(rec.name, 'Beaumaris Pharmacy');
+  assert.equal((rec.tokens || {}).Suburb, undefined, 'the hand-set suburb is cleared, so screens show PH\'s');
+  assert.match(await page.textContent('#sDevInfo dd[data-f="Suburb"]'), /Beaumaris\s*used for \$\{Suburb\}/);
+  assert.equal(await page.getAttribute('#tokList input[data-token="Suburb"]', 'placeholder'), 'Beaumaris (from Personalisation Hub)');
+  // Every promotion, both orientations: the live store data, and the pill says so.
+  await page.click('#setBtn');
+  await page.click('#playBtn'); // pause
+  for (const tab of ['Sales Promos', 'Morning', 'Afternoon', 'Closed', 'Seasonal']) {
+    await page.click(`#dpTabs button:has-text("${tab}")`);
+    for (const or of ['portrait', 'landscape']) {
+      await page.click(`#orTabs [data-or="${or}"]`);
+      await page.waitForTimeout(80);
+      const where = `${tab} ${or}`;
+      assert.equal(await page.textContent('#pvData'), 'Live opening hours', where);
+      const screen = await page.textContent('#screen');
+      assert.doesNotMatch(screen, /Preview unavailable/, where);
+      if (tab === 'Closed') {
+        assert.match(screen, /8\.30am – 7\.00pm/, `Beaumaris's own weekday hours: ${where}`);
+        assert.doesNotMatch(screen, /9\.00am – 5\.30pm/, `not the sample hours: ${where}`);
+      }
+    }
+  }
+  assert.match(await page.textContent('#pvTip'), /^Read from Personalisation Hub for Beaumaris Pharmacy at \d{1,2}:\d{2} [ap]m\./);
+  // Personalisation Hub cannot be reached: the last read is kept, and says when it was read. The preview keeps it.
+  const host = new URL((await api('GET', '/api/settings/ph-api')).body.settings.baseUrls[0]).host;
+  dev.downHosts.add(host);
+  try {
+    await page.click('#setBtn');
+    await page.click('#sDevCheck');
+    await page.waitForSelector('#sDevInfo [data-dev="warn"]');
+    assert.match(await devInfo(page), /Personalisation Hub could not be reached\. Showing the details read at \d{1,2}:\d{2} [ap]m\./);
+    assert.match(await devInfo(page), /Last read from Personalisation Hub/);
+    assert.equal(await page.textContent('#pvData'), 'Live opening hours');
+  } finally { dev.downHosts.delete(host); }
+  await page.click('#sDevCheck');
+  await page.waitForFunction(() => /Live from Personalisation Hub/.test(document.getElementById('sDevInfo').textContent));
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('Screen device ID: another store\'s device, a malformed ID, an unknown ID and an unset API each say so and are not saved; a new pharmacy starts from a device ID alone', async () => {
+  const { ctx, page, errors } = await open();
+  await page.click('#setBtn');
+  await page.selectOption('#storeSel', 'seed-pharmacy-vic-mp-004');
+  await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-004');
+  const saved = await deviceOf('seed-pharmacy-vic-mp-004');
+  // Beaumaris's device on Vermont South: refused in plain words.
+  await paste(page, '#sDev', EXAMPLE_DEVICE);
+  await page.waitForSelector('#sDevInfo [data-dev="err"]');
+  assert.equal((await devInfo(page)).replace(/^error/, ''), 'This device belongs to Beaumaris Pharmacy (VIC-MP-001), not this pharmacy. The device ID was not saved.');
+  assert.equal(await page.getAttribute('#sDev', 'aria-invalid'), 'true');
+  // Malformed, and well-formed but unknown: each its own message.
+  await enter(page, '#sDev', 'not a device!');
+  await page.waitForFunction(() => /not a valid screen device ID/.test(document.getElementById('sDevInfo').textContent));
+  await enter(page, '#sDev', 'NO-SUCH-DEVICE-123');
+  await page.waitForFunction(() => /Personalisation Hub does not know this device/.test(document.getElementById('sDevInfo').textContent));
+  await settle(page);
+  assert.equal(await deviceOf('seed-pharmacy-vic-mp-004'), saved, 'none of them saved');
+  // The PH API not set up: held, not saved, until it can be checked; Check again then saves it.
+  assert.equal((await api('DELETE', '/api/settings/ph-api/token')).status, 200);
+  await enter(page, '#sDev', 'TEST-LATE-NIGHT');
+  await page.waitForSelector('#sDevInfo [data-dev="warn"]');
+  assert.match(await devInfo(page), /The Personalisation Hub API is not set up\..*Not saved yet/);
+  await settle(page);
+  assert.equal(await deviceOf('seed-pharmacy-vic-mp-004'), saved);
+  assert.equal((await api('PUT', '/api/settings/ph-api', { body: { token: 'device-id-token-1234' } })).status, 200);
+  await page.click('#sDevInfo [data-dev-retry]');
+  await page.waitForFunction(() => window.pharmacyAdmin.state.cur.device === 'TEST-LATE-NIGHT');
+  await settle(page);
+  assert.equal(await deviceOf('seed-pharmacy-vic-mp-004'), 'TEST-LATE-NIGHT');
+  await enter(page, '#sDev', saved || '');
+  await page.waitForFunction((d) => (window.pharmacyAdmin.state.cur.device || '') === d, saved || ''); // checked, then saved
+  await settle(page);
+  assert.equal(await deviceOf('seed-pharmacy-vic-mp-004'), saved);
+  // Add pharmacy: the device ID field takes the focus; pasting one fills in the rest and creates the pharmacy.
+  await page.click('#addBtn');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'sDev');
+  await paste(page, '#sDev', DEV_DEVICES.newStore);
+  await page.waitForSelector('#sDevInfo [data-dev="filled"]');
+  assert.equal(await page.inputValue('#sName'), 'Brighton Pharmacy');
+  assert.equal(await page.inputValue('#sCode'), 'VIC-MP-006');
+  assert.equal(await page.textContent('#sDevInfo [data-dev="filled"]'), 'Filled in from Personalisation Hub: Pharmacy name, Store code.');
+  await page.waitForFunction(() => !!window.pharmacyAdmin.state.cur.id);
+  await settle(page);
+  const made = (await api('GET', '/api/admin/pharmacies')).body.find((p) => p.storeCode === 'VIC-MP-006');
+  assert.ok(made, 'created');
+  assert.equal(made.name, 'Brighton Pharmacy');
+  assert.equal(made.device, DEV_DEVICES.newStore);
+  // A new pharmacy from a device whose store is already set up is refused, naming it.
+  await page.click('#addBtn');
+  await paste(page, '#sDev', 'DEVICE-VIC-MP-002');
+  await page.waitForFunction(() => /already set up here as North Ringwood Family Pharmacy/.test(document.getElementById('sDevInfo').textContent));
+  assert.equal(await page.inputValue('#sCode'), '');
+  assert.equal((await api('DELETE', `/api/admin/pharmacies/${made.id}`)).status < 300, true);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
