@@ -11,7 +11,8 @@
 #   1. copy it to .github/workflows/deploy-pharmacy-screen.yml on main;
 #   2. add the repository secret FIREBASE_SERVICE_ACCOUNT_ROB_PH_DEMOS, a JSON
 #      key for a rob-ph-demos service account with Firebase Admin, Cloud
-#      Functions Admin, Service Account User and Cloud Build Editor roles.
+#      Functions Admin, Service Account User, Cloud Build Editor and Cloud Tasks Admin roles
+#      (Cloud Tasks Admin: the Download MP4 worker is a Cloud Tasks queue function).
 # One-time infrastructure (KMS key, bucket, Hosting site) is set up by the
 # first `npm run deploy` run by the project owner; CI skips it (--skip-setup).
 name: Deploy Pharmacy Screen (rob-ph-demos)

@@ -255,6 +255,18 @@ Artifact Registry Administrator (`roles/artifactregistry.admin`) would let it se
 broader than a deploy account needs, so the one-time owner command is the way
 ([docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) → "Image cleanup policy").
 
+**Cloud Tasks Admin is needed too** (since Download MP4, 26 Nov 2026): deploying the worker
+`pharmacyScreenVideoWorker` manages its Cloud Tasks queue, which none of the roles above covers. Without it every CI
+deploy stops at "Deploy the functions" with `lacks IAM permission "cloudtasks.queues.get"`, Hosting is not published,
+and re-running the run fails the same way. **The project owner grants it once**, then re-runs the failed deploy:
+
+```bash
+gcloud projects add-iam-policy-binding rob-ph-demos --member=serviceAccount:pharmacy-screen-ci@rob-ph-demos.iam.gserviceaccount.com --role=roles/cloudtasks.admin --condition=None
+```
+
+`npm run deploy` without `--skip-setup` grants the same role ([docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) →
+"CI service account").
+
 Cloud Functions are always deployed by the command above or CI, never by hand. The deploy never deletes a
 function; moving them to another region follows [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) → "Moving the functions to
 another region".
