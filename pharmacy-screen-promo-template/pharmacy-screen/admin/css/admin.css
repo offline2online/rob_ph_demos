@@ -227,10 +227,23 @@ details summary{cursor:pointer;color:var(--primary)}
 .pvnote>.pill{white-space:nowrap;flex:none}
 .pvnote>.infowrap{position:static;flex:none}
 .pvnote .infotip{left:0;right:auto;bottom:calc(100% + 8px);top:auto;max-width:100%}
-/* In a preview column too narrow for Pause and the whole label (under 270px: a tablet-sized frame's 240px
-   column), Play/Pause shows as its icon alone (its name stays for screen readers), as the toolbar buttons do in a
-   narrow editor column, so the label still fits beside it in full. */
-@container pv (max-width:269px){#playTx{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}}
+/* In a preview column too narrow for Pause, the whole label and Download MP4's icon (under 310px: a tablet frame's
+   240px and 271px columns), Play/Pause shows as its icon alone (its name stays for screen readers), as the toolbar
+   buttons do in a narrow editor column, so the label still fits beside it in full. */
+@container pv (max-width:309px){#playTx{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}}
+/* Download MP4 sits at the end of the same row, after the label. In a preview column too narrow for its name beside
+   Play/Pause and the label (under 460px, every column beside the editor) it shows as its icon alone, its name kept in
+   the tooltip and for screen readers; under 270px the row's gaps and the two icon buttons narrow so all of it still
+   fits on one line (308px holds Pause with its name, the label and the icon). While a video is being made the button reads "Preparing video…" (an hourglass when narrow) and
+   the line under the row says how far it has got, so the row itself never grows. */
+.controls>.dl{margin-left:auto}
+.controls>.dl[aria-disabled=true]{opacity:.35;cursor:default}
+.controls>.dl[aria-disabled=true]:hover{border-color:var(--border);color:var(--text)}
+.controls>.dl[aria-busy=true]{opacity:1;cursor:progress}
+@container pv (max-width:459px){#dlTx{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}.controls>.dl{padding:4px 7px}}
+@container pv (max-width:269px){.controls{gap:4px}.controls>#playBtn,.controls>.dl{padding:4px 5px}}
+.dlmsg{display:block;text-align:right}
+.dlmsg.err{color:var(--err)}
 .tl{display:flex;gap:4px;min-width:0}
 .tl button{flex-grow:var(--w);flex-basis:0;min-width:0;display:grid;gap:4px;padding:0;border:none;background:none;min-height:0;cursor:pointer;text-align:left}
 .tl .bar{height:8px;border-radius:4px;background:var(--primary-tint);overflow:hidden;display:block}

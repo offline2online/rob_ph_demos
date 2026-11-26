@@ -54,8 +54,25 @@ export const LAMBDA_ENTRIES = [
   "aws/lambda",
 ];
 
+// Download MP4's worker (aws/lambda/video-worker.js), staged on its own: its Chromium and ffmpeg are Linux x86_64
+// binaries (the other functions are arm64 and need neither), installed for that platform whatever this machine is.
+export const VIDEO_LAMBDA_ENTRIES = [
+  "pharmacy-screen/config-api/src",
+  "aws/adapters",
+  "aws/lambda",
+];
+export const VIDEO_LAMBDA_DEPENDENCIES = {
+  "@aws-sdk/client-dynamodb": "3.1161.0",
+  "@aws-sdk/client-s3": "3.1161.0",
+  "@aws-sdk/s3-request-presigner": "3.1161.0",
+  "@sparticuz/chromium": "153.0.0",
+  "ffmpeg-static": "5.3.0",
+  "playwright-core": "1.64.1",
+};
+export const VIDEO_LAMBDA_INSTALL_ENV = { npm_config_platform: "linux", npm_config_arch: "x64", npm_config_os: "linux", npm_config_cpu: "x64" };
+
 const kebab = (k) => k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
-const OPTION_KEYS = new Map(PARAMS.filter(([k]) => k !== "siteAsset" && k !== "lambdaAsset").map(([k]) => [kebab(k), k]));
+const OPTION_KEYS = new Map(PARAMS.filter(([k]) => k !== "siteAsset" && k !== "lambdaAsset" && k !== "videoLambdaAsset").map(([k]) => [kebab(k), k]));
 const FLAGS = new Set(["vpcEndpoints", "retainData"]);
 
 export function parseArgs(argv) {
@@ -131,6 +148,17 @@ export function stageSite(out = join(STAGE_DIR, "site")) {
 
 const LAMBDA_SKIP = /(^|[\\/])(\.[^\\/]*|node_modules|test|README\.md)$/;
 
+export function stageVideoLambda(out = join(STAGE_DIR, "video-lambda")) {
+  rmSync(out, { recursive: true, force: true });
+  mkdirSync(out, { recursive: true });
+  for (const entry of VIDEO_LAMBDA_ENTRIES) {
+    const from = join(ROOT, entry);
+    cpSync(from, join(out, entry), { recursive: true, filter: (src) => src === from || !LAMBDA_SKIP.test(src.slice(from.length)) });
+  }
+  writeFileSync(join(out, "package.json"), JSON.stringify({ name: "pharmacy-screen-aws-video-worker", private: true, dependencies: VIDEO_LAMBDA_DEPENDENCIES }, null, 2) + "\n");
+  return out;
+}
+
 export function stageLambda(out = join(STAGE_DIR, "lambda")) {
   rmSync(out, { recursive: true, force: true });
   mkdirSync(out, { recursive: true });
@@ -148,7 +176,7 @@ const APP = ["--app", "node infra/app.js"];
 
 // The whole run as data, so --dry-run and the tests see exactly what runs.
 export function buildPlan(opts) {
-  const p = { ...opts.params, siteAsset: join(STAGE_DIR, "site"), lambdaAsset: join(STAGE_DIR, "lambda") };
+  const p = { ...opts.params, siteAsset: join(STAGE_DIR, "site"), lambdaAsset: join(STAGE_DIR, "lambda"), videoLambdaAsset: join(STAGE_DIR, "video-lambda") };
   const { params, errors } = normaliseParams(p, { endpointsLater: true });
   if (!params.region) errors.unshift("--region is required (or set AWS_REGION)");
   if (opts.adminEmail && params.oidcIssuer) errors.push("--admin-email creates a Cognito user; with --oidc-issuer, give the admin role in your identity provider instead");
@@ -160,7 +188,7 @@ export function buildPlan(opts) {
     steps.push({ phase: "install", kind: "run", label: "Install the CDK in aws/", cmd: ["npm", "ci", "--no-audit", "--no-fund"] });
     steps.push({ phase: "stage", kind: "task", task: "stageEmpty", label: "Stage placeholders for the stack's assets (nothing is uploaded)", args: {} });
     steps.push({ phase: "destroy", kind: "task", task: "readStack", label: `Read stack ${params.stackName}`, args: { stackName: params.stackName, region: params.region } });
-    steps.push({ phase: "destroy", kind: "run", label: `Delete stack ${params.stackName} and everything in it`, cmd: [...CDK, "destroy", params.stackName, "--force", ...APP, ...contextArgs({ stackName: params.stackName, region: params.region, siteAsset: p.siteAsset, lambdaAsset: p.lambdaAsset })] });
+    steps.push({ phase: "destroy", kind: "run", label: `Delete stack ${params.stackName} and everything in it`, cmd: [...CDK, "destroy", params.stackName, "--force", ...APP, ...contextArgs({ stackName: params.stackName, region: params.region, siteAsset: p.siteAsset, lambdaAsset: p.lambdaAsset, videoLambdaAsset: p.videoLambdaAsset })] });
     steps.push({ phase: "destroy", kind: "task", task: "deleteLeftoverLogs", label: `Delete the log groups /aws/lambda/${params.stackName}-* left behind`, args: { stackName: params.stackName, region: params.region } });
     return { params, steps, outputs };
   }
@@ -168,6 +196,8 @@ export function buildPlan(opts) {
   steps.push({ phase: "stage", kind: "task", task: "stageSite", label: "Stage the screen and admin files in .deploy-aws/site", args: {} });
   steps.push({ phase: "stage", kind: "task", task: "stageLambda", label: "Stage the function code in .deploy-aws/lambda", args: {} });
   steps.push({ phase: "stage", kind: "run", label: "Install the functions' production dependencies", cmd: ["npm", "install", "--omit=dev", "--no-audit", "--no-fund", "--no-package-lock", "--prefix", join(STAGE_DIR, "lambda")] });
+  steps.push({ phase: "stage", kind: "task", task: "stageVideoLambda", label: "Stage the Download MP4 worker in .deploy-aws/video-lambda", args: {} });
+  steps.push({ phase: "stage", kind: "run", label: "Install the Download MP4 worker's dependencies (Chromium and ffmpeg for Linux x86_64)", env: VIDEO_LAMBDA_INSTALL_ENV, cmd: ["npm", "install", "--omit=dev", "--no-audit", "--no-fund", "--no-package-lock", "--prefix", join(STAGE_DIR, "video-lambda")] });
   if (params.oidcIssuer && !(params.oidcAuthorizeUrl && params.oidcTokenUrl)) {
     steps.push({ phase: "discover", kind: "task", task: "discoverOidc", label: `Read ${params.oidcIssuer}/.well-known/openid-configuration`, args: {} });
   }
@@ -200,11 +230,14 @@ export function makeTasks(state) {
     async stageSite() {
       return `staged ${relative(ROOT, stageSite())}`;
     },
+    async stageVideoLambda() {
+      return `staged ${relative(ROOT, stageVideoLambda())}`;
+    },
     async stageLambda() {
       return `staged ${relative(ROOT, stageLambda())}`;
     },
     async stageEmpty() {
-      for (const d of ["site", "lambda"]) mkdirSync(join(STAGE_DIR, d), { recursive: true });
+      for (const d of ["site", "lambda", "video-lambda"]) mkdirSync(join(STAGE_DIR, d), { recursive: true });
       return "ok";
     },
     async discoverOidc() {
@@ -303,7 +336,7 @@ async function main() {
       continue;
     }
     if (step.kind === "task") console.log(`   ${await tasks[step.task](step.args)}`);
-    else if (!run(step.cmd, env)) throw new Error(`Failed: ${step.label}`);
+    else if (!run(step.cmd, step.env ? { ...env, ...step.env } : env)) throw new Error(`Failed: ${step.label}`);
   }
 
   if (opts.command === "destroy") {
