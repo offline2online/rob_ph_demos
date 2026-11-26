@@ -100,7 +100,7 @@ Check it: `curl https://<site>/api/health` answers `{"ok":true}`, and the Screen
    `--admin-email <address>`, or add users to the `admin` group in the Cognito console; with your own provider,
    give them the admin claim there.
 2. **Set the PH API** (below): Admin → Settings → base URL and token.
-3. **Load the launch data** once: `npm run seed:aws -- --region ap-southeast-2` (five pharmacies, the four
+3. **Load the launch data** once: `npm run seed:aws -- --region ap-southeast-2` (five pharmacies, the five
    default promotions, the 28-service library; `--stack-name` if you changed it; `--reset` puts seeded records
    back to the fixtures). It never overwrites edits without `--reset`.
 4. **Register screens and set the campaign URL** in PH (below).
@@ -144,8 +144,14 @@ The KMS key rotates itself every 90 days; nothing to do.
    the exact URL for the selected promotion and orientation.
 4. **Playback duration**: enter the number the editor shows beside Copy experience URL ("Playback duration: N s",
    the promotion's length plus one second) so the last scene finishes. Save and activate.
-5. **Schedule** which promotion plays when (morning, afternoon, closed, seasonal) in PH Core; the template does
-   no scheduling of its own, except that Seasonal plays the season whose dates hold the store's date.
+5. **Schedule** which promotion plays when (Sales Promos, morning, afternoon, closed, seasonal) in PH Core: one
+   campaign per promotion, each with its own campaign URL (step 3) and playback duration (step 4). Sales Promos is
+   `promo=sale`, e.g.
+   `https://<site>/pharmacy-screen.html?device=${UniqueDeviceID}&promo=sale&orientation=portrait`. The template
+   does no scheduling of its own, except that Seasonal plays the season whose dates hold the store's date, and
+   Sales Promos, once its end date is over in the store's time zone, plays the pharmacy's Morning promotion before
+   12:00 and Afternoon from 12:00, switching by itself (`js/player.js`). So the Sales Promos campaign can stay
+   scheduled after the sale ends; choosing a later end date in the editor runs the sale again.
 6. A screen that shows **"Screen not set up"** with a device ID at the bottom is not registered to a store in PH,
    or its store has no pharmacy in the editor. "Invalid screen URL" means the campaign URL lost `device=`.
 
