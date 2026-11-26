@@ -8,14 +8,21 @@ import { existsSync, readFileSync, readdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
-import { parseArgs, buildPlan, contextArgs, stageSite, stageLambda, usage, makeTasks } from "../scripts/deploy.mjs";
+import { parseArgs, buildPlan, contextArgs, stageSite, stageLambda, stageVideoLambda, usage, makeTasks } from "../scripts/deploy.mjs";
 
 const require = createRequire(import.meta.url);
 
 test("deploy: one command, in order — install, stage, bootstrap, deploy, first admin", () => {
   const { steps, params, outputs } = buildPlan(parseArgs(["deploy", "--region", "ap-southeast-2", "--admin-email", "ops@example.com"]));
-  assert.deepEqual(steps.map((s) => s.phase), ["install", "stage", "stage", "stage", "bootstrap", "deploy", "admin"]);
+  assert.deepEqual(steps.map((s) => s.phase), ["install", "stage", "stage", "stage", "stage", "stage", "bootstrap", "deploy", "admin"]);
   const deploy = steps.find((s) => s.phase === "deploy").cmd;
+  // Download MP4's worker is staged on its own, its Chromium and ffmpeg installed for Linux x86_64 whatever this
+  // machine is, and handed to the stack as videoLambdaAsset.
+  const video = steps.find((s) => s.env);
+  assert.deepEqual(video.env, { npm_config_platform: "linux", npm_config_arch: "x64", npm_config_os: "linux", npm_config_cpu: "x64" });
+  assert.ok(video.cmd.join(" ").endsWith("video-lambda"));
+  assert.ok(steps.some((s) => s.task === "stageVideoLambda"));
+  assert.ok(deploy.some((a) => /^videoLambdaAsset=.*video-lambda$/.test(a)));
   assert.deepEqual(deploy.slice(0, 7), ["npx", "--no-install", "cdk", "deploy", "PharmacyScreen", "--require-approval", "never"]);
   assert.ok(deploy.includes("--outputs-file") && deploy.includes(outputs));
   assert.ok(deploy.includes("region=ap-southeast-2"));
@@ -42,7 +49,7 @@ test("deploy: parameterised for the retailer's account, region, VPC and domain",
 
 test("deploy: an external identity provider's endpoints are discovered first", () => {
   const { steps } = buildPlan(parseArgs(["--region", "eu-west-2", "--oidc-issuer", "https://login.example.com", "--oidc-client-id", "c1"]));
-  assert.deepEqual(steps.map((s) => s.phase).slice(0, 5), ["install", "stage", "stage", "stage", "discover"]);
+  assert.deepEqual(steps.map((s) => s.phase).slice(0, 7), ["install", "stage", "stage", "stage", "stage", "stage", "discover"]);
   assert.throws(() => buildPlan(parseArgs(["--region", "eu-west-2", "--oidc-issuer", "https://login.example.com", "--oidc-client-id", "c1", "--admin-email", "a@b.c"])), /identity provider/);
 });
 
@@ -81,6 +88,12 @@ test("stage: the site holds the screen and admin only; the functions hold their 
   for (const never of ["config-api", "ph-proxy", "seed/seed.js", "admin/test", "admin/tools", "admin/package.json"]) {
     assert.ok(!existsSync(join(site, never)), `${never} is not published`);
   }
+  const video = stageVideoLambda(join(out, "video-lambda"));
+  assert.deepEqual(readdirSync(video).sort(), ["aws", "package.json", "pharmacy-screen"]);
+  assert.ok(existsSync(join(video, "aws/lambda/video-worker.js")) && existsSync(join(video, "pharmacy-screen/config-api/src/video/render.js")));
+  assert.ok(!existsSync(join(video, "pharmacy-screen/ph-proxy")), "the worker holds no PH API proxy code");
+  assert.deepEqual(Object.keys(JSON.parse(readFileSync(join(video, "package.json"), "utf8")).dependencies).sort(), ["@aws-sdk/client-dynamodb", "@aws-sdk/client-s3", "@aws-sdk/s3-request-presigner", "@sparticuz/chromium", "ffmpeg-static", "playwright-core"]);
+  assert.equal(typeof require(join(video, "aws", "lambda", "video-worker.js")).handler, "function");
   const fn = stageLambda(join(out, "lambda"));
   assert.deepEqual(readdirSync(fn).sort(), ["aws", "package.json", "pharmacy-screen"]);
   assert.ok(!existsSync(join(fn, "pharmacy-screen/config-api/test")));

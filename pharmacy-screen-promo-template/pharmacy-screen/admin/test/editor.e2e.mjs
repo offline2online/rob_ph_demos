@@ -13,6 +13,8 @@ import { startDevServer } from '../tools/dev-server.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
+// Download MP4's file-name rule, the one the server uses.
+const { slug: videoSlug } = require('../../config-api/src/video/format.js');
 
 let dev, browser;
 const TOKEN = 'e2e-' + Math.random().toString(36).slice(2) + 'ABCDEFGH' + 'QRST';
@@ -75,7 +77,7 @@ test('loads the pharmacies, promotions and a live preview from the server', asyn
   assert.match(opts[0], /Beaumaris Pharmacy · VIC-MP-001/);
   // Promo preview offers the master template first, then the same pharmacies.
   assert.deepEqual(await page.$$eval('#pvSel option', (o) => o.map((x) => x.textContent)), ['Master template', ...opts]);
-  assert.deepEqual(await page.$$eval('#dpTabs button', (b) => b.map((x) => x.textContent.replace(/^(sell|campaign|schedule|celebration)/, '').replace(/Sale has ended$/, ''))), ['Sales Promos', 'Morning', 'Afternoon', 'Closed', 'Seasonal']);
+  assert.deepEqual(await page.$$eval('#dpTabs button', (b) => b.map((x) => x.textContent.replace(/^(sell|campaign|schedule|celebration)/, ''))), ['Sales Promos', 'Morning', 'Afternoon', 'Closed', 'Seasonal']);
   assert.equal(await page.$$eval('#tl button', (b) => b.length), 5);
   await page.click('#playBtn'); // pause
   await page.click('#tl button[data-i="0"]');
@@ -193,13 +195,15 @@ test('Settings holds the pharmacies, their details and branding, and the API; pr
     pv.style.width = '240px';
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     const b = p.getBoundingClientRect(), pb = play.getBoundingClientRect(), i = document.getElementById('pvInfo').getBoundingClientRect();
-    const out = { h: b.height, cut: p.scrollWidth > p.clientWidth, inside: i.right <= row.getBoundingClientRect().right + 0.5, sameLine: Math.abs((b.top + b.bottom) / 2 - (pb.top + pb.bottom) / 2) <= 1, overlap: b.left < pb.right, text: p.innerText.replace(/\s+/g, ' '), playName: play.textContent.replace('pause', '').trim(), playW: pb.width };
+    const d = document.getElementById('dlBtn').getBoundingClientRect();
+    const out = { h: b.height, cut: p.scrollWidth > p.clientWidth, inside: i.right <= d.left + 0.5 && d.right <= row.getBoundingClientRect().right + 0.5, dlSameLine: Math.abs((d.top + d.bottom) / 2 - (pb.top + pb.bottom) / 2) <= 1, sameLine: Math.abs((b.top + b.bottom) / 2 - (pb.top + pb.bottom) / 2) <= 1, overlap: b.left < pb.right, text: p.innerText.replace(/\s+/g, ' '), playName: play.textContent.replace('pause', '').trim(), playW: pb.width };
     pv.style.width = '';
     return out;
   });
   assert.ok(Math.abs(pvNarrow.h - pvRow.h) < 1, `one line when narrow: ${JSON.stringify(pvNarrow)} vs ${pvRow.h}`);
   assert.equal(pvNarrow.cut, false);
-  assert.equal(pvNarrow.inside, true, JSON.stringify(pvNarrow));
+  assert.equal(pvNarrow.inside, true, `Download MP4 fits after the label, inside the row: ${JSON.stringify(pvNarrow)}`);
+  assert.equal(pvNarrow.dlSameLine, true, JSON.stringify(pvNarrow));
   assert.equal(pvNarrow.sameLine, true, JSON.stringify(pvNarrow));
   assert.equal(pvNarrow.overlap, false, JSON.stringify(pvNarrow));
   assert.equal(pvNarrow.text, 'Sample opening hours');
@@ -1421,7 +1425,7 @@ test('seasonal master: editing its copy, dates or timings changes no store\'s sc
   await ctx.close();
 });
 
-test('Sales Promos: the first tab, no promotion settings; a pharmacy\'s own copy (offer, brands, end date by date picker) drives the preview and its screens; others keep the defaults in their own colours; "Sale has ended" once the date is over', async () => {
+test('Sales Promos: the first tab, no promotion settings; a pharmacy\'s own copy (offer, brands, end date by date picker) drives the preview and its screens; others keep the defaults in their own colours; a past date is only a hint (Personalisation Hub schedules it)', async () => {
   const { ctx, page, errors, firstTab } = await open(undefined, { stay: true, date: '2026-11-26T10:00:00' });
   assert.equal(firstTab, 'seed-promotion-sale');
   await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-001');
@@ -1477,20 +1481,121 @@ test('Sales Promos: the first tab, no promotion settings; a pharmacy\'s own copy
   const primary = await page.evaluate(() => window.pharmacyAdmin.state.cur.colours.primary);
   assert.equal(await page.$eval('#screen', (e) => e.style.getPropertyValue('--s-p')), primary);
   assert.equal((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-004')).body.content['seed-promotion-sale'], undefined, 'nothing saved for it');
-  // Back on Beaumaris: an end date before today ("yesterday") and the tab says the sale has ended.
+  // Back on Beaumaris: an end date before today ("yesterday"). Personalisation Hub schedules the sale, so nothing reads
+  // as a schedule: no "Sale has ended" on the tab or at the top, just one small hint under the date field, and the
+  // preview still plays the sale with that date's own weekday.
   await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-001');
   await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-001');
   await page.click('#dpTabs button:has-text("Sales Promos")');
-  assert.equal(await page.isVisible('#saleEnded'), false);
+  assert.equal(await page.isVisible('#slEndPast'), false);
   await page.fill('#slEnd', '2026-11-25');
-  await page.waitForSelector('#saleEnded');
-  assert.match(await page.textContent('#dpTabs button[data-dp="seed-promotion-sale"]'), /Sale has ended$/);
-  assert.match(await page.textContent('#saleEnded'), /Sale has ended\./);
-  // Put the copy back for the other tests.
+  await page.waitForSelector('#slEndPast');
+  assert.equal(await page.textContent('#slEndPast'), 'This date has passed. The screen still plays whenever Personalisation Hub schedules it.');
+  assert.equal(await page.getAttribute('#slEnd', 'aria-describedby'), 'slEndPast');
+  assert.equal(await page.textContent('#dpTabs button[data-dp="seed-promotion-sale"]'), 'sellSales Promos');
+  assert.equal(await page.$('#saleEnded'), null);
+  assert.doesNotMatch(await page.textContent('#dpBody'), /Sale has ended|Morning or Afternoon/);
+  await page.waitForFunction(() => document.querySelector('#screen .sl-pd') && document.querySelector('#screen .sl-pd').textContent === 'Wednesday 25th November');
+  assert.equal(await page.textContent('#screen .sl-foot .f2'), 'Finishes Wednesday 25th November');
+  // A future date: the hint goes. (And puts the copy back for the other tests.)
   await page.fill('#slEnd', '2026-12-02');
-  await page.waitForSelector('#saleEnded', { state: 'detached' });
+  await page.waitForSelector('#slEndPast', { state: 'detached' });
   await page.fill('#slVal', '30');
   await settle(page);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('Download MP4: on the Pause row at 1024, 1180 and 390px; disabled with a tooltip until a pharmacy with a screen device ID is picked; downloads that pharmacy\'s MP4', async () => {
+  for (const viewport of [{ width: 1024, height: 768 }, { width: 1180, height: 820 }, { width: 390, height: 800 }]) {
+    const { ctx, page, errors } = await open('dev-admin', { viewport, stay: true });
+    for (const or of ['portrait', 'landscape']) {
+      await page.click(`#orTabs [data-or="${or}"]`);
+      await page.waitForTimeout(100);
+      const m = await page.evaluate(() => {
+        const row = document.querySelector('.controls').getBoundingClientRect();
+        const rs = ['playBtn', 'pvData', 'pvInfo', 'dlBtn'].map((id) => document.getElementById(id).getBoundingClientRect());
+        const c = rs.map((r) => (r.top + r.bottom) / 2);
+        return { sameLine: c.every((x) => Math.abs(x - c[0]) <= 1), inside: rs.every((r) => r.left >= row.left - 0.5 && r.right <= row.right + 0.5), afterLabel: rs[3].left >= rs[2].right, icon: document.getElementById('dlIc').textContent, name: document.getElementById('dlTx').textContent, overflow: document.documentElement.scrollWidth - innerWidth };
+      });
+      const where = `${viewport.width}px ${or}: ${JSON.stringify(m)}`;
+      assert.ok(m.sameLine && m.inside && m.afterLabel, `Pause, the label and Download MP4 on one line, inside the row: ${where}`);
+      assert.equal(m.icon, 'download', where);
+      assert.equal(m.name, 'Download MP4', `named for screen readers even as an icon: ${where}`);
+      assert.equal(m.overflow, 0, where);
+    }
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  }
+
+  // The video reads the store's data through the PH API proxy, as a screen does: it needs a token saved.
+  assert.equal((await api('PUT', '/api/settings/ph-api', { body: { token: 'dl-test-token-1234' } })).status, 200);
+  const { ctx, page, errors } = await open('dev-admin', { stay: true });
+  // The master template is not a pharmacy: disabled, and the tooltip says what to do.
+  await page.selectOption('#pvSel', '__master');
+  await page.waitForFunction(() => window.pharmacyAdmin.state.cur.isMaster);
+  await page.waitForFunction(() => document.getElementById('dlBtn').getAttribute('aria-disabled') === 'true');
+  assert.match(await page.getAttribute('#dlBtn', 'title'), /Pick a pharmacy/);
+  assert.equal(await page.isEnabled('#dlBtn'), false, 'disabled for assistive technology too');
+  await page.click('#dlBtn', { force: true });
+  assert.equal(await page.isVisible('#dlMsg'), false, 'a disabled click does nothing');
+  // A pharmacy with no screen device ID: disabled, the tooltip says to add it in Settings. Settings → Screen device ID.
+  await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-002');
+  await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-002');
+  await page.click('#setBtn');
+  assert.equal(await page.inputValue('#sDev'), 'DEVICE-VIC-MP-002');
+  await page.fill('#sDev', '');
+  await page.waitForFunction(() => /screen device ID in Settings/.test(document.getElementById('dlBtn').title));
+  assert.equal(await page.getAttribute('#dlBtn', 'aria-disabled'), 'true');
+  await settle(page);
+  assert.equal((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-002')).body.device, undefined, 'cleared on the server');
+  await page.fill('#sDev', 'DEVICE-VIC-MP-002');
+  await settle(page);
+  assert.equal((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-002')).body.device, 'DEVICE-VIC-MP-002', 'saved on the server');
+  await page.click('#setBtn');
+  // Beaumaris, Sales Promos, portrait: progress while it is made, then the file, named as the ticket says.
+  await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-001');
+  await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-001');
+  await page.click('#dpTabs button[data-dp="seed-promotion-sale"]');
+  await page.click('#orTabs [data-or="portrait"]');
+  await page.waitForFunction(() => document.getElementById('dlBtn').getAttribute('aria-disabled') === 'false');
+  assert.match(await page.getAttribute('#dlBtn', 'title'), /uses the saved version/);
+  const download = page.waitForEvent('download', { timeout: 180000 });
+  await page.click('#dlBtn');
+  await page.waitForFunction(() => document.getElementById('dlBtn').getAttribute('aria-busy') === 'true');
+  assert.equal(await page.getAttribute('#dlBtn', 'aria-disabled'), 'true', 'cannot be clicked twice');
+  assert.equal(await page.textContent('#dlTx'), 'Preparing video…');
+  assert.match(await page.textContent('#dlMsg'), /Preparing video…/);
+  const d = await download;
+  // The name follows the pharmacy's saved name, which an earlier test in this file changes ("Beaumaris Pharmacy
+  // Plus"), so the expected name is built from the name it has now, by the same rule (src/video/format.js slug).
+  const phName = (await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-001')).body.name;
+  const want = new RegExp(`^${videoSlug(phName)}-sales-promos-portrait-\\d+s_android\\.mp4$`);
+  assert.match(d.suggestedFilename(), want);
+  assert.match(d.suggestedFilename(), /^beaumaris-pharmacy(-[a-z0-9]+)*-sales-promos-portrait-\d+s_android\.mp4$/);
+  await page.waitForFunction(() => document.getElementById('dlBtn').getAttribute('aria-busy') === 'false');
+  assert.equal(await page.textContent('#dlTx'), 'Download MP4');
+  assert.equal(await page.textContent('#dlMsg'), `Downloaded: ${d.suggestedFilename()}`);
+  // A failure is a plain message and the button is usable again.
+  await page.route('**/api/admin/videos', (r) => r.fulfill({ status: 429, contentType: 'application/json', body: JSON.stringify({ error: { code: 'video-busy', message: 'A video is already being made. Try again in a minute.' } }) }));
+  await page.click('#dlBtn');
+  await page.waitForFunction(() => document.getElementById('dlMsg').classList.contains('err'));
+  assert.equal(await page.textContent('#dlMsg'), 'A video is already being made. Try again in a minute.');
+  assert.equal(await page.getAttribute('#dlBtn', 'aria-disabled'), 'false');
+  // A job the server stops answering for (a 401 once the sign-in has ended) stops waiting at once, with a plain
+  // message, and the button is usable again: it never stays on "Preparing video…".
+  await page.unroute('**/api/admin/videos');
+  await page.route('**/api/admin/videos', (r) => r.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ id: 'job-x', status: 'queued', progress: 0, orientation: 'portrait' }) }));
+  let polls = 0;
+  await page.route('**/api/admin/videos/job-x', (r) => { polls++; return r.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: { code: 'unauthenticated', message: 'Sign in first' } }) }); });
+  await page.click('#dlBtn');
+  await page.waitForFunction(() => document.getElementById('dlMsg').classList.contains('err'), null, { timeout: 15000 });
+  assert.match(await page.textContent('#dlMsg'), /sign-in has ended/);
+  assert.equal(polls, 1, 'a 401 is not polled again');
+  assert.equal(await page.getAttribute('#dlBtn', 'aria-busy'), 'false');
+  assert.equal(await page.getAttribute('#dlBtn', 'aria-disabled'), 'false');
+  await page.unroute('**/api/admin/videos');
+  await page.unroute('**/api/admin/videos/job-x');
   assert.deepEqual(errors, []);
   await ctx.close();
 });

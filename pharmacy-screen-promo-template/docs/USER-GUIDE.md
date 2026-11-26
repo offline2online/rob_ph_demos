@@ -128,10 +128,12 @@ user changes their own.
 | **Scene 2: The offer** | Offer lead-in ("UP TO"), **Offer value** (a whole number from 1 to 99, shown with %), Offer suffix ("OFF"); **End date**, chosen with the date picker: **Shown as** gives its wording with the weekday ("Wednesday 2nd December"), which is never typed, so it always matches the date; Panel label ("SALE FINISHES"). Seconds on screen (administrators only); the 0.65 s change between the scenes is added to scene 2 |
 | **Footer band** | Its two lines are made from the headline, the offer and the end date ("BIG BRAND SALE · UP TO 30% OFF" / "Finishes Wednesday 2nd December", shown in capitals). Tick **Write my own** to type them yourself |
 
-**After the end date.** The sale runs up to and including its end date, in the store's time zone. From the next
-day the screens show the pharmacy's Morning promotion before 12:00 and its Afternoon promotion from 12:00 instead,
-switching by themselves, and the tab reads **Sale has ended** (with a notice at the top of it). Choose a later end
-date to run the sale again; the preview always plays the sale so you can edit it.
+**When it plays.** Personalisation Hub's campaign schedules decide when Sales Promos plays, as they do for
+Morning, Afternoon and Closed; only Seasonal carries dates of its own here (each season's). The end date is wording
+only: it fills "Finishes …" in caption line 2, the panel and the footer, and never starts or stops the sale. A
+screen sent `promo=sale` plays the sale before, on and after its end date. If you choose a date that has already
+passed, a small hint under the date field says so ("This date has passed. The screen still plays whenever
+Personalisation Hub schedules it."); end the sale by ending its campaign schedule in Personalisation Hub.
 
 ## Promotion scenes (Morning, Afternoon and similar)
 
@@ -289,14 +291,39 @@ The link narrows what the editor shows; it does not give anyone access. An admin
 view for any pharmacy. A Retail Admin user opens it for their own store without the admin role, and a store code
 in the link that is not their store shows "Access denied" ([PH-EMBED.md](PH-EMBED.md)).
 
+## Download MP4
+
+To put a promotion on the signage players as a video file instead of the live page: pick the pharmacy (Promo
+preview), the promotion tab and Portrait or Landscape, then click **Download MP4** under the preview (in a narrow
+preview only its download icon shows; its tooltip names it). The button reads "Preparing video…" and the line under
+it shows how far it has got; after a few seconds to a minute the browser downloads the file, named like
+`beaumaris-pharmacy-sales-promos-portrait-10s_android.mp4`. Load it into a campaign as you would any video. The
+link under the button works for an hour and the file is deleted from the server after a day; make the video again
+to get a new one.
+
+- The video is exactly what that pharmacy's screens play: one full loop of the promotion from its first scene,
+  with the store's **own** name, opening hours and suburb from Personalisation Hub (not the sample hours the
+  preview uses). The "Open today" bar shows the store's state at the moment the video is made. A Seasonal
+  promotion plays the season shown in **Currently active promotion**.
+- It uses what is saved: any change still being saved is saved first.
+- The button is greyed out for the master template (pick a pharmacy) and for a pharmacy with no **Screen device
+  ID** (add it in Settings → Pharmacy details).
+- One video is made at a time: if someone else is making one, wait a minute and try again. A promotion longer than
+  120 seconds can't be downloaded; shorten its scenes.
+- The file plays on the Android 12 signage players: H.264 Main, 25 frames a second, no sound, a keyframe every 2
+  seconds ([README.md](../README.md) → "Download MP4" has the full format).
+- Administrators only: the pharmacy view (`?store=`) has no Download MP4.
+
 ## Settings
 
 **Settings** (the cog beside Promo preview) shows:
 
 - **Pharmacies**: the pharmacy picker, **Add pharmacy**, **Reset** and **Delete** ("Add a pharmacy" above).
-- **Pharmacy details**: name and store code. On screens `${StoreName}` is the store name from Personalisation
+- **Pharmacy details**: name, store code and **Screen device ID**. On screens `${StoreName}` is the store name from Personalisation
   Hub's Location API for the screen's device; the **Pharmacy name** (the token is shown beside its label) is used
-  only when Personalisation Hub has no store name for the store.
+  only when Personalisation Hub has no store name for the store. The Screen device ID is the Personalisation Hub
+  device ID of one of the pharmacy's screens; **Download MP4** needs it to read the store's own name and opening
+  hours ("Download MP4" below). Optional; nothing else uses it.
 - **Tokens**: every `${…}` token this pharmacy's promotions and templates use, including the master template's
   sections it inherits, with the promotions that use each. Leave a token blank to show the store's own data
   (the placeholder says where it comes from, e.g. "Suburb from store details": the suburb, phone number, state

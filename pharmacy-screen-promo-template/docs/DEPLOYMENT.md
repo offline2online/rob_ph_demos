@@ -148,10 +148,9 @@ The KMS key rotates itself every 90 days; nothing to do.
    campaign per promotion, each with its own campaign URL (step 3) and playback duration (step 4). Sales Promos is
    `promo=sale`, e.g.
    `https://<site>/pharmacy-screen.html?device=${UniqueDeviceID}&promo=sale&orientation=portrait`. The template
-   does no scheduling of its own, except that Seasonal plays the season whose dates hold the store's date, and
-   Sales Promos, once its end date is over in the store's time zone, plays the pharmacy's Morning promotion before
-   12:00 and Afternoon from 12:00, switching by itself (`js/player.js`). So the Sales Promos campaign can stay
-   scheduled after the sale ends; choosing a later end date in the editor runs the sale again.
+   does no scheduling of its own, except that Seasonal plays the season whose dates hold the store's date.
+   Sales Promos plays whenever its campaign is scheduled, before, on and after its end date (the end date is
+   wording only), so end the sale by ending its campaign schedule.
 6. A screen that shows **"Screen not set up"** with a device ID at the bottom is not registered to a store in PH,
    or its store has no pharmacy in the editor. "Invalid screen URL" means the campaign URL lost `device=`.
 
@@ -280,6 +279,14 @@ is done as **separate deploys, in this order, deleting last**:
   Location API proxy as in [CONFIGURATION.md](CONFIGURATION.md), with unknown device ids limited to 30 a minute per
   address, counted when the lookup starts, so a burst sent all at once is held to the same 30. API Gateway's
   own throttling (200 requests a second, bursts of 400) bounds the whole API on AWS.
+- Download MP4: one video at a time per deployment, loops up to 120 s (README.md → "Download MP4"). On AWS its
+  worker is a third Lambda (x86_64, 6 GB, 15 min) with Chromium and ffmpeg, which the deploy installs for Linux
+  x86_64 into `.deploy-aws/video-lambda` (about 150 MB, so the first deploy uploads more); on Firebase it is the
+  Cloud Tasks queue function `pharmacyScreenVideoWorker` (15 min). Its setup steps (the owner's `npm run deploy`,
+  not CI's `--skip-setup`) enable the Cloud Tasks and IAM Credentials APIs, let the functions' service account queue
+  tasks and sign the one-hour download links (Token Creator on itself only), and add a lifecycle rule that deletes
+  the media bucket's `exports/` files after a day. Run the setup once after this lands, or a finished video fails
+  with "its download link could not be created".
 - About 90 pharmacies per promotion or template edit (one DynamoDB transaction republishes every pharmacy's
   screen; beyond that the edit is refused with `too-many-writes` before anything is written).
 

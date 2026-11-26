@@ -8,8 +8,43 @@ release handed to miPharmacy is tagged and packaged with this file and the `docs
 Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 ([docs/RELEASING.md](docs/RELEASING.md)).
 
+### Changed
+
+- **Sales Promos: Personalisation Hub owns scheduling; the end date is wording only.** `promo=sale` now always
+  plays the Sales Promos template, before, on and after its end date, at any hour. Removed: the after-end-date
+  switch to Morning (before 12:00) or Afternoon (from 12:00) in `resolvePromotion()`, `endedSale` in
+  `window.pharmacyScreen.info` and the sale check in the player's minute tick; `date=` no longer affects Sales
+  Promos. In the editor the "Sale has ended" tab chip and notice are gone; a date already over shows only the hint
+  "This date has passed. The screen still plays whenever Personalisation Hub schedules it." under the date field.
+  Personalisation Hub schedules every promotion except Seasonal, whose seasons keep their own dates.
+
 ### Added
 
+- **Download MP4 (Android 12 signage format).** Under the editor's preview, at the end of the Play/Pause row:
+  an MP4 of the promotion on the preview, for the selected pharmacy and orientation, made on the server from the
+  real screen page stepped frame by frame at 25 fps (headless Chromium and ffmpeg) in the format the Android 12 DMP
+  players play: H.264 Main 4.0, yuv420p, 25 fps CFR, timescale 12800, a keyframe every 2 s, no audio track, BT.709
+  limited range, CRF 18 capped at 6 Mbit/s, no SEI, `mp42`, faststart, no metadata (README.md → "Download MP4").
+  File name `<pharmacy>-<promotion>-<portrait|landscape>-<seconds>s_android.mp4`. The video shows the pharmacy's
+  own store name and opening hours from Personalisation Hub, read with its new optional **Screen device ID**
+  (Settings → Pharmacy details; `device` on the pharmacy record, never published to screens); without one, or for
+  the master template, the button is disabled with a tooltip. Waiting edits are saved first. One render at a time
+  per deployment (`429` otherwise), loops up to 120 s, admin only: `POST /api/admin/videos`,
+  `GET /api/admin/videos/{id}`. Firebase: the Cloud Tasks queue function `pharmacyScreenVideoWorker` (the deploy
+  enables the Cloud Tasks and IAM Credentials APIs, grants the functions' service account Cloud Tasks Enqueuer and
+  Token Creator on itself, and sets a one-day lifecycle rule on the media bucket's `exports/`; the link is a one-hour
+  V4 signed URL; `PS_SCREEN_PAGE_URL` in `.env.rob-ph-demos`). AWS: the `VideoWorker` Lambda (x86_64), staged on its own by `npm run deploy:aws`.
+  Screen page: `capture=1` (the video's frame capture) and `occasion=<id>` (play one season whatever the date).
+  The editor stops waiting with a plain message on a refused poll (4xx), after 8 failed polls in a row, or after
+  20 minutes. ffmpeg is started before the browser, so an ffmpeg (or Chromium) that cannot start fails the job at
+  once with a plain message and frees the one-render slot, and ffmpeg exiting mid-render fails the frame being
+  written instead of hanging; the reason is logged and kept on the job (`errorDetail`). `npm run test:e2e` gets
+  ffmpeg/ffprobe from the `PATH` or installs the npm builds (`tools/ffmpeg-bin.mjs --ensure`), so it runs on the CI
+  runner, and `video.test.mjs` fails at once with "ffmpeg/ffprobe not found" when it has none.
+  `REQUIREMENTS.md` is now a repo file (copied byte for byte from the board's Requirements): item 1 says
+  an MP4 is only an optional export, and item 29 is Download MP4.
+  In a preview column under 310px Play/Pause now shows as its icon (was under 270px), so the row still fits on one
+  line with the new button.
 - **Sales Promos (`promo=sale`), the first promotion tab.** A new default promotion on its own built-in template
   (Sales promo, `builtin-sale`), reproducing the Big Brand Sale video drawn live in each pharmacy's own colours and
   logo: scene 1 "the brands" (headline in the brand panel, 1-6 brand cards popping in, caption; 3.5 s), a 0.65 s
@@ -21,8 +56,7 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
   date with a date picker (its wording, weekday included, is worked out from it and feeds caption line 2, the panel
   and the footer), the panel label, the scene seconds (administrators) and, optionally, the footer text. Copy is
   stored as `content[<promotion id>].sale` and checked by the config API; a pharmacy that has not edited it plays
-  the promotion's master (the Big Brand Sale). After the end date (store time zone) the screen plays Morning before
-  12:00 and Afternoon after, and the editor's tab reads "Sale has ended". Like Morning it has no promotion
+  the promotion's master (the Big Brand Sale). The end date is wording only (see Changed). Like Morning it has no promotion
   settings; the config API refuses deleting it or changing its promo ID or template, and the sale template is
   reserved for it. Tabs now read Sales Promos, Morning, Afternoon, Closed, Seasonal. On an upgrade, re-running the
   seed adds it and changes nothing else.

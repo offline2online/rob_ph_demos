@@ -5,3 +5,4 @@ node_modules/
 aws/cdk.out/
 aws/cdk.context.json
 release/
+pharmacy-screen/tools/.ffmpeg/

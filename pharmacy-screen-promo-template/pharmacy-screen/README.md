@@ -104,9 +104,9 @@ fills the screen above the footer band, then 5.85 s: rotating rays, "UP TO", the
 band shows the sale. Every animation is transform or opacity (the count-up changes only the number's text), the
 idle motion stops under reduced motion, and a redraw draws the scene as it ends. The copy is
 `content[<promotion id>].sale` ([docs/DATA-CONTRACT.md](../docs/DATA-CONTRACT.md)); its end date's wording
-("Wednesday 2nd December") is worked out from the date (`saleDateText()`). Once the end date is over in
-`store_timezone`, `resolvePromotion()` plays the pharmacy's Morning promotion before 12:00 and Afternoon from 12:00
-(`endedSale` in `window.pharmacyScreen.info`), and the player's minute tick switches at midnight and noon.
+("Wednesday 2nd December") is worked out from the date (`saleDateText()`). The end date is wording only:
+`resolvePromotion()` always plays the sale for `promo=sale`, whatever the date (`date=` does not affect it), because
+Personalisation Hub's campaign schedules decide when every promotion plays except Seasonal.
 Tests: `test/sale.test.mjs`, `test/ui/sale.test.mjs`.
 
 ## Seasonal (`promo=occasions`)
@@ -256,7 +256,7 @@ Split so the admin editor's live preview can reuse the same code:
 | `render.js` | Render engine: store model from `campaign_data` + config, promotion and template resolution (built-ins "Promotion scenes", "Opening hours" and the six occasion templates, `OCCASIONS`; custom templates with scoped CSS and backgrounds), scene sequence and durations, brand colours, `renderScene()`, and `renderOccasion()` (an occasion drawn whole, its copy as beats; `occasionCopy()` reads any saved shape). |
 | `occasions.js` | The six approved Occasions designs: shared base CSS, each template's CSS and decoration markup (seeded scatter), unchanged from the design documents except that the copy comes from `render.js`. |
 | `live-data.js` | The one shared Location API client (requirement 8): proxy and config calls, server failover, polling with one request in flight, change detection, the `localStorage` cache, the screen states, and the published-config mapping; `?mockapi=1` swaps in the fixture client. No DOM. |
-| `player.js` | The page: reads the URL, gets live data through `live-data.js`, scales the screen to the viewport, plays the scenes once and holds the last (`loop=1`: loops them), restarts playback when the page is shown again or the season changes, re-renders on a data change and when the store's bar state changes (an occasion plays in CSS, with no timers), shows the error states, and exposes `window.pharmacyScreen` for the audit and the tests (`info.playback`, `info.held`). |
+| `player.js` | The page: reads the URL, gets live data through `live-data.js`, scales the screen to the viewport, plays the scenes once and holds the last (`loop=1`: loops them), restarts playback when the page is shown again or the season changes, re-renders on a data change and when the store's bar state changes (an occasion plays in CSS, with no timers), shows the error states, and exposes `window.pharmacyScreen` for the audit and the tests (`info.playback`, `info.held`). With `capture=1` (Download MP4's renderer, `config-api/src/video/`) it draws the first scene and waits, with no service worker, polling or clock ticks, until `window.pharmacyScreen.capture()` plays one loop (as `loop=1`) under the renderer's stepped clock; `occasion=<id>` plays that season of a Seasonal promotion whatever the date. |
 | `debug-panel.js` | The `?debug=1` panel (styles in `css/debug.css`, loaded only then). |
 
 `css/screen.css` is the prototype's screen stylesheet, unchanged: scene animations matched to the Beaumaris
@@ -283,6 +283,10 @@ that folder's README.
   Roboto: SIL Open Font License 1.1; Material Symbols: Apache 2.0. It also writes
   `css/occasion-fonts.css` (the eight Occasions faces, SIL OFL 1.1); `node tools/fetch-fonts.mjs occasions` (or
   `screen`) rewrites just that part.
+- `tools/ffmpeg-bin.mjs`: finds ffmpeg and ffprobe for Download MP4 on the local stack and in the tests
+  (`FFMPEG_PATH` / `FFPROBE_PATH`, the `PATH`, then `tools/.ffmpeg/`); `--ensure` installs the npm builds
+  (`ffmpeg-static`, `ffprobe-static`) into `tools/.ffmpeg/` when neither is found. `npm run test:e2e` runs it first,
+  so the CI runner, which installs only Playwright's Chromium, gets them without a workflow change.
 - `tools/overflow-audit.mjs`: renders every fixture store x promotion x scene x orientation at each bar
   state and fails (exit 1) if any copy leaves the brand panel, its content box or the screen. Also exports
   `runAudit({devices, orientations, times, config, browser})` for the copy-fit test.

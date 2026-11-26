@@ -102,6 +102,8 @@ Function settings are written by the deploy; you only set them yourself to run a
 | `PS_ORIGIN_VERIFY_SECRET_ARN` | ARN of the Secrets Manager secret holding the value CloudFront adds to every API request (AWS). Both functions read it at run time and answer `403` to a request without that value (`503` if the secret cannot be read); it also decides whether the viewer address is trusted. Also used by `PhApi` | None (no check) | `arn:aws:secretsmanager:ap-southeast-2:…:secret:OriginVerify…` | No (a reference; only the two functions' roles may read the secret) | The CDK stack |
 | `PS_OIDC_ISSUER` | OIDC issuer URL (AWS) | None (required on AWS) | `https://cognito-idp.ap-southeast-2.amazonaws.com/ap-southeast-2_AbC…` | No | The CDK stack (Cognito, or `--oidc-issuer`); also used by `PhApi` |
 | `PS_OIDC_AUDIENCE` | The admin editor's client id; ID tokens must carry it as `aud` (AWS) | None (required on AWS) | `3n4b5…` | No | The CDK stack; also used by `PhApi` |
+| `PS_SCREEN_PAGE_URL` | This site's screen page, which Download MP4 renders (the worker loads it with `capture=1`). Unset: `POST /api/admin/videos` answers `503` "Download MP4 is not set up on this deployment" | None | `https://rob-ph-demos-pharmacy-screen.web.app/pharmacy-screen.html` | No | `.env.rob-ph-demos`; the CDK stack (`<site URL>/pharmacy-screen.html`) |
+| `PS_VIDEO_FUNCTION` | Download MP4's worker Lambda, invoked asynchronously with `{jobId}` (AWS). Unset: no Download MP4 (`503`) | None | `PharmacyScreen-VideoWorker` | No | The CDK stack, when the deploy staged the worker |
 | `PS_OIDC_JWKS_URI` | Signing keys URL (AWS) | `<issuer>/.well-known/jwks.json` from discovery | `https://…/.well-known/jwks.json` | No | The CDK stack; also used by `PhApi` |
 
 ### PH API settings and Location API proxy (`pharmacyScreenPhApi` / Lambda `PhApi`)
@@ -162,7 +164,9 @@ Function settings are written by the deploy; you only set them yourself to run a
 | `PORT` | `config-api` dev server (`npm run dev`) | `8787` |
 | `PS_DEV_ADMIN_TOKEN` | `config-api` dev server: the access token that is an admin | `dev-admin` |
 | `PS_DEV_VIEWER_TOKEN` | `config-api` dev server: a signed-in non-admin | `dev-viewer` |
-| `CHROMIUM_PATH` | Browser tests and the copy-fit audit: Chromium binary | Playwright's own |
+| `CHROMIUM_PATH` | Browser tests, the copy-fit audit and the dev server's Download MP4: Chromium binary | Playwright's own |
+| `FFMPEG_PATH` | The dev server's Download MP4 and `test/e2e/video.test.mjs`: ffmpeg binary (the cloud workers use `ffmpeg-static`) | `ffmpeg` on the `PATH`, else the npm build in `pharmacy-screen/tools/.ffmpeg/` (`tools/ffmpeg-bin.mjs`) |
+| `FFPROBE_PATH` | `test/e2e/video.test.mjs`: ffprobe binary, to check the MP4's format | `ffprobe` on the `PATH`, else the npm build in `pharmacy-screen/tools/.ffmpeg/` |
 | `FIRESTORE_EMULATOR_HOST` | Seed and Firestore adapter tests: use the emulator | None |
 | `PS_TEST_STORE` | `config-api/test/api.test.js`: run the API suite on another store (the AWS tests use it for DynamoDB) | In-memory store |
 | `DYNAMODB_ENDPOINT` | `aws/` DynamoDB Local tests | None (those tests fail rather than pass without it) |
@@ -181,14 +185,16 @@ https://<site>/pharmacy-screen.html?device=${UniqueDeviceID}&promo=<promo id>&or
 | Parameter | Type | Default | Example | Used in the campaign |
 |---|---|---|---|---|
 | `device` | Device ID, `[A-Za-z0-9._:-]`, 1–128 characters | None: "Invalid screen URL" | `${UniqueDeviceID}` (PH swaps in the screen's ID) | **Yes** |
-| `promo` | A promo ID (see [DATA-CONTRACT.md](DATA-CONTRACT.md) → "Promo IDs"): the defaults are `sale` (Sales Promos), `morning`, `afternoon`, `closed` and `occasions` (Seasonal). `promo=sale` plays the pharmacy's sale until its end date, then Morning before 12:00 and Afternoon after, in the store's time zone | The first promotion | `morning`, `sale` | **Yes** |
+| `promo` | A promo ID (see [DATA-CONTRACT.md](DATA-CONTRACT.md) → "Promo IDs"): the defaults are `sale` (Sales Promos), `morning`, `afternoon`, `closed` and `occasions` (Seasonal). `promo=sale` always plays the pharmacy's sale, whatever its end date (the end date is wording only). Personalisation Hub's campaign schedules decide when every promotion plays, except Seasonal, which plays its seasons by their dates | The first promotion | `morning`, `sale` | **Yes** |
 | `orientation` | `portrait` (1080x1920) or `landscape` (1920x1080) | `portrait` | `landscape` | **Yes** |
 | `loop` | Flag: loop the promotion forever, for a screen that shows this one campaign only. Without it the promotion plays once through and stays on its last scene (a Seasonal promotion: its last beat) until the player loads the next campaign; it plays from the start again when the page is loaded or shown again, or a season changes at midnight | Off: plays once, then holds its last scene | `loop=1` | Optional: only on a screen with no rotation |
 | `mockapi` | Flag: read the fixtures (`pharmacy-screen/fixtures/`) instead of the API | Off | `mockapi=1` | No, testing only |
 | `debug` | Flag: show the debug panel (device, store code, last fetches, server used, store time, bar state) with a test time override | Off | `debug=1` | No, testing only |
 | `scene` | Hold on scene *n* (0-based) instead of playing the promotion | Plays the promotion (once, then holds its last scene; `loop=1` loops) | `scene=2` | No, testing only |
 | `now` | Pretend the store's local time is this (`<day>-<HH:MM>`), for the "Open today" bar | Real time in `store_timezone` | `now=fri-18:45` | No, testing only |
-| `date` | Pretend the store's date is this (`YYYY-MM-DD`, or `MM-DD` for this year), for which season the Seasonal promotion plays and whether a Sales Promos end date is over | Today in `store_timezone` | `date=2026-12-20` | No, testing only |
+| `date` | Pretend the store's date is this (`YYYY-MM-DD`, or `MM-DD` for this year), for which season the Seasonal promotion plays (it does not affect Sales Promos) | Today in `store_timezone` | `date=2026-12-20` | No, testing only |
+| `occasion` | A Seasonal promotion plays this season (`fallback`, `christmas`, `new-year`, `australia-day`, `valentines-day`, `easter`, `anzac-day`) whatever the date: Download MP4 passes the one the editor's preview shows | The season by date | `occasion=christmas` | No |
+| `capture` | Flag: Download MP4's frame capture (`config-api/src/video/`). The page draws the first scene and waits, with no service worker, no polling after the first data and no clock ticks, until the renderer calls `window.pharmacyScreen.capture()`, which plays one loop from the first scene (as `loop=1`) under the renderer's stepped 25 fps clock | Off | `capture=1` | No, the video worker only |
 | `nosw` | Flag: don't keep the screen on the device (no service worker) | Off | `nosw=1` | No |
 | `sw` | Flag: use the service worker on `localhost` too (off there by default) | Off on localhost | `sw=1` | No, local testing only |
 

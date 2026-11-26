@@ -12,18 +12,24 @@
 // loaded again, when it becomes visible again after being hidden (visibilitychange, pageshow), and when a season
 // changes at midnight. The held scene still follows the store's clock and new data, redrawn in place.
 //   loop=1             loop forever instead (the behaviour before), for a screen that shows this one campaign only
+//   capture=1          the MP4 export's frame capture (config-api/src/video/): draws the first scene and waits, with no
+//                      service worker, no polling after the first data and no clock ticks, until the renderer calls
+//                      window.pharmacyScreen.capture(), which plays one loop (as loop=1) from the first scene under
+//                      the renderer's stepped clock
 //
 // Testing parameters (not used by the PH player):
 //   mockapi=1          use the seed fixtures (fixtures/campaign-data.json, fixtures/config.json) instead of the API
 //   debug=1            show the debug panel: device, store code, last fetch, server used, test time override
 //   scene=<n>          hold on scene n (0-based) instead of playing the promotion (an occasion: beat n, held still)
 //   now=<day>-<HH:MM>  pretend the store's local time is this, e.g. now=fri-18:45 (the "Open today" bar)
+//   occasion=<id>      a Seasonal promotion plays this season (christmas, fallback, …) whatever the date: the season the
+//                      editor's preview shows, for Download MP4
 //   date=<YYYY-MM-DD>  pretend the store's date is this, e.g. date=2026-12-20 (which season the Seasonal promotion
-//                      plays, and whether a Sales Promos end date is over; MM-DD for this year)
+//                      plays; MM-DD for this year)
 //
-// Sales Promos (promo=sale): once its end date is over in the store's time zone the screen plays the pharmacy's
-// Morning promotion (before 12:00 store time) or Afternoon (from 12:00) instead (js/render.js resolvePromotion), and
-// switches by itself at midnight and at noon (minuteTick).
+// Scheduling: Personalisation Hub's campaign schedules decide when Morning, Afternoon, Sales Promos and Closed play.
+// Only the Seasonal promotion carries a schedule here (each season's dates). promo=sale always plays the Sales Promos
+// template: its end date is wording only ("Finishes Wednesday 2nd December"), never when it plays.
 
 import { storeModel, resolvePromotion, sequence, sceneName, renderScene, renderMessage, renderNotSetUp, ScreenError, OCCASION_IDS } from './render.js';
 import { parseTestTime, parseTestDate, storeNow, storeDate, storeState } from './hours.js';
@@ -39,9 +45,11 @@ const params = {
   hold: q.has('scene') ? Math.max(0, parseInt(q.get('scene'), 10) || 0) : null,
   now: q.get('now') || '',
   date: q.get('date') || '',
+  occasion: (q.get('occasion') || '').trim(),
   mock: flag('mockapi'),
   debug: flag('debug'),
-  loop: flag('loop'),
+  loop: flag('loop') || flag('capture'),
+  capture: flag('capture'),
 };
 // An unswapped ${UniqueDeviceID} is not a device ID.
 if (params.device.includes('${')) params.device = '';
@@ -54,7 +62,7 @@ function keepOnDevice() {
   if (!('serviceWorker' in navigator)) return;
   // Off on a local server unless sw=1 (the tests route requests a service worker would hide); nosw=1 turns it off.
   const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
-  if (flag('nosw') || (local && !flag('sw'))) return;
+  if (flag('nosw') || flag('capture') || (local && !flag('sw'))) return;
   // A new version takes over the page: reload once so it runs the new code. Not when the first install takes over
   // an uncontrolled page, which already runs the current code.
   let controlled = !!navigator.serviceWorker.controller, reloading = false;
@@ -74,7 +82,7 @@ const stage = document.getElementById('stage');
 const el = document.getElementById('screen');
 const meta = document.querySelector('meta[name="pharmacy-screen-api"]');
 let config = null, store = null, play = null, data = null, panel = null; // panel: a promise of the debug panel (debug=1)
-let scene = 0, playing = params.hold === null, timers = [], lastStateKey = '', last = null;
+let scene = 0, playing = params.hold === null && !params.capture, timers = [], lastStateKey = '', last = null;
 let testTime = null, started = false, fontsWaited = false, shown = '';
 // Playing once (no loop=1): held is set once the last scene's seconds are up; playStart (performance.now()) is when
 // the current run through began, so a redrawn occasion carries on from where it was.
@@ -115,10 +123,6 @@ function testNow() {
   return parseTestTime(params.now, storeNow(tzOf()).day) || undefined;
 }
 const nowForStore = () => testNow() || storeNow(tzOf());
-/** The store's time for a store model not yet current (new data): its own time zone. */
-const nowForStoreOf = (st) => testNow() || storeNow((st && st.tz) || tzOf());
-/** The promotion the URL asks for (promo=), else the config's first. */
-const wantedPromo = () => params.promo || (((config && config.promotions) || [])[0] || {}).promoId || (((config && config.promotions) || [])[0] || {}).id;
 /** The store's date ({y, m, d}): which season the Seasonal promotion plays. */
 const todayForStore = () => { const real = storeDate(tzOf()); return (params.date && parseTestDate(params.date, real.y)) || real; };
 
@@ -219,7 +223,7 @@ async function apply(s) {
   try {
     nextStore = storeModel(s.campaign, s.config);
     const promoId = params.promo || ((s.config.promotions || [])[0] || {}).promoId || ((s.config.promotions || [])[0] || {}).id;
-    nextPlay = resolvePromotion(s.config, nextStore, promoId, { today: todayForStore(), now: nowForStoreOf(nextStore) });
+    nextPlay = resolvePromotion(s.config, nextStore, promoId, { today: todayForStore(), ...(params.occasion ? { occasion: params.occasion } : {}) });
   } catch (e) { fail(e); return; }
   const first = !started || shown !== 'scene';
   config = s.config; store = nextStore; play = nextPlay;
@@ -228,7 +232,8 @@ async function apply(s) {
     if (play.base === 'occasion') await loadOccasionCss();
     await fontsReady();
     if (!play) return; // replaced by a message while the fonts loaded
-    if (params.hold === null) restart();
+    if (params.capture) show(0, false); // drawn still, so fonts and images are in before capture() plays it
+    else if (params.hold === null) restart();
     else show(params.hold, true);
   } else {
     // New data for the same screen: redraw the current scene in place, playback carries on.
@@ -261,16 +266,8 @@ function minuteTick() {
   // (A season shows nothing that depends on the store's hours: no redraw, so its beats carry on, until its dates
   // end or another season's begin: then the season for the new date plays from its first beat, with nobody needing
   // to change anything.)
-  // A Sales Promos promotion (or the Morning / Afternoon promotion standing in for one whose end date is over): when
-  // what it should play changes (the end date passed at midnight, noon moved Morning to Afternoon, or new dates), the
-  // new one plays from its first scene.
-  let switched = false;
-  if (play && store && playing && (play.base === 'sale' || play.endedSale)) {
-    let next = null;
-    try { next = resolvePromotion(config, store, wantedPromo(), { today: todayForStore(), now: nowForStore() }); } catch (e) { next = null; }
-    if (next && next.promoId !== play.promoId) { play = next; restart(); switched = true; }
-  }
-  if (switched) { /* drawn above */ } else if (play && store && play.base === 'occasion' && playing) {
+  // (Sales Promos has no schedule here: it plays whatever its end date, so nothing changes at midnight or noon.)
+  if (play && store && play.base === 'occasion' && playing && !params.occasion) {
     let next = null;
     try { next = resolvePromotion(config, store, play.promoId, { today: todayForStore() }); } catch (e) { next = null; }
     if (next && next.occasion !== play.occasion) { play = next; restart(); }
@@ -307,12 +304,13 @@ function start() {
   const catchUp = () => { if (document.visibilityState !== 'hidden') data.refresh(); };
   // Shown again (the player's next turn for this campaign): play from the first scene again, unless loop=1.
   const replay = () => { if (document.visibilityState !== 'hidden' && play && playing && shown === 'scene' && !params.loop) restart(); };
+  if (params.capture) return; // one read of the data; nothing may redraw the screen while frames are captured
   document.addEventListener('visibilitychange', () => { replay(); catchUp(); });
   window.addEventListener('online', catchUp);
   window.addEventListener('pageshow', (e) => { if (e.persisted) { replay(); catchUp(); } });
   // Ask the browser not to evict the screen's copy (the shell, images and last good data) under storage pressure.
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch (e) {}
-  setTimeout(minuteTick, 60000 - (Date.now() % 60000) + 50);
+  if (!params.capture) setTimeout(minuteTick, 60000 - (Date.now() % 60000) + 50);
 }
 
 // The debug panel is loaded only with debug=1, so the PH player never fetches it.
@@ -330,7 +328,7 @@ function createDebugPanelLazy() {
 window.pharmacyScreen = {
   // A scene drawn (not only chosen: the first one waits for the fonts, and a Seasonal one for its stylesheets), or a message.
   get ready() { return (!!play && shown === 'scene') || !!el.querySelector('.s-msg,.s-setup-body'); },
-  get info() { return play ? { store: store.code, promo: play.promoId, base: play.base, occasion: play.occasion || null, auto: !!play.auto, scene, scenes: sequence(play).map((s, i) => sceneName(play, i)), fit: last && last.fit, state: last && last.state.state, endedSale: play.endedSale || null, playback: params.loop ? 'loop' : 'once', held: isHeld() } : null; },
+  get info() { return play ? { store: store.code, promo: play.promoId, base: play.base, occasion: play.occasion || null, auto: !!play.auto, scene, scenes: sequence(play).map((s, i) => sceneName(play, i)), fit: last && last.fit, state: last && last.state.state, playback: params.loop ? 'loop' : 'once', held: isHeld() } : null; },
   get data() { return data ? JSON.parse(JSON.stringify({ storeCode: data.state.storeCode, deviceStatus: data.state.deviceStatus, configStatus: data.state.configStatus, fromCache: data.state.fromCache, lastStore: data.state.lastStore, lastConfig: data.state.lastConfig, view: screenView(data.state).kind })) : null; },
   promotions: () => (config ? config.promotions.map((p) => p.promoId || p.token || p.id) : []),
   occasions: () => OCCASION_IDS.slice(),
@@ -340,13 +338,22 @@ window.pharmacyScreen = {
   show(promoId, i, occasion) {
     playing = false;
     clearTimers();
-    play = resolvePromotion(config, store, promoId, { occasion, today: todayForStore(), now: nowForStore() });
+    play = resolvePromotion(config, store, promoId, { occasion, today: todayForStore() });
     show(i, false);
     return this.info;
   },
   /** Resolves once what is on screen is final (an occasion: its stylesheets and fonts are in and its copy refitted). */
   settled() { return Promise.resolve(occasionCss).then(() => (last && last.ready) || null).then(() => true); },
   audit() { return last ? auditScene(el, last.G) : ['nothing rendered']; },
+  /** capture=1 only: stop reading data and play one loop from the first scene (as loop=1). Returns the loop's
+   *  seconds, or null when there is nothing to play (a message is on screen). */
+  capture() {
+    if (!params.capture || !play || shown !== 'scene') return null;
+    if (data) data.stop();
+    playing = true;
+    restart();
+    return Math.round(sequence(play).reduce((a, s) => a + s.t, 0) * 1000) / 1000;
+  },
 };
 
 start();

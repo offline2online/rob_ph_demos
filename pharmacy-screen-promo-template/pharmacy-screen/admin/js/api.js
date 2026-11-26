@@ -63,5 +63,8 @@ export function createClient({ apiBase = '', getToken }) {
     savePhApi: (body) => req('PUT', '/api/settings/ph-api', { json: body }).then((r) => r.settings),
     removePhApiToken: () => req('DELETE', '/api/settings/ph-api/token').then((r) => r.settings),
     campaignData: (deviceId) => req('GET', `/api/device/${enc(deviceId)}/campaign_data`),
+    // Download MP4 (config-api/src/video/jobs.js): start a video, then read how far it has got
+    startVideo: (body) => req('POST', '/api/admin/videos', { json: body }),
+    getVideo: (id) => req('GET', `/api/admin/videos/${enc(id)}`),
   };
 }

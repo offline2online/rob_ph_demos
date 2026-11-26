@@ -9,7 +9,7 @@
 // and maps them to the shape the shared render engine (../js/render.js) takes, so the live preview draws
 // exactly what a screen draws.
 
-import { saleCopy, saleSeconds, saleEnded, defaultContent, occasionCopy, OCCASIONS, OCCASION_IDS, DEFAULT_OCCASION, DEFAULT_HTML, footerConfig, beatSeconds, defaultHeadlineSeconds, sceneSeconds, fmtMonthDay, seasonDates, liveOccasion, occasionOf } from '../../js/render.js';
+import { saleCopy, saleSeconds, saleDatePassed as saleDatePassedOn, defaultContent, occasionCopy, OCCASIONS, OCCASION_IDS, DEFAULT_OCCASION, DEFAULT_HTML, footerConfig, beatSeconds, defaultHeadlineSeconds, sceneSeconds, fmtMonthDay, seasonDates, liveOccasion, occasionOf } from '../../js/render.js';
 import { storeDate } from '../../js/hours.js';
 import { DATA_TOKENS, isSettableToken, tokensIn, cleanTokens } from '../../js/tokens.js';
 
@@ -383,9 +383,9 @@ export const loopSeconds = (d, base, occasion) => (base === 'sale' ? saleSeconds
   : base === 'hours' ? sum(headlineSeconds(d))
   : (+d.introDur || 3) + (d.slots || []).reduce((a, x) => a + (+x.dur || 2), 0) + (+(d.close && d.close.dur) || 2));
 
-/** Whether a Sales Promos promotion's copy has passed its end date on `today` (the store's date): the screens then
- *  play Morning or Afternoon instead, and its tab says "Sale has ended". */
-export const saleHasEnded = (content, today = storeToday()) => saleEnded(content && content.sale, today);
+/** Whether a Sales Promos promotion's end date is before `today` (the store's date): the editor then shows a small
+ *  hint under the date field. Wording only: the screens play the sale whenever Personalisation Hub schedules it. */
+export const saleDatePassed = (content, today = storeToday()) => saleDatePassedOn(content && content.sale, today);
 
 /** Seconds to enter as the campaign's playback duration: the promotion's length plus one second, rounded up, so
  *  the last scene finishes before the player moves on. */
@@ -401,7 +401,7 @@ export const clampDur = (v) => { const n = parseFloat(v); return Number.isFinite
  */
 export function editsSince(sent, ph) {
   const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
-  const details = !same(sent.name, ph.name) || !same(sent.storeCode, ph.storeCode) || !same(sent.colours, ph.colours);
+  const details = !same(sent.name, ph.name) || !same(sent.storeCode, ph.storeCode) || !same(sent.colours, ph.colours) || !same(sent.device || '', ph.device || '');
   const was = sent.content || {}, now = ph.content || {};
   const content = Object.keys(now).filter((id) => !same(was[id], now[id]));
   return { details, content };
