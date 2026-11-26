@@ -381,6 +381,26 @@ test('security: non-admin and anonymous write calls are refused on every write e
   assert.equal((await api('GET', '/api/settings/ph-api')).body.settings.token.last4, TOKEN.slice(-4));
 });
 
+test('special hours: the proxy passes Beaumaris\'s special hours through from the mock Location API, trimmed; other stores send []', async () => {
+  const r = await api('GET', '/api/device/DEVICE-VIC-MP-001/campaign_data', { token: '' });
+  assert.equal(r.status, 200, r.text);
+  const sp = r.body.data.store_info.special_hours;
+  assert.deepEqual(sp.slice(0, 2), [
+    { name: 'Christmas Eve', date: '2026-12-24', open: true, open_time: '08:30', close_time: '19:00' },
+    { name: 'Christmas Day', date: '2026-12-25', open: false, open_time: null, close_time: null },
+  ]);
+  assert.equal(sp.length, 8);
+  assert.ok(!r.text.includes('appointmentSlots'));
+  assert.deepEqual((await api('GET', `/api/device/${DEVICE}/campaign_data`, { token: '' })).body.data.store_info.special_hours, []);
+  // and the screen on that device lists them on the Closed promotion
+  const { ctx, page, errors } = await screen('device=DEVICE-VIC-MP-001&promo=closed&scene=0&now=thu-22:00&date=2026-11-26');
+  try {
+    const rows = await page.evaluate(async () => { window.pharmacyScreen.show('closed', 0); await window.pharmacyScreen.settled(); return [...document.querySelectorAll('.s-sp .sd')].map((x) => x.textContent); });
+    assert.deepEqual(rows, ['Thu 24 Dec', 'Fri 25 Dec', 'Sat 26 Dec', 'Thu 31 Dec', 'Fri 1 Jan', 'Tue 26 Jan']);
+    assert.deepEqual(errors, []);
+  } finally { await ctx.close(); }
+});
+
 test('security: the token never appears in any response, log line or audit entry from this whole run', async () => {
   // force the paths that log: a rejected token upstream, an unknown device and a settings save
   await api('GET', '/api/device/NO-SUCH-DEVICE/campaign_data', { token: '' });

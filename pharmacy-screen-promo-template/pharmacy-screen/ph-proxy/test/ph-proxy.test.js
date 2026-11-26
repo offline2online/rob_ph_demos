@@ -169,6 +169,7 @@ test("2. proxy returns the trimmed store data for a valid device", async () => {
         { open_day: "MONDAY", open_time: "08:30:00", close_day: "MONDAY", close_time: "19:00:00", is_active: true },
         { open_day: "FRIDAY", open_time: "20:00:00", close_day: "SATURDAY", close_time: "02:00:00", is_active: false },
       ],
+      special_hours: [],
       address_info: { suburb: "Beaumaris", address: "1 Example St", postcode: "3193", state: "VIC", phone_number: "03 9000 0000" },
       logo_url: "https://cdn.example.com/logo.png",
     },
@@ -605,4 +606,55 @@ test("not-found answers have their own small cache and never evict a real device
   const r = await ctx.call("GET", "/api/device/DEV-REAL/campaign_data", { ip: "10.99.0.1" });
   assert.equal(r.status, 200);
   assert.equal(r.body.meta.stale, true);
+});
+
+// Special opening hours (Christmas, New Year, Australia Day): PH's shape, as the account owner pasted it for Beaumaris.
+const PH_SPECIAL = {
+  store: "Beaumaris Pharmacy", storeId: 458, schoolHolidays: [],
+  specialHours: [
+    { name: "Christmas Eve", date: "2026-12-24", open: true, openTime: "08:30", closeTime: "19:00", appointmentSlots: 0 },
+    { name: "Christmas Day", date: "2026-12-25", open: false },
+    { name: "New Year's Eve", date: "2026-12-31", open: true, open_time: "08:30:00", close_time: "19:00:00" },
+  ],
+};
+const TRIMMED_SPECIAL = [
+  { name: "Christmas Eve", date: "2026-12-24", open: true, open_time: "08:30", close_time: "19:00" },
+  { name: "Christmas Day", date: "2026-12-25", open: false, open_time: null, close_time: null },
+  { name: "New Year's Eve", date: "2026-12-31", open: true, open_time: "08:30", close_time: "19:00" },
+];
+
+test("special hours: passed through trimmed from each place PH may carry them, in order", () => {
+  const list = PH_SPECIAL.specialHours;
+  for (const data of [
+    { store_location: {}, store_info: { specialHours: list } },
+    { store_location: {}, store_info: { special_hours: list } },
+    { store_location: {}, specialHours: list },
+    { store_location: {}, special_hours: list },
+    { store_location: { specialHours: list } },
+    { store_location: {}, specialHours: PH_SPECIAL }, // the whole special-hours payload, holding the list
+  ]) {
+    assert.deepEqual(trimCampaignData(data).store_info.special_hours, TRIMMED_SPECIAL, JSON.stringify(Object.keys(data)));
+  }
+  // the first place that has a list wins
+  const first = trimCampaignData({ store_location: {}, store_info: { specialHours: [list[1]] }, specialHours: list });
+  assert.deepEqual(first.store_info.special_hours, [TRIMMED_SPECIAL[1]]);
+  // none sent: an empty list, so one GET shows PH sends none
+  assert.deepEqual(trimCampaignData({ store_location: {} }).store_info.special_hours, []);
+});
+
+test("special hours: each entry is checked strictly and nothing else is kept", () => {
+  const t = trimCampaignData({ store_location: {}, store_info: { specialHours: [
+    { name: "Bad date", date: "2026-02-30", open: false },
+    { name: "Bad format", date: "26/12/2026", open: false },
+    { name: "Open as text", date: "2026-12-26", open: "false" },
+    { name: "No times", date: "2026-12-27", open: true },
+    { name: "Bad time", date: "2026-12-28", open: true, openTime: "25:00", closeTime: "19:00" },
+    { name: "  Boxing   Day ", date: "2026-12-26", open: false, storeId: 458, appointmentSlots: 3, extra: "<script>" },
+    { date: "2027-01-26", open: false },
+    null, "x",
+  ] } });
+  assert.deepEqual(t.store_info.special_hours, [
+    { name: "Boxing Day", date: "2026-12-26", open: false, open_time: null, close_time: null },
+    { name: "", date: "2027-01-26", open: false, open_time: null, close_time: null },
+  ]);
 });
