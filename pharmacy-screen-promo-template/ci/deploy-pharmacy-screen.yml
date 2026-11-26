@@ -54,3 +54,7 @@ jobs:
       - uses: google-github-actions/setup-gcloud@v2
       - name: Deploy (hosting, functions, rules, indexes)
         run: npm run deploy -- --skip-setup
+      - name: Seed (adds a default promotion a release introduced; never overwrites edits)
+        # Without this a new built-in promotion ships as code only: the editor draws its tabs from stored
+        # promotions, so Sales Promos had no tab on 26 Nov 2026 until the seed ran. No --reset, ever, here.
+        run: node pharmacy-screen/seed/seed.js --project rob-ph-demos

@@ -153,7 +153,8 @@ After the first deploy:
 ## Continuous deploy
 
 `.github/workflows/deploy-pharmacy-screen.yml` (installed 20 Nov 2026 from `ci/deploy-pharmacy-screen.yml`; keep
-the two identical) runs the tests and `npm run deploy -- --skip-setup` on `main`: on a push touching this folder,
+the two identical) runs the tests, `npm run deploy -- --skip-setup` and then the seed (no `--reset`: it adds a default
+promotion a release introduced and leaves everything else as it is) on `main`: on a push touching this folder,
 `firestore.rules` or the workflow, and after a train merge that touches them, which
 `backlog-tracker/scripts/run-backlog-automation.js` dispatches (`HOSTED_DEPLOYS`; a merge made with the
 automation's token never fires a push trigger). It does not deploy the train branch, so the test environment
