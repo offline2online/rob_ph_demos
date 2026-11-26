@@ -232,8 +232,9 @@ Year's. A line that is too long is made smaller to fit. Anzac Day is commemorati
 
 ## Templates
 
-A template is the layout a promotion uses. Built-ins: **Promotion scenes**, **Opening hours** and the six
-seasonal templates. Built-ins are read-only; seasonal templates can't be cloned.
+A template is the layout a promotion uses. Built-ins: **Promotion scenes**, **Opening hours**, **Sales promo** and
+the six seasonal templates. Built-ins are read-only; **Sales promo** and the seasonal templates can't be cloned (they
+have no editable HTML: change the sale's copy on the Sales Promos tab).
 
 1. Select the promotion and click **Edit HTML** beside its Template.
 2. On a built-in, click **Clone template**, and give the copy a **Template name**.
