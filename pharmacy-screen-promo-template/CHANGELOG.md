@@ -8,6 +8,22 @@ release handed to miPharmacy is tagged and packaged with this file and the `docs
 Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 ([docs/RELEASING.md](docs/RELEASING.md)).
 
+### Added
+
+- **Special opening hours on the screen (Christmas, New Year, Australia Day).** The proxy passes a store's special
+  hours through from Personalisation Hub as `store_info.special_hours[]` (`name`, `date`, `open`, `open_time`,
+  `close_time`; checked strictly, `[]` when PH sends none; docs/DATA-CONTRACT.md). The "Open today" bar and
+  `${OpenTime}` / `${CloseTime}` on every template use them for their dates in the store's time zone (`js/hours.js`
+  `storeStateOn`). The opening hours template (Closed) lists the nearest 6 upcoming special dates (90 days ahead at
+  most) under the weekly hours, in place of "Public Holidays: Please call to confirm" and its default headline, and
+  its card shrinks to fit (`fitCard`, covered by the copy-fit audit). A store with none looks exactly as before.
+  `date=` now also sets the date the special hours are read for (with `now=`, the weekday comes from the date). The
+  mock data gives Beaumaris (`DEVICE-VIC-MP-001`) the special hours PH holds for it. The editor's preview plays
+  exactly what the screen plays (the same headlines, the default "Public Holidays" one left out while special hours
+  are listed), and its "Open today bar in the preview" tabs pick a time on the real dates, so a closed special day is
+  never previewed as open (`nowInStateOn`). The screen reads its time and date from one instant, so the bar cannot
+  jump a week at the stroke of midnight.
+
 ### Changed
 
 - **Sales Promos: Personalisation Hub owns scheduling; the end date is wording only.** `promo=sale` now always
@@ -20,6 +36,21 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Added
 
+- **Screen device ID fills in the pharmacy and gives the preview live data.** Settings → Pharmacy details: the
+  Screen device ID is now the first field, full width, with a help line. Pasting an ID (or Enter / leaving the
+  field; **Check** reads it again) reads the device's store data through the PH API proxy and shows it under the
+  field (store name, code, address, phone, timezone, today's hours, logo; "Live from Personalisation Hub", read
+  time), fills an empty pharmacy name and store code, and offers **Use Personalisation Hub's** where a typed name or
+  a hand-set `${Suburb}` differs. It is saved only when the store is this pharmacy's: another store's device ("This
+  device belongs to … not this pharmacy"), a malformed or unknown ID, PH unreachable or not set up each get their
+  own message and save nothing. A pharmacy without an ID is prompted and marked "· no screen device ID" in the
+  pharmacy lists; Add pharmacy starts from the device ID. Every preview of a pharmacy with an ID (every promotion,
+  both orientations, the pharmacy view too) now uses its store's live opening hours, suburb, store name and logo
+  through the screen's own `storeModel()`, and the pill reads **Live opening hours** (tooltip: for which store,
+  read when); otherwise **Sample opening hours**, whose tooltip now says to add the device ID. Read when a pharmacy
+  is picked and on Check; nothing polls. Opening hours, suburb and logo are never copied into the pharmacy. The
+  master template keeps sample data. Settings' pharmacy bar no longer runs past its card at 390px. Dev server: mock
+  devices `DEVICE-VIC-MP-006` and the test site's Beaumaris device.
 - **Download MP4 (Android 12 signage format).** Under the editor's preview, at the end of the Play/Pause row:
   an MP4 of the promotion on the preview, for the selected pharmacy and orientation, made on the server from the
   real screen page stepped frame by frame at 25 fps (headless Chromium and ffmpeg) in the format the Android 12 DMP

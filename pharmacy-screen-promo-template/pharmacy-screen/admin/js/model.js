@@ -10,7 +10,7 @@
 // exactly what a screen draws.
 
 import { saleCopy, saleSeconds, saleDatePassed as saleDatePassedOn, defaultContent, occasionCopy, OCCASIONS, OCCASION_IDS, DEFAULT_OCCASION, DEFAULT_HTML, footerConfig, beatSeconds, defaultHeadlineSeconds, sceneSeconds, fmtMonthDay, seasonDates, liveOccasion, occasionOf } from '../../js/render.js';
-import { storeDate } from '../../js/hours.js';
+import { storeDate, storeNow, parseOpeningHours, weeklyRows } from '../../js/hours.js';
 import { DATA_TOKENS, isSettableToken, tokensIn, cleanTokens } from '../../js/tokens.js';
 
 export const BUILTIN_SCENES = 'builtin-promotion-scenes';
@@ -309,6 +309,122 @@ export function storeFields(record) {
     { label: 'Phone', path: 'store_info.address_info.phone_number', value: a.phone_number },
     { label: 'Address', path: 'store_info.address_info.address', value: [a.address, a.state, a.postcode].filter(Boolean).join(', ') },
   ].map((f) => ({ ...f, value: f.value == null ? '' : String(f.value) }));
+}
+
+// ── Screen device ID: the pharmacy's store details, read live from Personalisation Hub ──
+// Settings → Pharmacy details → Screen device ID. The editor reads the device's store data through the PH API proxy
+// (GET /api/device/{id}/campaign_data, the screen's own route), shows it under the field, fills the pharmacy's empty
+// name and store code from it, and previews every promotion with it. Opening hours, suburb and logo are never copied
+// into the pharmacy record: they are read live, as the screen reads them.
+
+/** A Personalisation Hub device ID, as the proxy (ph-proxy/src/location-proxy.js) and config API accept it. */
+export const DEVICE_ID_RE = /^[A-Za-z0-9._:-]{1,128}$/;
+export const DEVICE_ID_INVALID = 'This is not a valid screen device ID. It is 1 to 128 letters, digits, dots, colons, underscores or hyphens, with no spaces.';
+/** '' for a well-formed (or empty) device ID, else the message to show under the field. */
+export const deviceIdError = (v) => {
+  const s = String(v ?? '').trim();
+  return !s || (!s.includes('${') && DEVICE_ID_RE.test(s)) ? '' : DEVICE_ID_INVALID;
+};
+
+/** "10:42 am" today, else "26 Nov, 10:42 am": when the store details were read. */
+export function readAtText(at, now = new Date()) {
+  const d = new Date(at);
+  if (!Number.isFinite(d.getTime())) return '';
+  const time = d.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' }).replace(/ /g, ' ');
+  const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  return sameDay ? time : `${d.getDate()} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()]}, ${time}`;
+}
+
+/**
+ * A failed lookup (an api.js ApiError: status and the proxy's error code) -> {kind, message}:
+ *   invalid     the proxy refused the ID as malformed
+ *   not-found   Personalisation Hub has no screen with this device ID
+ *   not-set-up  no PH API token is saved in Settings (or PH refused the saved one)
+ *   down        PH (or the proxy) could not be reached: `readAt` says when the data still shown was read
+ */
+export function lookupError(e, { readAt = null } = {}) {
+  const code = e && e.code, status = e && e.status;
+  if (code === 'INVALID_DEVICE_ID') return { kind: 'invalid', message: DEVICE_ID_INVALID };
+  if (code === 'DEVICE_NOT_FOUND') return { kind: 'not-found', message: 'Personalisation Hub does not know this device. Check the device ID and paste it again.' };
+  if (code === 'NOT_CONFIGURED') return { kind: 'not-set-up', message: 'The Personalisation Hub API is not set up. Add its base URL and token under Personalisation Hub API below, then check the device ID again.' };
+  if (code === 'UPSTREAM_AUTH_FAILED') return { kind: 'not-set-up', message: 'Personalisation Hub refused the saved API token. Save a new token under Personalisation Hub API below, then check the device ID again.' };
+  const when = readAt ? readAtText(readAt) : '';
+  const tail = when ? ` Showing the details read at ${when}.` : ' Try again in a minute.';
+  return { kind: 'down', message: `Personalisation Hub could not be reached${status === 429 ? ' (too many requests)' : ''}.${tail}` };
+}
+
+/** The proxy's answer (or its `data`) -> the store details shown under the field. `now` picks today, in the store's time zone. */
+export function storeSummary(record, now = new Date()) {
+  const d = (record && (record.data || record)) || {};
+  const loc = d.store_location || {}, info = d.store_info || {}, a = info.address_info || {};
+  const tz = String(loc.store_timezone || '').trim();
+  const parts = [a.address, a.suburb, [a.state, a.postcode].map((x) => String(x || '').trim()).filter(Boolean).join(' ')].map((x) => String(x || '').trim()).filter(Boolean);
+  // "1A East Concourse, Beaumaris" + suburb "Beaumaris": the suburb is not repeated.
+  const address = parts.reduce((acc, p) => (acc && acc.toLowerCase().split(/,\s*/).includes(p.toLowerCase()) ? acc : acc ? `${acc}, ${p}` : p), '');
+  const sessions = parseOpeningHours(info.opening_hours);
+  const today = storeNow(tz || 'Australia/Melbourne', now).day;
+  const row = weeklyRows(sessions).find((r) => r.day === today);
+  return {
+    name: String(loc.store_name || '').trim(),
+    code: normStoreCode(loc.store_code),
+    address,
+    suburb: String(a.suburb || '').trim(),
+    phone: String(a.phone_number || '').trim(),
+    timezone: tz,
+    today: row ? `${row.name}, ${row.text || 'closed'}` : '',
+    hasHours: sessions.length > 0,
+    logo: typeof info.logo_url === 'string' && /^https:\/\//i.test(info.logo_url) ? info.logo_url : null,
+  };
+}
+
+/**
+ * What a looked-up device means for pharmacy `ph` (the editor's record; `pharmacies` the list, for a store code
+ * another pharmacy already has). Nothing a person typed is overwritten:
+ *   name       'fill' (empty: take PH's), 'same', 'differs' (offer "Use Personalisation Hub's"), 'none' (PH has none)
+ *   storeCode  'fill' (empty) or 'same'; a different code is `wrongStore` and the ID is not saved
+ *   suburb     'live' (no value set by hand: screens show PH's suburb), 'same', 'differs' (offer to clear the
+ *              hand-set value so PH's shows), 'none'
+ *   logo       'live' (PH has one: screens show it) or 'none' (the uploaded logo is kept)
+ * `refusal` is the plain message when the ID must not be saved on this pharmacy.
+ */
+export function fillPlan(ph, record, pharmacies = []) {
+  const s = storeSummary(record);
+  const curName = String((ph && ph.name) || '').trim(), curCode = normStoreCode(ph && ph.storeCode);
+  const handSuburb = String((ph && ph.tokens && ph.tokens.Suburb) || '').trim();
+  const name = !s.name ? 'none' : !curName ? 'fill' : curName === s.name ? 'same' : 'differs';
+  const storeCode = !s.code ? 'none' : !curCode ? 'fill' : curCode === s.code ? 'same' : 'wrong';
+  const suburb = !s.suburb ? 'none' : !handSuburb ? 'live' : handSuburb.toLowerCase() === s.suburb.toLowerCase() ? 'same' : 'differs';
+  const label = `${s.name || 'another store'}${s.code ? ` (${s.code})` : ''}`;
+  let refusal = '';
+  if (!s.code) refusal = 'Personalisation Hub has no store code for this device, so it cannot be matched to this pharmacy.';
+  else if (storeCode === 'wrong') refusal = `This device belongs to ${label}, not this pharmacy.`;
+  else if (storeCode === 'fill') {
+    const other = (pharmacies || []).find((p) => p.id !== (ph && ph.id) && normStoreCode(p.storeCode) === s.code);
+    if (other) refusal = `This device belongs to ${label}, which is already set up here as ${other.name || 'another pharmacy'}. Pick that pharmacy instead.`;
+  }
+  return { summary: s, name, storeCode, suburb, handSuburb, logo: s.logo ? 'live' : 'none', refusal };
+}
+
+/** Apply a plan's fills (empty name and store code only) to `ph`, in place. Returns the labels of what was filled. */
+export function applyFill(ph, plan) {
+  const filled = [];
+  if (plan.refusal) return filled;
+  if (plan.name === 'fill') { ph.name = plan.summary.name; filled.push('Pharmacy name'); }
+  if (plan.storeCode === 'fill') { ph.storeCode = plan.summary.code; filled.push('Store code'); }
+  return filled;
+}
+
+/** The pill under the preview and its tooltip: live store data, or sample data and how to get live data. */
+export function previewDataLabel({ live = null, master = false, hasDevice = false } = {}, now = new Date()) {
+  if (live) {
+    const name = storeSummary(live.data).name || 'this pharmacy';
+    return { live: true, label: 'Live opening hours', tip: `Read from Personalisation Hub for ${name} at ${readAtText(live.readAt, now)}. The preview shows its own opening hours, suburb, store name and logo, as its screens do.` };
+  }
+  const sample = 'The preview uses sample opening hours (Monday to Friday 9:00 am to 5:30 pm, Saturday 9:00 am to 1:00 pm).';
+  const how = master ? ' The master template always previews sample data.'
+    : hasDevice ? ' This pharmacy\'s store details could not be read from Personalisation Hub, so the preview shows sample data. Check its Screen device ID in Settings.'
+      : ' To preview this pharmacy\'s own store details, add its Screen device ID in Settings.';
+  return { live: false, label: 'Sample opening hours', tip: `${sample}${how} Each screen uses its own store's actual opening and closing hours from Personalisation Hub, for the day and time the promotion plays.` };
 }
 
 // A promotion's schedule. "No schedule" is the default (Personalisation Hub Core decides when it plays); "Annual" adds a

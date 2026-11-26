@@ -26,9 +26,11 @@ export const TIMES = { open: 'wed-12:00', closing: 'wed-18:45', before: 'wed-07:
  * Runs the audit. Returns { checked, scenes: [{device, store, promo, occasion, orientation, scene, name, bar}], failures: [string] }.
  * Each failure names the device, store, promo, orientation, scene number (and name) and bar state.
  *   config   - optional replacement for fixtures/config.json (the screen reads it with mockapi=1)
+ *   campaign - optional replacement for fixtures/campaign-data.json (the mock Location API data: special hours, …)
+ *   date     - optional store date ("YYYY-MM-DD", the screen's date= parameter): which special hours are listed
  *   browser  - optional Playwright browser to reuse (left open); otherwise one is launched and closed
  */
-export async function runAudit({ devices = DEVICES, orientations = ORIENTATIONS, times = TIMES, config = null, browser = null } = {}) {
+export async function runAudit({ devices = DEVICES, orientations = ORIENTATIONS, times = TIMES, config = null, campaign = null, date = '', browser = null } = {}) {
   const server = await serve(0);
   const base = `http://127.0.0.1:${server.address().port}/pharmacy-screen.html`;
   const own = !browser;
@@ -45,11 +47,15 @@ export async function runAudit({ devices = DEVICES, orientations = ORIENTATIONS,
         const body = JSON.stringify(config);
         await ctx.route('**/fixtures/config.json', (route) => route.fulfill({ status: 200, contentType: 'application/json', body }));
       }
+      if (campaign) {
+        const body = JSON.stringify(campaign);
+        await ctx.route('**/fixtures/campaign-data.json', (route) => route.fulfill({ status: 200, contentType: 'application/json', body }));
+      }
       const page = await ctx.newPage();
       page.on('pageerror', (e) => failures.push(`page error: ${e.message}`));
       for (const device of devices) {
         for (const [label, now] of Object.entries(times)) {
-          await page.goto(`${base}?mockapi=1&device=${device}&orientation=${orientation}&scene=0&now=${now}`);
+          await page.goto(`${base}?mockapi=1&device=${device}&orientation=${orientation}&scene=0&now=${now}${date ? `&date=${date}` : ''}`);
           await page.waitForFunction(() => window.pharmacyScreen && window.pharmacyScreen.ready);
           await page.evaluate(() => document.fonts.ready);
           const promos = await page.evaluate(() => window.pharmacyScreen.promotions());

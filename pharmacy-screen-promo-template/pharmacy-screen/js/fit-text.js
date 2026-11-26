@@ -5,6 +5,8 @@
 // right has most of the screen; the headline wraps inside the panel's straight-sided part, centred in it (css/screen.css).
 // fitText() shrinks the headline block (--k) until every line sits inside the panel with a 24px margin,
 // and the content block (--kb) until it fits its box. auditScene() re-checks the result with no margin.
+// Opening hours with special hours listed (.special, js/render.js): fitCard() shrinks the hours card (--kc) until it ends
+// above the note under it (or the screen's foot) and every row's text sits inside its row; without them it is not touched.
 // Seasonal templates (js/occasions.js) fill the screen with no panel: fitOccasion() shrinks each beat's copy (--k) until every
 // line sits inside the template's text box (.txt), and auditScene() checks the beat on screen against that box.
 
@@ -65,6 +67,40 @@ function bodyFits(el, toS) {
   return !(kids.length && (Math.min(...kids.map((r) => r.t)) < br.t - 1 || Math.max(...kids.map((r) => r.b)) > br.b + 1));
 }
 
+// The hours card's problems: it reaches the note under it (or the screen's foot), or a row's text leaves its row or
+// is cut short (a special day's name is clipped rather than spill over the times).
+function cardProblems(el, G, toS) {
+  const card = el.querySelector('.s-card');
+  if (!card) return [];
+  const out = [];
+  const cr = toS(card.getBoundingClientRect()), note = el.querySelector('.s-note');
+  const nr = note && note.textContent.trim() ? toS(note.getBoundingClientRect()) : null;
+  if (cr.b > (nr ? nr.t - 8 : G.H - 16) + 1) out.push(nr ? 'hours card reaches the note under it' : 'hours card reaches the foot of the screen');
+  for (const row of card.querySelectorAll('.s-row')) {
+    const r = toS(row.getBoundingClientRect());
+    for (const c of row.children) {
+      const x = toS(c.getBoundingClientRect());
+      if (x.l < r.l - 1 || x.r > r.r + 1 || x.t < r.t - 1 || x.b > r.b + 1 || c.scrollWidth > c.clientWidth + 1) { out.push(`"${row.textContent.trim().slice(0, 40)}" leaves its row`); break; }
+    }
+  }
+  return out;
+}
+
+/** Shrink the hours card (--kc) of an opening hours screen that lists special hours until it fits; {kc, okc}. */
+export function fitCard(el, G) {
+  const card = el.querySelector('.s-card');
+  if (!card || !el.classList.contains('special')) return { kc: 1, okc: true };
+  el.classList.add('measure');
+  const toS = toScreen(el, G);
+  let kc = 1, okc = false;
+  for (; kc >= 0.5; kc -= 0.02) {
+    card.style.setProperty('--kc', kc.toFixed(2));
+    if ((okc = !cardProblems(el, G, toS).length)) break;
+  }
+  el.classList.remove('measure');
+  return { kc: +Math.max(kc, 0.5).toFixed(2), okc };
+}
+
 /** Shrink the headline and content to fit. `el` is the .screen element, already rendered. */
 export function fitText(el, G) {
   el.classList.add('measure');
@@ -88,7 +124,7 @@ export function fitText(el, G) {
     }
   }
   el.classList.remove('measure');
-  return { k: +k.toFixed(2), ok, kb: +kb.toFixed(2), okb };
+  return { k: +k.toFixed(2), ok, kb: +kb.toFixed(2), okb, ...fitCard(el, G) };
 }
 
 // The rects of every line of text under `root`, in screen pixels.
@@ -165,6 +201,9 @@ export function auditScene(el, G) {
       }
     }
   }
+  // the hours card with special hours listed: above the note under it and every row's text inside its row (without
+  // them the card is as it always was, and checked as before)
+  if (el.classList.contains('special')) problems.push(...cardProblems(el, G, toS));
   // the hours card and the note under it must not overlap
   const card = el.querySelector('.s-card'), note = el.querySelector('.s-note');
   if (card && note && note.textContent.trim()) {

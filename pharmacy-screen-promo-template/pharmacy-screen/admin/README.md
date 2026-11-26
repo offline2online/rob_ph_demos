@@ -23,7 +23,7 @@ Spec: the project's requirements 7, 9-19 and 25 (the pharmacy view).
 | + Add token | On the label row of every copy field, in the admin and pharmacy views (`rich-text.js`): the rich-text fields (each headline, the hours headlines, the seasonal Main lines, the Open today bar messages; `rt()`) and the plain ones (accent lines, Line 1 / Line 2, service chip labels, the seasonal Small line above / Line below; `pt()` / `bindPlainText()`): a menu of Store name, Suburb, Store code, State and Phone number (`ADD_TOKENS` in `js/tokens.js`; the store's data carries no "From Personalisation Hub" sub-line) that inserts `${Token}` at the caret (else at the end). Escape or a click elsewhere closes it. Under each copy field, the `${…}` tokens it uses as chips (`tokenChips`, any token name; hidden when none), updated as you type | the field's own save |
 | Settings → Tokens | Every `${…}` token the pharmacy's promotions use (its own copy, the master template's sections it inherits, the Open today bar, template HTML; layout slots and the live `${StoreName}` / `${CloseTime}` / `${OpenTime}` excluded; `${StoreName}` is shown beside the Pharmacy name label in Pharmacy details; on screens it is the Location API's store name, the Pharmacy name only when that is blank), with the promotions using each and an input to set its value by hand (blank = the store's data, shown as the placeholder). Data tokens first, then the others by name; a value no promotion uses any more is still listed so it can be cleared (`model.js` `usedTokens`) | `PATCH /api/admin/pharmacies/{id}` (`tokens`) |
 | Settings → Pharmacies | Pharmacy picker, Add pharmacy, Reset (launch pharmacies: back to the seed content), Delete (click twice) | `/api/admin/pharmacies` |
-| Settings → Pharmacy details | Name, store code (unique, checked as you type and again by the API), and the optional Screen device ID (`#sDev`): the Personalisation Hub device ID of one of the pharmacy's screens, which Download MP4 reads the store's own name and opening hours with (PH's Location API is looked up by device only). Never published to the screens | `PATCH /api/admin/pharmacies/{id}` (`device`; `''` clears it) |
+| Settings → Pharmacy details | **Screen device ID** first (`#sDevRow`, full width, with its help line): the Personalisation Hub device ID of one of the pharmacy's screens (PH's Location API is looked up by device only). Entered on paste, Enter or leaving the field (`commitDevice` in `js/editor.js`; **Check**, `#sDevCheck`, reads it again), it is read through the proxy (`api.campaignData`, `GET /api/device/{id}/campaign_data`) and the store's name, code, address, phone, timezone, today's hours and logo show under it (`#sDevInfo`, "Live from Personalisation Hub · read <time>"). An empty name and store code fill in from it (`model.js` `fillPlan` / `applyFill`); a different name, or a hand-set `${Suburb}` that differs, gets **Use Personalisation Hub's** instead (the suburb's clears the hand-set value). It is saved only when PH confirms the store is this pharmacy's: another store's device ("This device belongs to … not this pharmacy"), a malformed or unknown ID, PH unreachable or its API not set up each show a plain message (`model.js` `deviceIdError`, `lookupError`) and save nothing. No ID: a prompt here and "· no screen device ID" in the pharmacy lists. Then name and store code (unique, checked as you type and again by the API). The device ID is never published to the screens | `PATCH /api/admin/pharmacies/{id}` (`device`; `''` clears it), `GET /api/device/{id}/campaign_data` |
 | Settings → Branding | Primary and accent colours; logo (transparent PNG) upload, replace, remove | `PATCH …/{id}`, `PUT/DELETE …/{id}/logo` |
 | Settings → Personalisation Hub API | API base URL and write-only token (Save / Replace / Remove; only its last 4 characters are ever shown) | `/api/settings/ph-api` |
 
@@ -109,12 +109,19 @@ to the copy command on a selected text field (`copyText()` in `js/editor.js`); i
 shown selected in a read-only field under the button (`#cpField`) for Ctrl+C / Cmd+C. Beside it, "Playback duration: Ns" is the number to enter in the campaign: the
 promotion's total length plus one second, rounded up (`playbackSeconds()` in `js/model.js`), so the last scene
 finishes. It updates live as scenes are added, removed or retimed, and its info icon's tooltip gives the campaign
-setup steps (Creative tab → Experience URL → paste the URL, set the playback duration, save and activate). The
-preview uses sample opening hours (`sampleCampaign()` in `js/model.js`: Monday to Friday 9:00–17:30, Saturday
-9:00–13:00) and no suburb, and says so: the "Sample opening hours" pill (`#pvData`), under the preview directly to the right of
+setup steps (Creative tab → Experience URL → paste the URL, set the playback duration, save and activate). A pharmacy
+with a Screen device ID is previewed with its store's live data (`liveFor()` in `js/editor.js`: the device's last
+read, used only when its store code is the pharmacy's), passed through the screen's own store mapping
+(`campaignForPreview()` then `storeModel()`), so every promotion in both orientations shows its own opening hours,
+Open today bar, Closed next opening, suburb, store name and logo; the pill then reads "Live opening hours" and its
+tooltip says when and for which store it was read (`previewDataLabel()` in `js/model.js`). It is read when the
+pharmacy is picked and on Check, through the proxy's cache; nothing polls. Otherwise (no device ID, nothing read,
+and always for the master template) the preview uses sample opening hours (`sampleCampaign()` in `js/model.js`:
+Monday to Friday 9:00–17:30, Saturday 9:00–13:00) and no suburb, and says so: the "Sample opening hours" pill (`#pvData`), under the preview directly to the right of
 Play/Pause on the same row (`.controls .pvnote`, never shrunk, wrapped or cut short; nothing about it shows above the preview), with an info icon
-(`#pvInfo`) whose tooltip (`#pvTip`) says each screen uses its own store's actual opening and closing hours from
-Personalisation Hub, for the day and time the promotion plays. The tooltip opens above the controls row, from its
+(`#pvInfo`) whose tooltip (`#pvTip`) says how to get live data (add the Screen device ID in Settings) and that each
+screen uses its own store's actual opening and closing hours from Personalisation Hub, for the day and time the
+promotion plays. The tooltip opens above the controls row, from its
 left edge and never wider than it, so it is not clipped in a narrow preview column or by the bottom of the frame.
 The scene time ("1.1s / 11.0s · 5 scenes", `#tlTime`) is on its own line, right-aligned, under the scene bar.
 
