@@ -355,6 +355,28 @@ T("TC-07", "My tasks shows only the signed-in person's tasks", async (prof) => {
   await p.done();
 });
 
+T("KB-SEARCH-CLEAR", "typing a search shows Clear filters at once; Clear filters empties the search box; the box's own clear (×) hides it again", async (prof) => {
+  const p = await open(prof);
+  const all = await p.locator(".kb-card").count();
+  assert.equal(await p.locator("#kb-clear").count(), 0, "no Clear filters with nothing filtered");
+  await p.focus("#kb-q");
+  await p.keyboard.type("zzqx-no-such-ticket");
+  await eventually(async () => assert.equal(await p.locator("#kb-clear").count(), 1, "Clear filters shows as soon as a search is typed"));
+  assert.equal(await p.evaluate(() => document.activeElement && document.activeElement.id), "kb-q", "the search box keeps focus while typing");
+  await eventually(async () => assert.equal(await p.locator(".kb-card").count(), 0, "the search filters the board"));
+  await press(p, "#kb-clear");
+  await eventually(async () => assert.equal(await p.inputValue("#kb-q"), "", "Clear filters empties the search box"));
+  await eventually(async () => assert.equal(await p.locator(".kb-card").count(), all, "every ticket is back"));
+  assert.equal(await p.locator("#kb-clear").count(), 0, "Clear filters goes once nothing is filtered");
+  // The search box's own clear (×) empties it with an input event, like select-all + delete.
+  await p.fill("#kb-q", "zzqx");
+  await eventually(async () => assert.equal(await p.locator("#kb-clear").count(), 1));
+  await p.fill("#kb-q", "");
+  await eventually(async () => assert.equal(await p.locator("#kb-clear").count(), 0, "clearing the box with nothing else filtered hides Clear filters"));
+  await eventually(async () => assert.equal(await p.locator(".kb-card").count(), all));
+  await p.done();
+});
+
 T("TC-08", "secondary filters live in the Filters menu; a filter change keeps the scroll position", async (prof) => {
   const p = await open(prof, "#staff-kanban", { height: Math.min(prof.height, 700) });
   assert.equal(await p.$eval("#kb-filter-panel", (e) => e.hidden), true);

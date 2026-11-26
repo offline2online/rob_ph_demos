@@ -746,6 +746,7 @@ export function mountStaffKanban(ctx) {
     // Primary filters: staff, My tasks, search, Release. Secondary (in Filters): flagged, type, priority, sprint, label.
     const moreCount = [board.flagged, board.type, board.priority, board.sprint, board.project, board.label].filter(Boolean).length;
     const filtersActive = moreCount || board.mine || board.assignees.size || board.release || board.q || board.show;
+    const clearHTML = '<button type="button" class="link-btn kb-clear" id="kb-clear">Clear filters</button>';
     view.innerHTML = `
       <div class="page-header">
         <h2>Staff Kanban</h2>
@@ -769,7 +770,7 @@ export function mountStaffKanban(ctx) {
           <select id="kb-release" class="kb-release-select" aria-label="Release">${relOpts}</select>
           <button type="button" class="kb-mine kb-filter-toggle${filtersOpen || moreCount ? " on" : ""}" id="kb-filter-toggle" aria-expanded="${filtersOpen}" aria-controls="kb-filter-panel"><span class="material-symbols-outlined" aria-hidden="true">tune</span>Filters${moreCount ? `<span class="kb-filter-count">${moreCount}</span>` : ""}</button>
           ${showChipHTML()}
-          ${filtersActive ? '<button type="button" class="link-btn kb-clear" id="kb-clear">Clear filters</button>' : ""}
+          ${filtersActive ? clearHTML : ""}
         </div>
         ${canWrite() ? '<button type="button" class="btn-primary kb-pinned-new" id="kb-pinned-new">+ New task</button>' : ""}
         </div>
@@ -837,8 +838,19 @@ export function mountStaffKanban(ctx) {
     }
     $("#kb-report-btn").addEventListener("click", () => go("report", board.release ? { release: board.release } : null));
     let qTimer = 0;
+    // Typing a search (or clearing it with the box's own ✕) shows or hides
+    // Clear filters at once, without redrawing the bar, so the box keeps focus.
+    const syncClear = () => {
+      const active = moreCount || board.mine || board.assignees.size || board.release || board.q || board.show;
+      const btn = $("#kb-clear");
+      if (active && !btn) {
+        $(".kb-filters").insertAdjacentHTML("beforeend", clearHTML);
+        $("#kb-clear").addEventListener("click", clearAll);
+      } else if (!active && btn) btn.remove();
+    };
     $("#kb-q").addEventListener("input", (e) => {
       board.q = e.target.value;
+      syncClear();
       clearTimeout(qTimer);
       qTimer = setTimeout(() => { renderKanbanBoard(); searchDescriptions(board.q); }, 150);
     });
@@ -863,8 +875,15 @@ export function mountStaffKanban(ctx) {
       $("#" + id).addEventListener("change", (e) => { board[k] = e.target.value; redraw(); }));
     const clearMore = $("#kb-clear-more");
     if (clearMore) clearMore.addEventListener("click", () => { Object.assign(board, { flagged: false, type: "", priority: "", sprint: "", project: "", label: "" }); redraw(); });
+    // Clear filters resets every filter, the search box included.
+    function clearAll() {
+      clearTimeout(qTimer);
+      Object.assign(board, { q: "", mine: false, flagged: false, release: "", type: "", priority: "", sprint: "", project: "", label: "", show: "", column: "" });
+      board.assignees.clear();
+      redraw();
+    }
     const clear = $("#kb-clear");
-    if (clear) clear.addEventListener("click", () => { Object.assign(board, { q: "", mine: false, flagged: false, release: "", type: "", priority: "", sprint: "", project: "", label: "", show: "", column: "" }); board.assignees.clear(); redraw(); });
+    if (clear) clear.addEventListener("click", clearAll);
     const showClear = $("#kb-show-clear");
     if (showClear) showClear.addEventListener("click", () => { Object.assign(board, { show: "", column: "" }); redraw(); });
     // Phone: swipe the board left / right between columns.

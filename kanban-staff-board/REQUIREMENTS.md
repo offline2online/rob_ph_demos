@@ -267,7 +267,12 @@ button shows how many secondary filters are on. The Project filter is kept in th
 address (`#staff-kanban?project=<id>`), so a reload or a shared link keeps it. **Search**
 sits in the pinned filter bar between **My tasks** and **Release** (23 Nov 2026),
 so it stays on screen while the board scrolls, and matches key, title,
-description text and labels. (The prototype still shows it in the page header.) **Clear filters** resets all.
+description text and labels. (The prototype still shows it in the page header.) **Clear filters** resets all,
+the search box included. It shows whenever any filter is on, and a search
+counts (26 Nov 2026, G6dtTBUsozoUVjannNcE): typing in the search box shows it at
+once, without waiting for another filter change, and the box keeps focus;
+emptying the box (its own clear × or deleting the text) hides it again when
+nothing else is filtered.
 
 **KB-FLT-1a Dashboard filter** (24 Nov 2026, uAp6fukjDyNxKusotmcQ). A Staff
 Kanban count on the console's Dashboard opens the board on exactly that
