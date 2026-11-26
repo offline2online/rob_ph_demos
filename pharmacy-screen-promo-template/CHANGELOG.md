@@ -46,6 +46,11 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Changed
 
+- **The test environment's deploy runs the seed.** `deploy-pharmacy-screen.yml` now runs
+  `node pharmacy-screen/seed/seed.js --project rob-ph-demos` (never `--reset`) after the deploy, so a default
+  promotion a release adds gets its record, and its editor tab, without a manual step. Sales Promos shipped on
+  26 Nov 2026 with no tab on the test site because the seed had not been run.
+
 - **+ Add token on every copy field, and the tokens each field uses shown under it.** Every field that takes copy,
   in the admin view and the pharmacy view, now has **+ Add token** on its label row, not just the headlines: the
   accent lines, Line 1 / Line 2 (greeting, each promotion, walk-in close), the service chip labels and the seasonal
