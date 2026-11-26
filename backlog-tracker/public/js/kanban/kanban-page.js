@@ -339,7 +339,8 @@ export function mountStaffKanban(ctx) {
   function moveTask(key, status, beforeKey, lane, resolution) {
     const task = taskByKey(key);
     if (!task || !canWrite()) return;
-    if (status === "ready-for-testing" && task.status !== status && !task.tester) {
+    // A ticket sent back as Needs more work goes straight back to the tester who sent it (KB-BOARD-5a).
+    if (status === "ready-for-testing" && task.status !== status && !task.tester && !(needsWork(task) && task.needsMoreWork.by)) {
       askTester(task).then((tester) => { if (tester) moveTaskTo(key, status, beforeKey, lane, resolution, tester); else renderCurrent(); });
       return;
     }
@@ -379,14 +380,14 @@ export function mountStaffKanban(ctx) {
   }
 
   // Needs more work (KB-BOARD-5a): a ticket in Ready for Testing that didn't
-  // pass goes back to Ready for Dev (and its developer), stamped with what still
+  // pass goes back to Backlog (and its developer), stamped with what still
   // needs doing, and sits at the top of whichever column it is in until it
-  // reaches Ready for Testing again.
+  // reaches Ready for Testing again, when it returns to the tester who sent it.
   function askNeedsWork(task) {
     return new Promise((resolve) => {
       const wrap = document.createElement("div");
       wrap.className = "modal-backdrop"; wrap.id = "kb-needs-work-backdrop";
-      wrap.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="kb-needs-work-h" style="max-width:460px"><div class="modal-body"><h3 id="kb-needs-work-h">${esc(task.key)} needs more work</h3><p class="kb-none">It goes back to Ready for Dev${task.previousAssignee ? ` and to ${esc(fullName(task.previousAssignee))}` : ""}, stamped Needs more work at the top of the column.</p><label class="field-label" for="kb-needs-work-reason">What still needs doing?</label><div class="desc-wrap kb-needs-work-wrap"><textarea id="kb-needs-work-reason" class="kb-input" rows="4" maxlength="${NEEDS_WORK_MAX}" placeholder="What didn't pass testing. Type it, or tap the mic and talk"></textarea>${micBtn("kb-needs-work-mic", "Dictate what still needs doing")}</div><p class="mic-error" id="kb-needs-work-mic-error"></p><p class="kb-needs-work-count" id="kb-needs-work-count" aria-live="polite">0 / ${NEEDS_WORK_MAX}</p></div><div class="modal-footer"><button type="button" class="btn-ghost" id="kb-needs-work-cancel">Cancel</button><button type="button" class="btn-primary" id="kb-needs-work-ok" disabled>Send back to Ready for Dev</button></div></div>`;
+      wrap.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="kb-needs-work-h" style="max-width:460px"><div class="modal-body"><h3 id="kb-needs-work-h">${esc(task.key)} needs more work</h3><p class="kb-none">It goes back to Backlog${task.previousAssignee ? ` and to ${esc(fullName(task.previousAssignee))}` : ""}, stamped Needs more work at the top of the column. When it reaches Ready for Testing again it comes back to you.</p><label class="field-label" for="kb-needs-work-reason">What still needs doing?</label><div class="desc-wrap kb-needs-work-wrap"><textarea id="kb-needs-work-reason" class="kb-input" rows="4" maxlength="${NEEDS_WORK_MAX}" placeholder="What didn't pass testing. Type it, or tap the mic and talk"></textarea>${micBtn("kb-needs-work-mic", "Dictate what still needs doing")}</div><p class="mic-error" id="kb-needs-work-mic-error"></p><p class="kb-needs-work-count" id="kb-needs-work-count" aria-live="polite">0 / ${NEEDS_WORK_MAX}</p></div><div class="modal-footer"><button type="button" class="btn-ghost" id="kb-needs-work-cancel">Cancel</button><button type="button" class="btn-primary" id="kb-needs-work-ok" disabled>Send back to Backlog</button></div></div>`;
       document.body.appendChild(wrap);
       const txt = wrap.querySelector("#kb-needs-work-reason"), ok = wrap.querySelector("#kb-needs-work-ok"), count = wrap.querySelector("#kb-needs-work-count");
       // Dictation writes the box directly, past maxlength, so the count says when it is too long to send.
@@ -415,7 +416,7 @@ export function mountStaffKanban(ctx) {
       if (!reason) return;
       const t = taskByKey(key);
       if (!t || t.status !== "ready-for-testing") return;
-      moveTaskTo(key, "ready-for-dev", null, undefined, undefined, "", { needsMoreWork: { reason, by: me, at: new Date().toISOString() } });
+      moveTaskTo(key, "backlog", null, undefined, undefined, "", { needsMoreWork: { reason, by: me, at: new Date().toISOString() } });
     });
   }
   function needsWorkHTML(t, cls) {
@@ -2176,8 +2177,11 @@ export function mountStaffKanban(ctx) {
     }
     return `<div class="kb-ro-item" data-ro="${k}"><dt>${esc(FIELD_LABEL[k])}</dt><dd>${v}</dd></div>`;
   }
+  // The Needs more work button sits in the details column, just above Status, while the ticket is in Ready for Testing (KB-BOARD-5a).
+  const needsWorkBtnHTML = () => (!draftIsNew && draft.status === "ready-for-testing" && canWrite()
+    ? `<div class="kb-needs-work-bar"><button type="button" class="kb-needs-work-btn" id="f-needs-work"><span class="material-symbols-outlined" aria-hidden="true">undo</span>Needs more work</button></div>` : "");
   function sideHTML(fields) {
-    const inner = fields.map(fieldHTML).join("");
+    const inner = fields.map((k) => (k === "status" ? needsWorkBtnHTML() : "") + fieldHTML(k)).join("");
     if (!isLocked("details")) return `<div class="kb-task-side" id="kb-task-side">${inner}</div>`;
     return `<div class="kb-task-side kb-lockable${isLocked("details") ? " kb-locked" : ""}" id="kb-task-side">
       <div class="kb-ro"><div class="kb-ro-head"><span class="field-label">Details</span>${editBtn("details", "details")}</div><dl class="kb-ro-details" id="f-details-ro">${fields.map(roDetail).join("")}</dl></div>
@@ -2187,7 +2191,8 @@ export function mountStaffKanban(ctx) {
     const form = $("#task-form");
     // A new task always starts in Backlog and has nothing to comment on yet.
     const main = draftIsNew ? ["voice", "title", "description", "criteria", "children", "attachments", "links"] : ["title", "description", "interface", "criteria", "children", "agents", "links", "attachments", "comments"];
-    const side = ["priority", "type", "epic", "assignee", "reporter", "release", "estimate", "logged", "sprint", "project", "due", "labels"].concat(draftIsNew ? [] : ["status"]);
+    // Status sits under Type, above the parent and Assignee (a new task has none: it starts in Backlog).
+    const side = ["priority", "type"].concat(draftIsNew ? [] : ["status"], ["epic", "assignee", "reporter", "release", "estimate", "logged", "sprint", "project", "due", "labels"]);
     const visible = (k) => k === "voice" || k === "children" || k === "criteria" || k === "interface" || k === "agents" || CORE_FIELDS.some((f) => f.key === k) || fieldOn(k);
     const hidden = OPTIONAL_FIELDS.map((f) => f.key).filter((k) => k !== "flag" && !fieldOn(k) && !(draftIsNew && k === "comments"));
     // On an existing ticket, hidden fields stay editable below; a new task shows only the configured form.
@@ -2195,7 +2200,6 @@ export function mountStaffKanban(ctx) {
     // the ticket right down to its last line (KB-MOD-8).
     form.innerHTML = `
       ${!draftIsNew && needsWork(draft) ? needsWorkHTML(draft, "kb-needs-work-modal") : ""}
-      ${!draftIsNew && draft.status === "ready-for-testing" && canWrite() ? `<div class="kb-needs-work-bar"><button type="button" class="kb-needs-work-btn" id="f-needs-work"><span class="material-symbols-outlined" aria-hidden="true">undo</span>Needs more work</button></div>` : ""}
       <div class="kb-task-grid${sideCollapsed ? " kb-side-collapsed" : ""}">
         <div class="kb-task-main">${main.filter(visible).map(fieldHTML).join("")}
           ${!draftIsNew && hidden.length ? `<details class="kb-more"><summary>${hidden.length} more field${hidden.length > 1 ? "s" : ""}<span class="kb-more-names">${hidden.map((k) => esc(FIELD_LABEL[k])).join(", ")}</span></summary><div class="kb-more-body">${hidden.map(fieldHTML).join("")}</div></details>` : ""}

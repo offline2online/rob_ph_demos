@@ -196,10 +196,21 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.strictEqual(task("PH-1").needsMoreWork.reason, "Save still fails on the iPad");
     await tool(sam, "kanban_move_task", { key: "PH-1", status: "ready-for-testing", tester: ROB });
     assert.strictEqual(task("PH-1").needsMoreWork, null);
+    assert.strictEqual(task("PH-1").assignee, t.needsMoreWork.by, "back with the tester who sent it back, ahead of the tester passed");
     assert.strictEqual(env.store.col("kanbanCards").get("PH-1").needsMoreWork, null);
     assert.ok(activity("PH-1").includes("cleared Needs more work"));
     await tool(sam, "kanban_move_task", { key: "PH-1", status: "in-progress" });
     assert.strictEqual(task("PH-1").assignee, HUY);
+    // status backlog (the board's button) also returns it to its developer, stamped
+    await tool(sam, "kanban_move_task", { key: "PH-1", status: "ready-for-testing", tester: ROB });
+    const bl = await tool(sam, "kanban_move_task", { key: "PH-1", status: "backlog", needsMoreWork: "Still fails" });
+    assert.ok(!bl.isError, bl.text);
+    assert.strictEqual(task("PH-1").status, "backlog"); assert.strictEqual(task("PH-1").assignee, HUY);
+    assert.strictEqual(task("PH-1").needsMoreWork.reason, "Still fails");
+    await tool(sam, "kanban_move_task", { key: "PH-1", status: "ready-for-testing" });
+    await tool(sam, "kanban_move_task", { key: "PH-1", status: "in-progress" });
+    assert.strictEqual(task("PH-1").assignee, HUY);
+    assert.deepStrictEqual(cardDrift(), []);
   });
 
   await test("Staff names: seeded pronunciations, admin-only setting, new members prompted, nothing leaks to the board", async () => {

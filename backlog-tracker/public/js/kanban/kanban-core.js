@@ -272,19 +272,24 @@ export const isAliasEmail = (e) => Object.prototype.hasOwnProperty.call(PERSON_A
 // it has one, else to the person the mover chose (opts.tester). There is no
 // board-wide default: with neither, the assignee is left alone.
 // Needs more work (KB-BOARD-5a): opts.needsMoreWork = { reason, by, at } sends a
-// ticket in Ready for Testing back (to Ready for Dev, In Progress or Backlog)
-// stamped as not passing testing; the stamp is cleared when the ticket reaches
-// Ready for Testing again or is approved or closed. stampLine is the extra
-// activity line the caller writes for either.
+// ticket in Ready for Testing back (the board's button sends it to Backlog; over
+// MCP also Ready for Dev or In Progress) stamped as not passing testing and
+// returned to its developer, wherever it goes. The stamp is cleared when the
+// ticket reaches Ready for Testing again or is approved or closed. Reaching Ready
+// for Testing again hands it straight back to the tester who sent it back
+// (needsMoreWork.by), ahead of any designated or chosen tester. stampLine is the
+// extra activity line the caller writes for either.
 export const NEEDS_WORK_BACK = ["backlog", "ready-for-dev", "in-progress"];
 export function normNeedsWork(v) {
   if (!v || typeof v !== "object") return null;
   return { reason: String(v.reason == null ? "" : v.reason).trim().slice(0, 500), by: String(v.by || ""), at: String(v.at || "") };
 }
 export function statusChange(task, status, { resolution, tester: chosen, firstName = (x) => x || "Unassigned", needsMoreWork } = {}) {
-  const tester = (task && task.tester) || chosen || "";
   if (!STATUS_KEYS.includes(status)) throw new Error(`Unknown status ${status}`);
+  const sentBackBy = needsWork(task) && task.needsMoreWork.by ? canonicalEmail(task.needsMoreWork.by) : "";
+  const tester = sentBackBy || (task && task.tester) || chosen || "";
   const from = task.status, fromRes = res(task);
+  const sendingBack = !!needsMoreWork && from === "ready-for-testing" && NEEDS_WORK_BACK.includes(status);
   const toRes = status === "done" ? (RESOLUTIONS.some((r) => r.key === resolution) ? resolution : fromRes || "completed") : null;
   if (from === status && fromRes === toRes) return null;
   const patch = { status, resolution: toRes, open: status !== "done" };
@@ -293,12 +298,12 @@ export function statusChange(task, status, { resolution, tester: chosen, firstNa
     patch.previousAssignee = task.assignee || "";
     patch.assignee = tester;
     note = `reassigned to ${firstName(tester)} for testing`;
-  } else if (from === "ready-for-testing" && (status === "in-progress" || status === "ready-for-dev") && task.previousAssignee) {
+  } else if (from === "ready-for-testing" && (sendingBack || status === "in-progress" || status === "ready-for-dev") && task.previousAssignee) {
     patch.assignee = task.previousAssignee;
     note = `returned to ${firstName(task.previousAssignee)}`;
   }
   let stampLine = "";
-  if (needsMoreWork && from === "ready-for-testing" && NEEDS_WORK_BACK.includes(status)) {
+  if (sendingBack) {
     patch.needsMoreWork = normNeedsWork(needsMoreWork);
     stampLine = `marked Needs more work${patch.needsMoreWork.reason ? ": " + patch.needsMoreWork.reason : ""}`;
   } else if (needsWork(task) && !NEEDS_WORK_BACK.includes(status)) {
