@@ -83,54 +83,6 @@ function pickLogo(data) {
   return null;
 }
 
-// The store's special opening hours (dated exceptions: Christmas Day closed, Christmas Eve 08:30-19:00), from
-// wherever PH's campaign_data carries them, in this order: data.store_info.specialHours, data.store_info.special_hours,
-// data.specialHours, data.special_hours, data.store_location.specialHours (each an array of entries, or an object
-// holding one as specialHours, as PH's own special-hours payload does). PH's entry is
-//   { name, date: "YYYY-MM-DD" (the store's date), open: true|false, openTime: "HH:MM", closeTime: "HH:MM", ... }
-// (open_time / close_time tolerated). Each entry is checked strictly and kept as
-//   { name, date, open, open_time, close_time }   (times null when closed)
-// and nothing else (appointmentSlots, storeId, schoolHolidays are dropped). A bad entry is left out, never guessed at.
-// None anywhere: [] (so one GET of campaign_data shows whether PH sends them).
-const SPECIAL_MAX = 400;
-const YMD = /^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
-const HM = /^([01]\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?$/;
-function realDate(v) {
-  const m = typeof v === "string" ? YMD.exec(v.trim()) : null;
-  if (!m) return null;
-  const t = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
-  return t.getUTCMonth() === +m[2] - 1 && t.getUTCDate() === +m[3] ? m[0] : null;
-}
-const hm = (v) => {
-  const m = typeof v === "string" ? HM.exec(v.trim()) : null;
-  return m ? `${m[1]}:${m[2]}` : null;
-};
-function pickSpecialHours(data) {
-  const si = data.store_info || {};
-  const sl = data.store_location || {};
-  for (const v of [si.specialHours, si.special_hours, data.specialHours, data.special_hours, sl.specialHours]) {
-    const list = Array.isArray(v) ? v : v && typeof v === "object" && Array.isArray(v.specialHours) ? v.specialHours : null;
-    if (!list) continue;
-    const out = [];
-    for (const e of list.slice(0, SPECIAL_MAX)) {
-      if (!e || typeof e !== "object") continue;
-      const date = realDate(e.date);
-      if (!date || typeof e.open !== "boolean") continue;
-      const name = typeof e.name === "string" ? e.name.replace(/\s+/g, " ").trim().slice(0, 40) : "";
-      if (!e.open) {
-        out.push({ name, date, open: false, open_time: null, close_time: null });
-        continue;
-      }
-      const open = hm(e.openTime !== undefined ? e.openTime : e.open_time);
-      const close = hm(e.closeTime !== undefined ? e.closeTime : e.close_time);
-      if (!open || !close) continue;
-      out.push({ name, date, open: true, open_time: open, close_time: close });
-    }
-    return out;
-  }
-  return [];
-}
-
 // Only what the screen uses (README "How the screen gets its store data" §3).
 function trimCampaignData(data) {
   const sl = data.store_location || {};
@@ -153,7 +105,6 @@ function trimCampaignData(data) {
           close_time: str(h.close_time),
           is_active: h.is_active !== false,
         })),
-      special_hours: pickSpecialHours(data),
       address_info: {
         suburb: str(ai.suburb),
         address: str(ai.address),
@@ -313,4 +264,4 @@ function createLocationProxy({
   };
 }
 
-module.exports = { createLocationProxy, createRateLimiter, trimCampaignData, pickSpecialHours, ProxyError, CACHE_SIZE, NEGATIVE_CACHE_SIZE };
+module.exports = { createLocationProxy, createRateLimiter, trimCampaignData, ProxyError, CACHE_SIZE, NEGATIVE_CACHE_SIZE };

@@ -52,57 +52,6 @@
        "is_active": true
       }
      ],
-     "specialHours": [
-      {
-       "name": "Christmas Eve",
-       "date": "2026-12-24",
-       "open": true,
-       "openTime": "08:30",
-       "closeTime": "19:00",
-       "appointmentSlots": 0
-      },
-      {
-       "name": "Christmas Day",
-       "date": "2026-12-25",
-       "open": false
-      },
-      {
-       "name": "Boxing Day",
-       "date": "2026-12-26",
-       "open": false
-      },
-      {
-       "name": "New Year's Eve",
-       "date": "2026-12-31",
-       "open": true,
-       "openTime": "08:30",
-       "closeTime": "19:00",
-       "appointmentSlots": 0
-      },
-      {
-       "name": "New Year's Day",
-       "date": "2027-01-01",
-       "open": false
-      },
-      {
-       "name": "Australia Day",
-       "date": "2027-01-26",
-       "open": false
-      },
-      {
-       "name": "Labour Day",
-       "date": "2027-03-01",
-       "open": true,
-       "openTime": "08:30",
-       "closeTime": "19:00",
-       "appointmentSlots": 0
-      },
-      {
-       "name": "Good Friday",
-       "date": "2027-03-26",
-       "open": false
-      }
-     ],
      "address_info": {
       "address": "1A East Concourse, Beaumaris",
       "suburb": "Beaumaris",

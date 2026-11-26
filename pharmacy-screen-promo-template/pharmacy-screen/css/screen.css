@@ -109,31 +109,6 @@
 .land .s-row.multi>span:last-child{font-size:38px;white-space:nowrap}
 .land .s-note{left:830px;right:50px;top:auto;bottom:30px;gap:8px}
 .land .s-note .n1{font-size:46px}.land .s-note .n2{font-size:34px}
-/* opening hours with the store's special hours (js/render.js, .special): the weekly rows, then "Special hours" and one
-   dated row per day (date, the day's name from Personalisation Hub, its times or Closed), all scaled by --kc, which
-   js/fit-text.js fitCard() lowers until the card ends above the contact line and nothing leaves its row. Without
-   special hours none of this applies and the card is exactly as above. */
-.special .s-card{padding:calc(26px*var(--kc,1)) 24px calc(16px*var(--kc,1))}
-.special .s-card .ch{padding-bottom:calc(14px*var(--kc,1));margin-bottom:calc(8px*var(--kc,1))}
-.special .s-card .ch h3{font-size:calc(52px*var(--kc,1))}
-.special .s-badge{font-size:calc(30px*var(--kc,1));padding:calc(8px*var(--kc,1)) calc(26px*var(--kc,1))}
-.special .s-row{height:auto;min-height:calc(62px*var(--kc,1));font-size:calc(42px*var(--kc,1));border-radius:14px}
-.s-sph{border-top:3px solid #dfe3ee;margin:calc(12px*var(--kc,1)) 34px calc(8px*var(--kc,1));padding-top:calc(14px*var(--kc,1))}
-.s-sph h4{margin:0;font-size:calc(42px*var(--kc,1));font-weight:700;color:var(--s-p)}
-.s-row.s-sp{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;column-gap:calc(26px*var(--kc,1))}
-.s-sp>span{white-space:nowrap}
-.s-sp .sn{font-weight:500;color:#4b5563;overflow:hidden;text-overflow:ellipsis}
-.s-sp .st{display:grid;justify-items:end;font-weight:500}
-.s-sp.multi .st{font-size:.78em;line-height:1.12;padding:calc(6px*var(--kc,1)) 0}
-.special .s-note{top:auto;bottom:44px}
-.land.special .s-card{padding:calc(24px*var(--kc,1)) 28px calc(14px*var(--kc,1))}
-.land.special .s-card .ch h3{font-size:calc(60px*var(--kc,1))}
-.land.special .s-badge{font-size:calc(34px*var(--kc,1))}
-.land.special .s-row{height:auto;min-height:calc(66px*var(--kc,1));font-size:calc(46px*var(--kc,1));padding:0 36px}
-.land.special .s-row.multi>span:last-child{font-size:.78em}
-.land.special .s-sph{margin-left:36px;margin-right:36px}
-.land.special .s-sph h4{font-size:calc(46px*var(--kc,1))}
-.land.special .s-note{bottom:24px}
 /* Sales Promos (promo=sale): the sale template, drawn by js/render.js renderSale() on the brand shell in the pharmacy's
    own colours. Scene 1 (.sl-1): headline in the wedge, brand cards popping in, caption. Scene 2 (.sl-2): the wedge
    grows until the brand colour fills the screen above the footer band (.sl-wedge slides, transform only), then rays,

@@ -70,13 +70,11 @@ wrapped the data key.
       "store_location": { "store_code": "VIC-MP-001", "store_name": "…", "store_timezone": "Australia/Melbourne" },
       "store_info": {
         "opening_hours": [ { "open_day": "MONDAY", "open_time": "08:30:00", "close_day": "MONDAY", "close_time": "19:00:00", "is_active": true } ],
-        "special_hours": [ { "name": "Christmas Day", "date": "2026-12-25", "open": false, "open_time": null, "close_time": null } ],
         "address_info": { "suburb": "…", "address": "…", "postcode": "…", "state": "…", "phone_number": "…" },
         "logo_url": null } },
     "meta": { "server": "https://ph.mipharmacy.net", "fetchedAt": "…", "cached": false } }
   ```
   `logo_url` is filled once the Location API returns a store logo (PH-181): the first https or `data:image/…` value of `store_info.logo_url | logo | store_logo`, `store_location.logo_url | logo | store_logo`, or `data.logo_url | logo`. The screen reads it from `data.store_info.logo_url` (`../js/render.js` `storeModel`) and falls back to the config logo.
-  `special_hours` is the store's special opening hours from PH (`pickSpecialHours`): the first list at `store_info.specialHours | special_hours`, `data.specialHours | special_hours` or `store_location.specialHours`, each entry checked (a real `YYYY-MM-DD` date, a boolean `open`, `HH:MM` times when open) and kept as `{name, date, open, open_time, close_time}`; always present, `[]` when PH sends none (../../docs/DATA-CONTRACT.md).
 
 ### Error codes
 

@@ -179,22 +179,13 @@ Service copy needs TGA advertising review before go-live.
   preview". Clicking into a message you can edit shows it too; clicking anywhere else in the promotion goes back to
   the store's time. This only changes the preview: screens always show the message for the store's own time.
 - Long headlines shrink automatically to stay inside the brand panel; if one becomes very small, shorten it.
-- "Public Holidays: Please call to confirm" is shown under the opening hours unless the store has special hours
-  coming up (see Opening hours below); you don't need to write it.
+- "Public Holidays: Please call to confirm" is always shown; you don't need to write it.
 
 ## Opening hours (Closed)
 
 Three rotating **headlines** (e.g. "Sorry, we're closed", "Serving ${Suburb}"), each with its own seconds on screen
 (1–60; by default 2.7, 2.7 and 2.6, an 8-second loop), and **Show address under phone**.
 The weekly hours, the public holiday line and the phone number come from Personalisation Hub.
-
-**Special hours** (Christmas, New Year, Australia Day and the like) are set in Personalisation Hub, not here. When
-the store has some in the next 90 days, the screen lists the nearest six under the weekly hours as "Special hours",
-for example "Thu 24 Dec  Christmas Eve  8.30am – 7.00pm" and "Fri 25 Dec  Christmas Day  Closed", in place of
-"Public Holidays: Please call to confirm" (and the default "Public Holidays" headline is skipped while they are
-shown). A date drops off the list once it has passed. On a special day the "Open today" bar on every promotion uses
-that day's hours: closed all day when it is marked closed, or its own times when it has them. The editor's preview
-and Download MP4 show the same.
 
 ## Seasonal
 
