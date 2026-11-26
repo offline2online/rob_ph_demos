@@ -4,17 +4,20 @@
 //   pharmacy  {id, storeCode, name, colours {primary, accent}, logo {url} | null, content {<promotion record id>: {...}},
 //              detached? {<promotion record id>: [master section id, …]}, tokens? {<token name>: text}, version}
 //   promotion {id, name, promoId, templateId, schedule? {type 'annual', from 'MM-DD', to 'MM-DD'}, master? {...}, version}
-//   template  {id, name, kind 'promotion-scenes' | 'opening-hours' | 'occasion', occasion?, builtIn, html, css, backgrounds {portrait, landscape}}
+//   template  {id, name, kind 'promotion-scenes' | 'opening-hours' | 'occasion' | 'sale', occasion?, builtIn, html, css, backgrounds {portrait, landscape}}
 //   service   {id, label, icon, category, headline, accent, line1, line2, offeredBy [store codes]}
 // and maps them to the shape the shared render engine (../js/render.js) takes, so the live preview draws
 // exactly what a screen draws.
 
-import { defaultContent, occasionCopy, OCCASIONS, OCCASION_IDS, DEFAULT_OCCASION, DEFAULT_HTML, footerConfig, beatSeconds, defaultHeadlineSeconds, sceneSeconds, fmtMonthDay, seasonDates, liveOccasion, occasionOf } from '../../js/render.js';
+import { saleCopy, saleSeconds, saleEnded, defaultContent, occasionCopy, OCCASIONS, OCCASION_IDS, DEFAULT_OCCASION, DEFAULT_HTML, footerConfig, beatSeconds, defaultHeadlineSeconds, sceneSeconds, fmtMonthDay, seasonDates, liveOccasion, occasionOf } from '../../js/render.js';
 import { storeDate } from '../../js/hours.js';
 import { DATA_TOKENS, isSettableToken, tokensIn, cleanTokens } from '../../js/tokens.js';
 
 export const BUILTIN_SCENES = 'builtin-promotion-scenes';
 export const BUILTIN_HOURS = 'builtin-opening-hours';
+// The Sales Promos promotion's template (config-api/src/builtins.js), reserved for promo ID `sale`.
+export const BUILTIN_SALE = 'builtin-sale';
+export const SALE_PROMO_ID = 'sale';
 // The six seasonal templates (config-api/src/builtins.js; internally "occasion"), picked by the Seasonal promotion's
 // Season drop-down.
 export const occasionTemplateId = (occasion) => 'builtin-occasion-' + occasion;
@@ -34,18 +37,19 @@ export function seasonOptionLabel(id, occasions, year = new Date().getFullYear()
   const r = seasonDates(id, occasions && occasions[id], year), from = fmtMonthDay(r.from), to = fmtMonthDay(r.to);
   return from && to ? `${o.name} (${from}${to !== from ? ' – ' + to : ''})` : o.name;
 }
-const RENDER_BUILTIN = { [BUILTIN_SCENES]: 't_scenes', [BUILTIN_HOURS]: 't_hours', ...Object.fromEntries(OCCASION_IDS.map((id) => [occasionTemplateId(id), 't_occ_' + id])) };
+const RENDER_BUILTIN = { [BUILTIN_SCENES]: 't_scenes', [BUILTIN_HOURS]: 't_hours', [BUILTIN_SALE]: 't_sale', ...Object.fromEntries(OCCASION_IDS.map((id) => [occasionTemplateId(id), 't_occ_' + id])) };
 
-/** 'scenes', 'hours' or 'occasion' for a template kind. */
-export const baseOfKind = (kind) => (kind === 'opening-hours' ? 'hours' : kind === 'occasion' ? 'occasion' : 'scenes');
-export const kindOfBase = (base) => (base === 'hours' ? 'opening-hours' : base === 'occasion' ? 'occasion' : 'promotion-scenes');
-export const builtInForKind = (kind) => (kind === 'opening-hours' ? BUILTIN_HOURS : kind === 'occasion' ? BUILTIN_OCCASION : BUILTIN_SCENES);
+/** 'scenes', 'hours', 'occasion' or 'sale' for a template kind. */
+export const baseOfKind = (kind) => (kind === 'opening-hours' ? 'hours' : kind === 'occasion' ? 'occasion' : kind === 'sale' ? 'sale' : 'scenes');
+export const kindOfBase = (base) => (base === 'hours' ? 'opening-hours' : base === 'occasion' ? 'occasion' : base === 'sale' ? 'sale' : 'promotion-scenes');
+export const builtInForKind = (kind) => (kind === 'opening-hours' ? BUILTIN_HOURS : kind === 'occasion' ? BUILTIN_OCCASION : kind === 'sale' ? BUILTIN_SALE : BUILTIN_SCENES);
 /** The occasion an occasion template plays ('christmas', …), or '' for any other template. */
 export const occasionOfTemplate = (id) => (OCCASION_IDS.find((o) => occasionTemplateId(o) === id) || '');
 
 export const findTemplate = (templates, id) => (templates || []).find((t) => t.id === id) || (templates || []).find((t) => t.id === BUILTIN_SCENES) || null;
 export const baseOfTemplate = (templates, id) => {
   if (id === BUILTIN_HOURS) return 'hours';
+  if (id === BUILTIN_SALE) return 'sale';
   if (occasionOfTemplate(id)) return 'occasion';
   const t = (templates || []).find((x) => x.id === id);
   return t ? baseOfKind(t.kind) : 'scenes';
@@ -86,7 +90,10 @@ export function newContentFor(promotion, base) {
 export function ensureContent(content, base) {
   const c = content && typeof content === 'object' ? clone(content) : {};
   const def = defaultContent(base);
-  if (base === 'occasion') {
+  if (base === 'sale') {
+    // The sale copy (render.js saleCopy): every field there, missing ones from the defaults.
+    c.sale = saleCopy(c.sale);
+  } else if (base === 'occasion') {
     // Every occasion's copy is kept, so switching occasion and back loses nothing. Each is {beats: [{label?, text}]}:
     // copy saved in the old three-scene shape becomes beats (render.js occasionCopy: unedited, the new defaults).
     if (!c.occasions || typeof c.occasions !== 'object' || Array.isArray(c.occasions)) c.occasions = {};
@@ -131,7 +138,9 @@ const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 export const SECTION_NAMES = { greeting: 'Greeting', slots: 'Promotion slots', close: 'Walk-in close', headlines: 'Headlines', address: 'Address', occasions: 'Seasonal copy and dates', footer: 'Open today bar' };
 
 /** The master sections a template kind shows, in the order the editor draws them. */
-export const sectionsForBase = (base) => (base === 'hours' ? ['headlines', 'address'] : base === 'occasion' ? ['occasions'] : ['greeting', 'slots', 'close', 'footer']);
+// The sale's copy (content.sale) is in no section: a pharmacy's own copy, once saved, always wins, and the master only
+// supplies the copy of pharmacies that have none (so there is no Inherited / Managed separately bar on it).
+export const sectionsForBase = (base) => (base === 'hours' ? ['headlines', 'address'] : base === 'occasion' ? ['occasions'] : base === 'sale' ? [] : ['greeting', 'slots', 'close', 'footer']);
 
 /** What a pharmacy plays for one promotion: the master's sections, with its own copy of each detached section. */
 export function effectiveContent(master, own, detached) {
@@ -219,9 +228,10 @@ export function renameLegacy(p) {
   return p;
 }
 
-/** Promotions in the order the editor shows them: the four defaults first, then by creation. */
+/** Promotions in the order the editor shows them: the five defaults first (Sales Promos, Morning, Afternoon, Closed,
+ *  Seasonal), then by creation. */
 export function orderPromotions(promotions) {
-  const rank = { morning: 0, afternoon: 1, closed: 2, occasions: 3 };
+  const rank = { sale: -1, morning: 0, afternoon: 1, closed: 2, occasions: 3 };
   for (const p of promotions || []) renameLegacy(p);
   return [...(promotions || [])].sort((a, b) => (rank[a.promoId] ?? 9) - (rank[b.promoId] ?? 9) || String(a.createdAt || '').localeCompare(String(b.createdAt || '')) || String(a.name).localeCompare(String(b.name)));
 }
@@ -368,9 +378,14 @@ const sum = (a) => Math.round(a.reduce((x, y) => x + y, 0) * 1000) / 1000;
  * the defaults), an opening-hours promotion's headlines (base 'hours'), or a scenes promotion's greeting, slots and
  * close.
  */
-export const loopSeconds = (d, base, occasion) => (Array.isArray(d.beats) ? (occasion && occasionOf(occasion).id === occasion && occasionOf(occasion).durs ? sum(occasionOf(occasion).durs) : sum(d.beats.map((b) => beatSeconds(b, d.beats.length))))
+export const loopSeconds = (d, base, occasion) => (base === 'sale' ? saleSeconds(saleCopy(d.sale))
+  : Array.isArray(d.beats) ? (occasion && occasionOf(occasion).id === occasion && occasionOf(occasion).durs ? sum(occasionOf(occasion).durs) : sum(d.beats.map((b) => beatSeconds(b, d.beats.length))))
   : base === 'hours' ? sum(headlineSeconds(d))
   : (+d.introDur || 3) + (d.slots || []).reduce((a, x) => a + (+x.dur || 2), 0) + (+(d.close && d.close.dur) || 2));
+
+/** Whether a Sales Promos promotion's copy has passed its end date on `today` (the store's date): the screens then
+ *  play Morning or Afternoon instead, and its tab says "Sale has ended". */
+export const saleHasEnded = (content, today = storeToday()) => saleEnded(content && content.sale, today);
 
 /** Seconds to enter as the campaign's playback duration: the promotion's length plus one second, rounded up, so
  *  the last scene finishes before the player moves on. */
@@ -431,7 +446,10 @@ export function usedTokens(ph, promotions, templates) {
     let c = effectiveContent(p.master, ph && ph.content && ph.content[p.id], detachedOf(ph, p.id));
     if (base === 'hours' ? !Array.isArray(c.headlines) : base === 'scenes' && !Array.isArray(c.slots)) c = defaultContent(base);
     let copy;
-    if (base === 'occasion') {
+    if (base === 'sale') {
+      const x = saleCopy(c.sale);
+      copy = [x.headline1, x.headline2, x.brands, x.lead, x.suffix, x.caption, x.panelLabel, x.footer ? [x.footer.line1, x.footer.line2] : []];
+    } else if (base === 'occasion') {
       const occ = seasonOf(p, ph && ph.content && ph.content[p.id]), o = c.occasions && c.occasions[occ];
       copy = [occasionCopy(occ, o)]; // an occasion has no Open today bar
     } else if (base === 'hours') copy = [c.headlines];

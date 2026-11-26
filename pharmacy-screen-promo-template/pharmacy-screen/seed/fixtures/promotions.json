@@ -1,7 +1,33 @@
 {
-  "_doc": "Default promotions (requirement 9). templateId is a built-in from config-api/src/builtins.js. Seasonal (promo ID occasions, kept so existing campaign URLs keep working) plays the season whose dates hold today, else the season its template names (Christmas when seeded; the admin editor's Season drop-down changes it). masterFrom is the store code of the pharmacy whose fixture content is the promotion's master template, which every pharmacy inherits (requirement 23).",
+  "_doc": "Default promotions (requirement 9). templateId is a built-in from config-api/src/builtins.js. Seasonal (promo ID occasions, kept so existing campaign URLs keep working) plays the season whose dates hold today, else the season its template names (Christmas when seeded; the admin editor's Season drop-down changes it). masterFrom is the store code of the pharmacy whose fixture content is the promotion's master template, which every pharmacy inherits (requirement 23). Sales Promos (promo ID sale, 26 Nov 2026) is listed first, as in the editor's tabs: it plays the built-in sale template, can't be deleted, and its master (given here, the Big Brand Sale copy) is the copy of every pharmacy that has not edited its own; it is added by the seed to an existing deployment like any missing default promotion.",
   "masterFrom": "VIC-MP-001",
   "promotions": [
+    {
+      "key": "sale",
+      "name": "Sales Promos",
+      "promoId": "sale",
+      "templateId": "builtin-sale",
+      "master": {
+        "sale": {
+          "headline1": "BIG BRAND",
+          "headline2": "SALE",
+          "brands": [
+            "TOSHI",
+            "CETAPHIL",
+            "NATIO",
+            "BLACKMORES"
+          ],
+          "lead": "UP TO",
+          "value": 30,
+          "suffix": "OFF",
+          "caption": "Four big brands. One big sale.",
+          "endDate": "2026-12-02",
+          "panelLabel": "SALE FINISHES",
+          "s1": 3.5,
+          "s2": 5.85
+        }
+      }
+    },
     {
       "key": "morning",
       "name": "Morning",

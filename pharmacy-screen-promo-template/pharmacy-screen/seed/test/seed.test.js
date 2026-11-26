@@ -2,8 +2,8 @@
 
 // The seed against the in-memory adapters (no network). Covers the ticket's
 // test steps:
-//   1. an empty store gets five pharmacies, four promotions (Occasions on Christmas), nine built-in
-//      templates (two plus six occasions) and 28 services
+//   1. an empty store gets five pharmacies, five promotions (Sales Promos first, Occasions on Christmas), ten
+//      built-in templates (three plus the Fallback and six occasions) and 28 services
 //   2. a second run creates no duplicates and changes nothing
 //   3. an edited pharmacy survives a re-run without --reset (and --reset puts it back)
 // plus the fixtures themselves: they match the concept prototype data the
@@ -30,13 +30,13 @@ function setup() {
   return { store, blobs, now, svc, seed: (opts = {}) => seedConfig({ store, blobs, now, ...opts }) };
 }
 
-test("step 1: an empty store gets 5 pharmacies, 4 promotions, 9 templates, 28 services", async () => {
+test("step 1: an empty store gets 5 pharmacies, 5 promotions, 10 templates, 28 services", async () => {
   const { store, blobs, svc, seed } = setup();
   const report = await seed();
   assert.deepEqual(report.pharmacies.created.sort(), CODES);
-  assert.deepEqual(report.promotions.created, ["morning", "afternoon", "closed", "occasions"]);
+  assert.deepEqual(report.promotions.created, ["sale", "morning", "afternoon", "closed", "occasions"]);
   assert.equal(report.services.created.length, 28);
-  assert.deepEqual(report.templates.builtIn, ["builtin-promotion-scenes", "builtin-opening-hours", ...["builtin-occasion-fallback", "builtin-occasion-christmas", "builtin-occasion-new-year", "builtin-occasion-australia-day", "builtin-occasion-valentines-day", "builtin-occasion-easter", "builtin-occasion-anzac-day"]]);
+  assert.deepEqual(report.templates.builtIn, ["builtin-promotion-scenes", "builtin-opening-hours", "builtin-sale", ...["builtin-occasion-fallback", "builtin-occasion-christmas", "builtin-occasion-new-year", "builtin-occasion-australia-day", "builtin-occasion-valentines-day", "builtin-occasion-easter", "builtin-occasion-anzac-day"]]);
 
   const pharmacies = await svc.listPharmacies();
   assert.deepEqual(pharmacies.map((p) => p.storeCode), CODES);
@@ -53,22 +53,29 @@ test("step 1: an empty store gets 5 pharmacies, 4 promotions, 9 templates, 28 se
     ["closed", "Closed", "builtin-opening-hours"],
     ["morning", "Morning", "builtin-promotion-scenes"],
     ["occasions", "Seasonal", "builtin-occasion-christmas"],
+    ["sale", "Sales Promos", "builtin-sale"],
   ]);
   const templates = await svc.listTemplates();
-  assert.deepEqual(templates.map((t) => [t.name, t.builtIn]), [["Promotion scenes", true], ["Opening hours", true], ["Fallback", true],
+  assert.deepEqual(templates.map((t) => [t.name, t.builtIn]), [["Promotion scenes", true], ["Opening hours", true], ["Sales promo", true], ["Fallback", true],
     ["Christmas", true], ["New Year's", true], ["Australia Day", true], ["Valentine's Day", true], ["Easter", true], ["Anzac Day", true]]);
   assert.equal((await svc.listServices()).length, 28);
 
-  // Every pharmacy has its logo (WebP in the media store) and content for all four promotions,
-  // and its published screen config carries them.
+  // Every pharmacy has its logo (WebP in the media store) and content for the four promotions before Sales Promos,
+  // and its published screen config carries them. Sales Promos has a master (the Big Brand Sale copy) and no
+  // pharmacy's own copy: each publishes the master's until it edits its own.
+  const sale = promotions.find((x) => x.promoId === "sale");
+  assert.deepEqual(sale.master.sale.brands, ["TOSHI", "CETAPHIL", "NATIO", "BLACKMORES"]);
+  assert.equal(sale.master.sale.endDate, "2026-12-02");
   for (const p of pharmacies) {
     assert.equal(p.logo.contentType, "image/webp");
     const obj = blobs.objects.get(p.logo.path);
     assert.ok(obj && obj.buffer.toString("ascii", 0, 4) === "RIFF" && obj.buffer.toString("ascii", 8, 12) === "WEBP", `${p.storeCode} logo is a WebP`);
-    assert.deepEqual(p.promotionsWithContent, promotions.map((x) => x.id).sort());
+    assert.deepEqual(p.promotionsWithContent, promotions.filter((x) => x.promoId !== "sale").map((x) => x.id).sort());
     const screen = await svc.getScreenConfig(p.storeCode);
     assert.equal(screen.logo, p.logo.url);
-    assert.deepEqual(Object.keys(screen.promotions), ["afternoon", "closed", "morning", "occasions"]);
+    assert.deepEqual(Object.keys(screen.promotions), ["afternoon", "closed", "morning", "occasions", "sale"]);
+    assert.equal(screen.promotions.sale.template.kind, "sale");
+    assert.deepEqual(screen.promotions.sale.content, sale.master);
     assert.deepEqual([screen.promotions.occasions.template.kind, screen.promotions.occasions.template.occasion], ["occasion", "fallback"]); // published as the Fallback: the screen picks the season by date
     assert.deepEqual(screen.promotions.occasions.content.occasions.christmas.beats[1], { label: "With warm wishes", text: "from the whole ${StoreName} team", dur: 4 });
     assert.ok(!/StoreName/.test(JSON.stringify(screen.promotions.occasions.content.occasions.easter)), "Easter signs off with the suburb only");
@@ -143,7 +150,7 @@ test("records made by hand with the same natural key are not duplicated or overw
   assert.deepEqual(report.promotions.unchanged, ["morning"]);
   assert.deepEqual(report.pharmacies.unchanged, ["VIC-MP-001"]);
   assert.deepEqual(report.services.unchanged, ["bp"]);
-  assert.equal((await svc.listPromotions()).length, 4);
+  assert.equal((await svc.listPromotions()).length, 5);
   assert.equal((await svc.listPharmacies()).length, 5);
   assert.equal((await svc.listServices()).length, 28);
   assert.equal((await svc.listPharmacies()).find((p) => p.storeCode === "VIC-MP-001").name, "Beaumaris (hand made)");
@@ -185,7 +192,7 @@ test("fixtures match the screen page's prototype data and the mock Location API 
     assert.ok(cd.data.store_info.address_info && "suburb" in cd.data.store_info.address_info);
   }
   assert.equal(campaignDataFor("NO-SUCH-DEVICE", f), null);
-  assert.deepEqual(f.promotions.map((p) => p.promoId), ["morning", "afternoon", "closed", "occasions"]);
+  assert.deepEqual(f.promotions.map((p) => p.promoId), ["sale", "morning", "afternoon", "closed", "occasions"]);
 });
 
 test("a store seeded before Occasions existed gets the Occasions promotion and its content; a re-run is a no-op", async () => {
@@ -396,10 +403,12 @@ test("master template: each default promotion's master is Beaumaris's content, i
   assert.equal(f.masterFrom, "VIC-MP-001");
   const beaumaris = f.pharmacies.find((p) => p.storeCode === "VIC-MP-001");
   for (const p of await svc.listPromotions()) {
-    assert.deepEqual(p.master, beaumaris.content[p.promoId], `${p.promoId} master is Beaumaris's`);
+    // Sales Promos' master is given in promotions.json itself (the Big Brand Sale copy).
+    const want = (f.promotions.find((x) => x.promoId === p.promoId) || {}).master || beaumaris.content[p.promoId];
+    assert.deepEqual(p.master, want, `${p.promoId} master is Beaumaris's`);
     for (const code of CODES) {
       const screen = await svc.getScreenConfig(code);
-      assert.deepEqual(screen.promotions[p.promoId].content, beaumaris.content[p.promoId], `${code} plays the master's ${p.promoId}`);
+      assert.deepEqual(screen.promotions[p.promoId].content, want, `${code} plays the master's ${p.promoId}`);
     }
   }
   // Branding stays each pharmacy's own.
@@ -422,4 +431,30 @@ test("master template: each default promotion's master is Beaumaris's content, i
   const after = store.dump();
   await seed();
   assert.deepEqual(store.dump(), after);
+});
+
+test("upgrade: a deployment seeded before Sales Promos gets it on a re-run, and nothing else changes", async () => {
+  const { store, svc, seed } = setup();
+  const f = loadFixtures();
+  // Seeded with the four promotions before Sales Promos, then edited.
+  await seed({ fixtures: { ...f, promotions: f.promotions.filter((p) => p.promoId !== "sale") } });
+  const actor = { uid: "u-admin", email: null, admin: true };
+  const morningId = ids.promotion("morning");
+  const ph = await svc.getPharmacy(ids.pharmacy("vic-mp-004"));
+  await svc.setPharmacyContent(actor, ph.id, morningId, { ...ph.content[morningId], greeting: "Vermont edit" }, ph.version);
+  const promosBefore = await svc.listPromotions();
+  const pharmaciesBefore = await Promise.all((await svc.listPharmacies()).map((p) => svc.getPharmacy(p.id)));
+  const report = await seed();
+  assert.deepEqual(report.promotions.created, ["sale"]);
+  assert.deepEqual(report.promotions.updated, []);
+  assert.deepEqual(report.pharmacies.updated, []);
+  const promosAfter = await svc.listPromotions();
+  assert.deepEqual(promosAfter.filter((p) => p.promoId !== "sale"), promosBefore, "the other four promotions are unchanged");
+  const pharmaciesAfter = await Promise.all((await svc.listPharmacies()).map((p) => svc.getPharmacy(p.id)));
+  assert.deepEqual(pharmaciesAfter.map((p) => p.content), pharmaciesBefore.map((p) => p.content), "every pharmacy's copy is unchanged");
+  assert.equal(pharmaciesAfter.find((p) => p.storeCode === "VIC-MP-004").content[morningId].greeting, "Vermont edit");
+  const sale = promosAfter.find((p) => p.promoId === "sale");
+  assert.deepEqual([sale.name, sale.templateId, sale.master.sale.value], ["Sales Promos", "builtin-sale", 30]);
+  for (const code of CODES) assert.equal((await svc.getScreenConfig(code)).promotions.sale.template.kind, "sale");
+  assert.equal((await seed()).promotions.created.length, 0, "a further run adds nothing");
 });

@@ -66,7 +66,7 @@ For a local API already holding the seed: `cd ../config-api && npm run dev:seed`
   as it is, and so is anything made by hand. The next run is a no-op. The screen's default for a beat with no
   `dur` (its share of the design's 12 s loop, `../js/render.js`) is unchanged.
 - **Never overwrites edits unless `--reset`.** With `--reset`, a seeded record that differs from the fixture
-  is put back (pharmacy name, colours, logo and its content for the four default promotions; promotion name,
+  is put back (pharmacy name, colours, logo and its content for the default promotions; promotion name,
   promo ID and template, so Occasions goes back to Christmas; service copy). Content for other promotions and records the seed doesn't know about
   are never touched. A second `--reset` changes nothing.
 - **Master template.** `fixtures/promotions.json`'s `masterFrom` (`VIC-MP-001`, Beaumaris) names the pharmacy

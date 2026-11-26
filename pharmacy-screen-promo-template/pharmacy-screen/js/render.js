@@ -8,7 +8,7 @@
 
 import { DAYS, parseOpeningHours, storeNow, storeState, fmtShort, weeklyRows } from './hours.js';
 import { esc, rich, fill, timeTokens, fillTemplate, applyStoreName, cleanTokens, applyTokens, DATA_TOKENS } from './tokens.js';
-import { geom, ptsPath, ptsClip, fitText, fitOccasion } from './fit-text.js';
+import { geom, ptsPath, ptsClip, fitText, fitOccasion, fitSale } from './fit-text.js';
 import { OCCASION_DESIGNS, OCCASION_CSS } from './occasions.js';
 
 // ---------- seasonal (internally "occasions") ----------
@@ -239,11 +239,94 @@ export function occasionCopy(id, saved) {
   return def;
 }
 
+// ---------- sales promos (promo=sale) ----------
+// The "Sales Promos" promotion (promo=sale, the first tab in the editor) plays its own built-in template (t_sale,
+// config-api/src/builtins.js "builtin-sale"), drawn by renderSale() in the pharmacy's own branding: two scenes on the
+// brand shell (the wedge with the logo, the accent edge line and chevron, the footer band). Scene 1 "the brands"
+// (default 3.5 s): the headline pops in inside the wedge, the brand cards pop in one after another under it, then the
+// caption. Scene 2 "the offer" (default 5.85 s, after a 0.65 s transition in which the wedge grows until the brand
+// colour fills the screen above the footer band): rotating rays, "UP TO", the offer value counting up from 0 with a
+// bounce and a heartbeat, "OFF", the pulsing end-date panel and the brand list. The footer band shows the sale.
+// The copy is each pharmacy's own (content.sale, saleCopy()): it is not a master section, so a pharmacy's own copy
+// always wins and a promotion's master only supplies the copy of pharmacies that have none. The end date is a
+// "YYYY-MM-DD" (a date picker in the editor); its wording ("Wednesday 2nd December") is generated from it, so the
+// weekday always agrees with the date. Once the end date is over in the store's time zone, the screen plays the
+// pharmacy's Morning promotion (before 12:00) or Afternoon (from 12:00) instead (resolvePromotion).
+export const SALE_TRANSITION = 0.65;
+export const SALE_MAX_BRANDS = 6;
+export const SALE_MAX_BRAND_LENGTH = 30;
+/** The default copy: the Big Brand Sale made for the launch pharmacies (26 Nov 2026). */
+export const defaultSale = () => ({
+  headline1: 'BIG BRAND', headline2: 'SALE', brands: ['TOSHI', 'CETAPHIL', 'NATIO', 'BLACKMORES'],
+  lead: 'UP TO', value: 30, suffix: 'OFF', caption: 'Four big brands. One big sale.', endDate: '2026-12-02',
+  panelLabel: 'SALE FINISHES', s1: 3.5, s2: 5.85,
+});
+const SALE_YMD = /^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+/** A real calendar date "YYYY-MM-DD" (2026-02-30 is not one), or ''. */
+export function cleanYmd(v) {
+  const m = SALE_YMD.exec(String(v || '').trim());
+  if (!m) return '';
+  const t = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  return t.getUTCDate() === +m[3] && t.getUTCMonth() === +m[2] - 1 ? m[0] : '';
+}
+/** The offer value: a whole number from 1 to 99, or undefined. */
+export const saleValue = (v) => { const n = typeof v === 'string' && v.trim() ? +v : v; return typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= 99 ? n : undefined; };
+/**
+ * A pharmacy's saved sale copy, whatever is missing filled from the defaults: {headline1, headline2, brands [1-6],
+ * lead, value (1-99), suffix, caption, endDate "YYYY-MM-DD", panelLabel, s1, s2 (seconds), footer? {custom: true,
+ * line1, line2}}. The footer override is kept only while it is switched on.
+ */
+export function saleCopy(saved) {
+  const d = defaultSale(), s = saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
+  const str = (k) => (typeof s[k] === 'string' ? s[k] : d[k]);
+  const brands = Array.isArray(s.brands) ? s.brands.filter((b) => typeof b === 'string').map((b) => b.slice(0, SALE_MAX_BRAND_LENGTH)).slice(0, SALE_MAX_BRANDS) : null;
+  const f = s.footer && typeof s.footer === 'object' && s.footer.custom === true ? s.footer : null;
+  return {
+    headline1: str('headline1'), headline2: str('headline2'), brands: brands && brands.length ? brands : d.brands,
+    lead: str('lead'), value: saleValue(s.value) ?? d.value, suffix: str('suffix'), caption: str('caption'),
+    endDate: cleanYmd(s.endDate) || d.endDate, panelLabel: str('panelLabel'),
+    s1: sceneSeconds(s.s1, d.s1), s2: sceneSeconds(s.s2, d.s2),
+    ...(f ? { footer: { custom: true, line1: typeof f.line1 === 'string' ? f.line1 : '', line2: typeof f.line2 === 'string' ? f.line2 : '' } } : {}),
+  };
+}
+const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+/** 1st, 2nd, 3rd, 4th … 11th, 12th, 13th … 21st, 22nd, 23rd … 31st. */
+export const ordinal = (n) => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
+/** "Wednesday 2nd December" for "2026-12-02": the weekday worked out from the date, never typed. '' for a bad date. */
+export function saleDateText(ymd) {
+  const v = cleanYmd(ymd);
+  if (!v) return '';
+  const [y, m, d] = v.split('-').map(Number);
+  return `${WEEKDAY_NAMES[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]} ${ordinal(d)} ${MONTH_NAMES[m - 1]}`;
+}
+/** Whether the sale's end date is over on `today` ({y, m, d}, the store's date): it runs to the end of its end date. */
+export function saleEnded(copy, today) {
+  if (!today || !today.y) return false;
+  return `${today.y}-${String(today.m).padStart(2, '0')}-${String(today.d).padStart(2, '0')}` > saleCopy(copy).endDate;
+}
+/** "UP TO 30% OFF". */
+export const saleOffer = (c) => [c.lead, `${c.value}%`, c.suffix].map((x) => String(x || '').trim()).filter(Boolean).join(' ');
+/** Caption line 2: "Finishes Wednesday 2nd December". */
+export const saleFinishes = (c) => { const t = saleDateText(c.endDate); return t ? `Finishes ${t}` : ''; };
+/** The footer band's two lines: derived from the copy ("BIG BRAND SALE · UP TO 30% OFF" / "Finishes Wednesday 2nd
+ *  December", set in capitals on screen), or the text typed in the editor when the override is on. */
+export function saleFooter(c) {
+  if (c.footer && c.footer.custom) return { line1: c.footer.line1, line2: c.footer.line2 };
+  const head = [c.headline1, c.headline2].map((x) => String(x || '').trim()).filter(Boolean).join(' ');
+  return { line1: [head, saleOffer(c)].filter(Boolean).join(' · '), line2: saleFinishes(c) };
+}
+/** One loop of the sale in seconds: scene 1, the transition, scene 2 (10 s at the defaults). */
+export const saleSeconds = (c) => Math.round((c.s1 + SALE_TRANSITION + c.s2) * 1000) / 1000;
+/** The promotions a finished sale falls back to, in order: Morning before 12:00 store time, else Afternoon. */
+export const saleFallbackOrder = (now) => (now && Number.isFinite(now.min) && now.min < 720 ? ['morning', 'afternoon'] : ['afternoon', 'morning']);
+
 // ---------- built-in templates ----------
 export const BUILTIN_TEMPLATES = [
   { id: 't_scenes', name: 'Promotion scenes', base: 'scenes', builtin: true },
   { id: 't_hours', name: 'Opening hours', base: 'hours', builtin: true },
   ...OCCASIONS.map((o) => ({ id: 't_occ_' + o.id, name: o.name, base: 'occasion', occasion: o.id, builtin: true })), // drawn by renderOccasion()
+  { id: 't_sale', name: 'Sales promo', base: 'sale', builtin: true }, // drawn by renderSale()
 ];
 
 export const DEFAULT_HTML = {
@@ -278,6 +361,7 @@ export const HOLIDAY_NOTE = 'Public Holidays: Please call to confirm';
 // Content a promotion falls back to when a pharmacy has none for it yet (as the prototype does).
 const S = (label, icon, title, sub, line1, line2) => ({ label, icon, title, sub, line1, line2 });
 export function defaultContent(base) {
+  if (base === 'sale') return { sale: defaultSale() };
   if (base === 'occasion') return { occasions: Object.fromEntries(OCCASION_IDS.map((id) => [id, defaultOccasion(id)])) };
   if (base === 'hours') {
     return { headlines: ["Sorry, we're closed", 'Serving ${Suburb}', 'Public Holidays:<br><span class="reg">Please call to confirm</span>'], showAddress: false };
@@ -362,6 +446,17 @@ export function resolvePromotion(config, store, promoId, opts = {}) {
     const copy = occasionCopy(occasion, content && content.occasions && content.occasions[occasion]);
     return { promo, promoId: promoIdOf(promo), template, base: 'occasion', occasion, auto, content: { beats: copy.beats } };
   }
+  if (template.base === 'sale') {
+    const copy = saleCopy(content && content.sale);
+    // The end date is over at the store (opts.today, the store's date; the player passes it): the pharmacy's Morning
+    // promotion before 12:00 store time, else its Afternoon (whichever of the two it has), with endedSale saying which
+    // sale it stands in for. Without opts.today (the editor's preview) the sale plays as it is.
+    if (opts.today && !opts.noSaleFallback && saleEnded(copy, opts.today)) {
+      const fb = saleFallbackOrder(opts.now || storeNow(store.tz)).find((id) => id !== promoIdOf(promo) && promos.some((p) => promoIdOf(p) === id));
+      if (fb) return { ...resolvePromotion(config, store, fb, { ...opts, noSaleFallback: true }), endedSale: promoIdOf(promo) };
+    }
+    return { promo, promoId: promoIdOf(promo), template, base: 'sale', content: { sale: copy } };
+  }
   const base = template.base === 'hours' ? 'hours' : 'scenes';
   const fits = base === 'hours' ? content && Array.isArray(content.headlines) : content && Array.isArray(content.slots);
   if (!fits) content = defaultContent(base);
@@ -378,6 +473,8 @@ export function sequence(play) {
   }
   // An occasion's beats: each its own seconds, else an equal share of the design's 12 s loop (Christmas 6 s + 6 s,
   // the others 4 s each).
+  // The sale: scene 1 (the brands), then scene 2 (the offer), which starts with the 0.65 s transition.
+  if (play.base === 'sale') return [{ k: 'brands', t: d.sale.s1 }, { k: 'offer', t: Math.round((SALE_TRANSITION + d.sale.s2) * 1000) / 1000 }];
   if (play.base === 'occasion') return d.beats.map((x, i) => ({ k: i, t: occasionBeatSeconds(play.occasion, x, i, d.beats.length) }));
   return [{ k: 'intro', t: +d.introDur || 3 }, ...d.slots.map((x, i) => ({ k: i, t: +x.dur || 2 })), { k: 'close', t: +(d.close && d.close.dur) || 2 }];
 }
@@ -387,6 +484,7 @@ export function sceneName(play, i) {
   if (!s) return '';
   if (play.base === 'hours') return 'Headline ' + (i + 1);
   if (play.base === 'occasion') return 'Beat ' + (i + 1);
+  if (play.base === 'sale') return s.k === 'brands' ? 'The brands' : 'The offer';
   return s.k === 'intro' ? 'Greeting' : s.k === 'close' ? 'Walk in' : play.content.slots[s.k].label;
 }
 
@@ -483,6 +581,7 @@ function writeTemplate(el, markup) {
 export function renderScene(el, opts) {
   const { store, play } = opts;
   if (play.base === 'occasion') return renderOccasion(el, opts);
+  if (play.base === 'sale') return renderSale(el, opts);
   const land = opts.orientation === 'landscape';
   const hours = play.base === 'hours';
   const seq = sequence(play);
@@ -687,6 +786,96 @@ export function renderOccasion(el, opts) {
   // Measured again once the fonts are in, unless the screen has been redrawn since.
   const ready = fonts.then(() => { if (el.querySelector('.occ') === root) Object.assign(fit, fitOccasion(el, G)); });
   return { G, fit, state, ready };
+}
+
+/**
+ * The sale template (promo=sale), one scene: 0 "the brands", 1 "the offer". Drawn on the pharmacy's brand shell in
+ * its own colours and logo; animated with transform and opacity only (css/screen.css .sale), so it plays smoothly on
+ * the signage players. With opts.enter the scene's entrance plays (scene 2: the wedge grows to fill the screen above
+ * the footer band, then the offer builds up, the value counting up from 0); without it (a redraw, a held scene) it is
+ * drawn as it ends. The idle motion (floating cards, rays, the value's heartbeat, the panel's pulse) always runs, and
+ * none of it under reduced motion. Copy is plain text with ${…} tokens, shrunk to fit (fit-text.js fitSale).
+ */
+export function renderSale(el, opts) {
+  const { store, play } = opts;
+  const land = opts.orientation === 'landscape';
+  const c = play.content.sale;
+  const scene = Math.max(0, Math.min(1, opts.scene | 0)), offer = scene === 1;
+  const state = storeState(store.sessions, opts.now || storeNow(store.tz));
+  const s = store;
+  el.removeAttribute('style');
+  el.style.setProperty('--s-p', s.brand.p);
+  el.style.setProperty('--s-p2', boost(s.brand.p, 1.8));
+  el.style.setProperty('--s-p3', tileTop(s.brand.p));
+  el.style.setProperty('--s-p4', boost(s.brand.p, 1.15));
+  el.style.setProperty('--s-a', s.brand.a);
+  el.style.setProperty('--s-bg', '#f1f3f8');
+  el.style.setProperty('--s-bg2', '#e6eaf3');
+  el.style.setProperty('--s-ink', s.brand.p);
+  // Tokens in the copy, as in the other templates' plain lines: ${Suburb} (blanked with its comma when the store has
+  // none), ${StoreName}, the store's data and any token set by hand.
+  const custom = Object.fromEntries(Object.entries(s.tokens || {}).filter(([k]) => !DATA_TOKENS.includes(k)));
+  const P = (t) => applyTokens(applyStoreName(fill(t, s.suburb), s.name), { ...custom, Phone: s.phone || '', State: s.state || '', StoreCode: s.storeCode || '' });
+  const brands = c.brands.map((b) => String(b || '').trim()).filter(Boolean);
+
+  // The wedge: the brand panel of the other templates (fit-text.js geom), drawn as one long shape that scene 2 slides
+  // over the screen (transform only) until the brand colour fills everything above the footer band.
+  const G = geom(land, false);
+  const W = G.W, H = G.H, foot = land ? 120 : 170;
+  let box, clip, edge, shift;
+  if (!land) {
+    const fillH = H - foot, extra = 920 - 300;
+    box = `width:${W}px;height:${fillH + extra}px`;
+    clip = [[0, 0], [W, 0], [W, fillH], [W / 2, fillH + extra], [0, fillH]];
+    edge = [[0, fillH], [W / 2, fillH + extra], [W, fillH]];
+    shift = `translateY(-${fillH - 300}px)`;
+  } else {
+    const ph = H - foot, w1 = 580, extra = 780 - w1;
+    box = `width:${W + extra}px;height:${ph}px`;
+    clip = [[0, 0], [W, 0], [W + extra, ph / 2], [W, ph], [0, ph]];
+    edge = [[W, 0], [W + extra, ph / 2], [W, ph]];
+    shift = `translateX(-${W - w1}px)`;
+  }
+  const [bw, bh] = box.match(/\d+/g).map(Number);
+  const wedge = `<div class="sl-wedge" style="${box};--sl-from:${shift}${offer ? '' : `;transform:${shift}`}"><div class="sl-fill" style="clip-path:${ptsClip(clip)}"></div>`
+    + `<svg class="sl-edge" viewBox="0 0 ${bw} ${bh}"><path d="${ptsPath(edge)}"/></svg></div>`;
+  const chev = `<svg class="s-chev sl-chev" viewBox="0 0 90 50" style="${G.chev}"><path d="M8 8 L45 42 L82 8"/></svg>`;
+  const logo = `<div class="s-logo">${logoHtml(s)}</div>`;
+  const f = saleFooter(c);
+  const footer = `<div class="s-foot sl-foot"><span class="f1">${P(f.line1)}</span>${String(f.line2 || '').trim() ? `<span class="f2">${P(f.line2)}</span>` : ''}</div>`;
+  let body;
+  if (!offer) {
+    const n = brands.length;
+    const cards = brands.map((b, i) => `<div class="sl-cw" style="--i:${i}"><div class="sl-card"><span class="sl-nm">${P(b)}</span></div></div>`).join('');
+    body = `<div class="s-head sl-head"><h2 class="sl-l1">${P(c.headline1)}</h2><h2 class="sl-l2">${P(c.headline2)}</h2><p class="sl-l3">${P(saleOffer(c))}</p></div>`
+      + `<div class="s-body sl-body" style="--n:${n}"><div class="sl-grid${n > 4 ? ' many' : ''}">${cards}</div>`
+      + `<h3 class="s-title sl-c1">${P(c.caption)}</h3><p class="s-sub sl-c2">${P(saleFinishes(c))}</p></div>`;
+  } else {
+    body = `<div class="sl-rays" aria-hidden="true"><i></i></div><div class="sl-offer"><div class="sl-in"><div class="sl-big">`
+      + `<div class="sl-lead">${P(c.lead)}</div><div class="sl-valb"><div class="sl-valw"><span class="sl-val">${c.value}</span><span class="sl-pc">%</span></div></div>`
+      + `<div class="sl-suf">${P(c.suffix)}</div></div><div class="sl-fin"><div class="sl-panelw"><div class="sl-glow"></div><div class="sl-panel">`
+      + `<span class="sl-pl">${P(c.panelLabel)}</span><span class="sl-pd">${esc(saleDateText(c.endDate))}</span></div></div>`
+      + `<div class="sl-brands">${brands.map(P).join(' · ')}</div></div></div></div>`;
+  }
+  el.className = 'screen sale ' + (offer ? 'sl-2' : 'sl-1') + (land ? ' land' : '') + (opts.enter ? ' enter' : '');
+  el.innerHTML = `<div class="sl">${wedge}${offer && !opts.enter ? '' : chev}${logo}${body}${footer}</div>`;
+  const fit = fitSale(el, G);
+  // Scene 2's value counts up from 0 over 0.8 s (ease-out), once the wedge has filled the screen; not under reduced
+  // motion, and not on a redraw (it is drawn at its value).
+  const val = el.querySelector('.sl-val'), win = el.ownerDocument && el.ownerDocument.defaultView;
+  const still = !win || !win.requestAnimationFrame || (win.matchMedia && win.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  if (val && opts.enter && !still) {
+    const root = el.querySelector('.sl'), to = c.value, t0 = win.performance.now() + 1000, dur = 800;
+    val.textContent = '0';
+    const step = (t) => {
+      if (el.querySelector('.sl') !== root) return; // redrawn since
+      const k = Math.max(0, Math.min(1, (t - t0) / dur));
+      val.textContent = String(Math.round(to * (1 - Math.pow(1 - k, 3))));
+      if (k < 1) win.requestAnimationFrame(step);
+    };
+    win.requestAnimationFrame(step);
+  }
+  return { G, fit, state, ready: Promise.resolve() };
 }
 
 /**

@@ -10,6 +10,22 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Added
 
+- **Sales Promos (`promo=sale`), the first promotion tab.** A new default promotion on its own built-in template
+  (Sales promo, `builtin-sale`), reproducing the Big Brand Sale video drawn live in each pharmacy's own colours and
+  logo: scene 1 "the brands" (headline in the brand panel, 1-6 brand cards popping in, caption; 3.5 s), a 0.65 s
+  transition in which the brand colour fills the screen, and scene 2 "the offer" (rays, "UP TO", the value counting
+  up from 0, "OFF", the pulsing "SALE FINISHES" panel, the brand list; 5.85 s): a 10 s loop, playback duration
+  11 s, portrait and landscape, transform and opacity animation only, still under reduced motion. The footer band
+  shows the sale. Each pharmacy edits its own copy (administrators any pharmacy, a store user their own): the
+  headline, the brands (add, remove, reorder), the offer lead-in, value (1-99) and suffix, caption line 1, the end
+  date with a date picker (its wording, weekday included, is worked out from it and feeds caption line 2, the panel
+  and the footer), the panel label, the scene seconds (administrators) and, optionally, the footer text. Copy is
+  stored as `content[<promotion id>].sale` and checked by the config API; a pharmacy that has not edited it plays
+  the promotion's master (the Big Brand Sale). After the end date (store time zone) the screen plays Morning before
+  12:00 and Afternoon after, and the editor's tab reads "Sale has ended". Like Morning it has no promotion
+  settings; the config API refuses deleting it or changing its promo ID or template, and the sale template is
+  reserved for it. Tabs now read Sales Promos, Morning, Afternoon, Closed, Seasonal. On an upgrade, re-running the
+  seed adds it and changes nothing else.
 - **Last-frame hold checked for every campaign, portrait and landscape.** `pharmacy-screen/test/ui/hold-every-campaign.test.mjs`
   plays Morning, Afternoon, Closed, the custom-template demo and Seasonal (the Fallback and each of the six seasons)
   in both orientations and checks each one stays on its last scene or beat, fully drawn and not black, after it has

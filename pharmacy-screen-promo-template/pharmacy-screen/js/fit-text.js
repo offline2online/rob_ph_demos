@@ -174,3 +174,37 @@ export function auditScene(el, G) {
   el.classList.remove('measure');
   return problems;
 }
+
+/**
+ * Fit the sale template (js/render.js renderSale; el: the .screen, already rendered). Scene 1: the headline inside the
+ * wedge and the cards and captions inside their box (fitText), then each brand name to its card's width (--kn).
+ * Scene 2: the offer value to about 80% of the width (portrait; its column in landscape, --kv), then the whole offer
+ * into its box (--k2). Both: each footer line to the screen's width (--kf). Measured in layout pixels, so the scale
+ * the screen is drawn at does not matter.
+ */
+export function fitSale(el, G) {
+  const base = el.querySelector('.s-head') || el.querySelector('.s-body') ? fitText(el, G) : { k: 1, ok: true, kb: 1, okb: true };
+  el.classList.add('measure');
+  const shrink = (node, prop, fits, min = 0.3, step = 0.04) => {
+    let k = 1;
+    for (; k > min; k -= step) { node.style.setProperty(prop, k.toFixed(2)); if (fits()) return +k.toFixed(2); }
+    node.style.setProperty(prop, min.toFixed(2));
+    return min;
+  };
+  const kn = [...el.querySelectorAll('.sl-nm')].map((nm) => shrink(nm, '--kn', () => nm.offsetWidth <= nm.parentElement.clientWidth - 48));
+  const foot = el.querySelector('.sl-foot');
+  const kf = foot ? shrink(foot, '--kf', () => [...foot.children].every((x) => x.offsetWidth <= G.W - 80), 0.4) : 1;
+  let kv = 1, k2 = 1, ok2 = true;
+  const offer = el.querySelector('.sl-offer');
+  if (offer) {
+    const big = offer.querySelector('.sl-big'), vw = offer.querySelector('.sl-valw');
+    const room = () => (G.W > G.H ? big.clientWidth : G.W * 0.8);
+    kv = shrink(offer, '--kv', () => vw.offsetWidth <= room(), 0.3, 0.02);
+    const inner = offer.querySelector('.sl-in');
+    const inBox = () => inner.offsetHeight <= offer.clientHeight + 1 && inner.offsetWidth <= offer.clientWidth + 1 && [...offer.querySelectorAll('.sl-big > *, .sl-fin > *')].every((x) => x.offsetWidth <= x.parentElement.clientWidth + 1);
+    k2 = shrink(offer, '--k2', inBox, 0.4);
+    ok2 = inBox();
+  }
+  el.classList.remove('measure');
+  return { ...base, kn, kf, kv, k2, ok2 };
+}

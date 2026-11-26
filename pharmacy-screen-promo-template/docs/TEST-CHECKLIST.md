@@ -30,7 +30,7 @@ From a clean checkout, in `pharmacy-screen-promo-template/`:
 | B2 | `curl <site>/api/health` | `{"ok":true}` | ☐ | ☐ |
 | B3 | Open `<site>/pharmacy-screen.html?device=TEST&promo=morning&orientation=portrait&mockapi=1` | A Beaumaris morning promotion plays from mock data | ☐ | ☐ |
 | B4 | Sign in to Admin as a user **without** the admin role | "Admin role required"; no editor | ☐ | ☐ |
-| B5 | Sign in as an admin; load launch data (ours: `node pharmacy-screen/seed/seed.js --project rob-ph-demos`; AWS: `npm run seed:aws -- --region <r>`) | Five pharmacies, promotions Morning, Afternoon, Closed, Seasonal, 28 services in Add promotion | ☐ | ☐ |
+| B5 | Sign in as an admin; load launch data (ours: `node pharmacy-screen/seed/seed.js --project rob-ph-demos`; AWS: `npm run seed:aws -- --region <r>`) | Five pharmacies, promotions Sales Promos, Morning, Afternoon, Closed, Seasonal (tabs in that order), 28 services in Add promotion. On an upgraded deployment, re-running the seed adds Sales Promos and leaves the other four promotions and every pharmacy's copy as they were | ☐ | ☐ |
 
 ## C. PH API token
 
@@ -88,6 +88,11 @@ With `debug=1`, use the panel's test time (or `now=<day>-<HH:MM>`), on a store o
 | F4 | Watch every scene of every promotion in both orientations | No headline, accent line or line leaves the brand panel or the screen (A2 checks the seeded copy automatically) | ☐ | ☐ |
 | F5 | In the editor, make a headline very long | The preview shrinks it to stay inside the panel | ☐ | ☐ |
 | F6 | `promo=nope` | "Promotion not found" | ☐ | ☐ |
+| F7 | Sales Promos: open the editor as an administrator, pick Beaumaris, open **Sales Promos** (the first tab) | Tabs read Sales Promos, Morning, Afternoon, Closed, Seasonal; no promotion settings section. The preview plays scene 1 (BIG BRAND / SALE, four brand cards popping in one after another, the caption), the brand colour fills the screen, then scene 2 (UP TO, 30% counting up from 0 with a bounce, OFF, the pulsing "SALE FINISHES Wednesday 2nd December" panel, the brand line), with the sale footer band throughout; Loop 10s, playback duration 11 s | ☐ | ☐ |
+| F7a | Change the offer value to 25, remove one brand and add another, pick a different end date with the date picker | The preview, caption line 2, the panel and the footer all follow, and the weekday shown is right for the date | ☐ | ☐ |
+| F7b | Switch to Vermont South, then sign in as a store user (Retail Admin) | Vermont South shows the defaults in its own colours and logo, without Beaumaris's edits. The store user edits only their own pharmacy's Sales Promos copy, and it saves | ☐ | ☐ |
+| F7c | `promo=sale&mockapi=1` (add `&date=2026-11-30`) in portrait and landscape, also with six long brand names and with one brand | It plays and loops cleanly (`loop=1`), or holds the offer when played once; nothing leaves the screen or its box | ☐ | ☐ |
+| F7d | Set the end date to yesterday | The screen shows Morning before 12:00 and Afternoon after (store time), switching by itself; the editor's tab reads **Sale has ended** | ☐ | ☐ |
 
 ## G. Failover and errors
 

@@ -25,7 +25,7 @@ const {
   normaliseStoreCode,
   ORIENTATIONS,
 } = require("./validate");
-const { BUILTIN_TEMPLATES, BUILTIN_BY_ID, OCCASION_KIND, builtInFor, isBuiltInId, builtInView } = require("./builtins");
+const { BUILTIN_TEMPLATES, BUILTIN_BY_ID, OCCASION_KIND, SALE_KIND, SALE_TEMPLATE_ID, SALE_PROMO_ID, builtInFor, isBuiltInId, builtInView } = require("./builtins");
 const { ownSeasonal } = require("./seasonal");
 const { buildScreenConfig } = require("./publish");
 const { MEDIA_PREFIX } = require("./adapters/blobs");
@@ -366,11 +366,24 @@ function createConfigService({ store, blobs, now = () => new Date().toISOString(
     return withId(id, rec);
   }
 
+  // The Sales Promos promotion (promo ID `sale` on the sale template, src/builtins.js) is a built-in: it can't be
+  // deleted, and its promo ID and template stay as they are; the sale template is reserved for it.
+  const isSalePromotion = (p) => Boolean(p) && p.promoId === SALE_PROMO_ID && p.templateId === SALE_TEMPLATE_ID;
+  function assertSaleTemplate(data, stored) {
+    if (stored && isSalePromotion(stored) && !isSalePromotion(data)) {
+      throw conflict("builtin-promotion", "Sales Promos is a built-in promotion: its promo ID and template can't be changed");
+    }
+    if (data.templateId === SALE_TEMPLATE_ID && data.promoId !== SALE_PROMO_ID) {
+      throw bad(`The ${BUILTIN_BY_ID.get(SALE_TEMPLATE_ID).name} template is used only by the Sales Promos promotion (promo ID ${SALE_PROMO_ID})`);
+    }
+  }
+
   async function createPromotion(actor, body, opts) {
     return write(actor, (cfg) => {
       const data = normalisePromotion(body);
       assertPromoIdFree(cfg, data.promoId);
       assertTemplateExists(cfg, data.templateId);
+      assertSaleTemplate(data, null);
       const id = newRecordId(cfg, "promotions", opts);
       const rec = stamp(data, actor, cfg.at);
       return {
@@ -391,6 +404,7 @@ function createConfigService({ store, blobs, now = () => new Date().toISOString(
       const data = normalisePromotion(fields, stripMeta(stored));
       assertPromoIdFree(cfg, data.promoId, id);
       assertTemplateExists(cfg, data.templateId);
+      assertSaleTemplate(data, stored);
       const rec = stamp(data, actor, cfg.at, stored);
       return {
         set: [["promotions", id, rec]],
@@ -409,6 +423,7 @@ function createConfigService({ store, blobs, now = () => new Date().toISOString(
       const stored = cfg.promotions.get(id);
       if (!stored) throw notFound("Promotion", id);
       checkVersion(stored, expectedVersion);
+      if (isSalePromotion(stored)) throw conflict("builtin-promotion", "Sales Promos is a built-in promotion and can't be deleted");
       return {
         del: [["promotions", id]],
         republish: "all",
@@ -452,6 +467,7 @@ function createConfigService({ store, blobs, now = () => new Date().toISOString(
     return write(actor, (cfg) => {
       const src = isBuiltInId(sourceId) ? BUILTIN_BY_ID.get(sourceId) : cfg.templates.get(sourceId) && withId(sourceId, cfg.templates.get(sourceId));
       if (!src) throw notFound("Template", sourceId);
+      if (src.kind === SALE_KIND) throw bad(`${src.name} is the Sales Promos template: it has no editable HTML to clone. Edit the sale's copy on the Sales Promos tab.`);
       if (src.kind === OCCASION_KIND) throw bad(`${src.name} is a seasonal template: it has no editable HTML to clone. Preview it in the Seasonal promotion's Currently active promotion drop-down.`);
       const name = body && body.name !== undefined ? body.name : `${src.name} (copy)`;
       // The clone shares the source's background objects until either is

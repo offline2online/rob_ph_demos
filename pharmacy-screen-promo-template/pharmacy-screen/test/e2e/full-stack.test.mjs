@@ -85,7 +85,7 @@ test('the screen on a mock device plays every promotion in both orientations, ea
     assert.equal(d.storeCode, 'VIC-MP-002');
     assert.equal(d.view, 'ready');
     const promos = await page.evaluate(() => window.pharmacyScreen.promotions());
-    assert.deepEqual([...promos].sort(), ['afternoon', 'closed', 'morning', 'occasions']);
+    assert.deepEqual([...promos].sort(), ['afternoon', 'closed', 'morning', 'occasions', 'sale']);
     for (const promo of promos) {
       const info = await page.evaluate((p) => window.pharmacyScreen.show(p, 0), promo);
       assert.equal(info.store, 'VIC-MP-002');
@@ -255,6 +255,7 @@ test('an admin edit in the editor reaches a running screen at its next config po
   await admin.click('#gateToken button[type=submit]');
   await admin.waitForFunction(() => window.pharmacyAdmin && window.pharmacyAdmin.ready, null, { timeout: 20000 });
   assert.match(await admin.$eval('#storeSel', (e) => e.selectedOptions[0].textContent), /VIC-MP-001/);
+  await admin.click('#dpTabs button:has-text("Morning")'); // the editor opens on Sales Promos, the first tab
   // The seeded pharmacies inherit the master template, so the edit is made there and reaches every screen.
   assert.equal(await admin.$eval('#dit', (e) => e.closest('[inert]') !== null), true, 'inherited: read-only on the pharmacy');
   await admin.selectOption('#pvSel', '__master');

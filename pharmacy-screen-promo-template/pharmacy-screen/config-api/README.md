@@ -102,6 +102,16 @@ backgrounds (403); clone one to edit. A custom template keeps the `kind` of
 what it was cloned from, and deleting it moves every promotion that used it
 to the built-in of that kind.
 
+**Sales promo template** — `builtin-sale` (kind `sale`), the Sales Promos
+promotion's (`promo=sale`): drawn by the screen (`../js/render.js` →
+`renderSale`) from each pharmacy's `content[<promotion id>].sale`, which the
+API checks (`src/validate.js` → `saleValue`: brands 1-6, value 1-99, a real
+`endDate`, seconds 1-60). It is reserved for that promotion: another
+promotion can't use it (400), and the Sales Promos promotion can't be deleted
+or have its promo ID or template changed (409 `builtin-promotion`). It can't
+be cloned (400). `sale` is in no master section (`src/inherit.js`), so a
+pharmacy's own copy always wins over the master's.
+
 **Occasion templates** — six more built-ins, kind `occasion`, one per
 occasion: `builtin-occasion-christmas`, `-new-year`, `-australia-day`,
 `-valentines-day`, `-easter`, `-anzac-day`. Each carries `occasion` (the

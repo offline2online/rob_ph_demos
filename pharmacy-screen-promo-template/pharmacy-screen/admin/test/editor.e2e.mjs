@@ -27,7 +27,9 @@ after(async () => {
 });
 
 // date: pin the browser's date (the Currently active promotion drop-down opens on what plays today).
-async function open(token = 'dev-admin', { viewport = { width: 1400, height: 1000 }, path = '/admin/', date } = {}) {
+// The editor opens on its first tab, Sales Promos; most tests here work on Morning, so open() selects it unless told
+// to stay (stay: true), and says which tab was selected when the editor opened (firstTab).
+async function open(token = 'dev-admin', { viewport = { width: 1400, height: 1000 }, path = '/admin/', date, stay = false } = {}) {
   const ctx = await browser.newContext({ viewport });
   const page = await ctx.newPage();
   if (date) await page.clock.setFixedTime(new Date(date));
@@ -36,8 +38,13 @@ async function open(token = 'dev-admin', { viewport = { width: 1400, height: 100
   await page.goto(dev.base + path);
   await page.fill('#gateTokenIn', token);
   await page.click('#gateToken button[type=submit]');
-  if (token === 'dev-admin') await page.waitForFunction(() => window.pharmacyAdmin && window.pharmacyAdmin.ready, null, { timeout: 20000 });
-  return { ctx, page, errors };
+  let firstTab = null;
+  if (token === 'dev-admin') {
+    await page.waitForFunction(() => window.pharmacyAdmin && window.pharmacyAdmin.ready, null, { timeout: 20000 });
+    firstTab = await page.$eval('#dpTabs [aria-selected="true"]', (b) => b.dataset.dp).catch(() => null);
+    if (!stay && firstTab === 'seed-promotion-sale') await page.click('#dpTabs button:has-text("Morning")');
+  }
+  return { ctx, page, errors, firstTab };
 }
 const settle = (page) => page.evaluate(async () => { await window.pharmacyAdmin.flush(); for (let i = 0; i < 100 && window.pharmacyAdmin.pending(); i++) await new Promise((r) => setTimeout(r, 50)); });
 const api = async (method, path, { token = 'dev-admin', body } = {}) => {
@@ -60,13 +67,15 @@ const own = async (page) => {
 };
 
 test('loads the pharmacies, promotions and a live preview from the server', async () => {
-  const { ctx, page, errors } = await open();
+  const { ctx, page, errors, firstTab } = await open();
+  // Sales Promos is the first tab, and the one selected when the editor opens.
+  assert.equal(firstTab, 'seed-promotion-sale');
   const opts = await page.$$eval('#storeSel option', (o) => o.map((x) => x.textContent));
   assert.equal(opts.length, 5);
   assert.match(opts[0], /Beaumaris Pharmacy · VIC-MP-001/);
   // Promo preview offers the master template first, then the same pharmacies.
   assert.deepEqual(await page.$$eval('#pvSel option', (o) => o.map((x) => x.textContent)), ['Master template', ...opts]);
-  assert.deepEqual(await page.$$eval('#dpTabs button', (b) => b.map((x) => x.textContent.replace(/^(campaign|schedule|celebration)/, ''))), ['Morning', 'Afternoon', 'Closed', 'Seasonal']);
+  assert.deepEqual(await page.$$eval('#dpTabs button', (b) => b.map((x) => x.textContent.replace(/^(sell|campaign|schedule|celebration)/, '').replace(/Sale has ended$/, ''))), ['Sales Promos', 'Morning', 'Afternoon', 'Closed', 'Seasonal']);
   assert.equal(await page.$$eval('#tl button', (b) => b.length), 5);
   await page.click('#playBtn'); // pause
   await page.click('#tl button[data-i="0"]');
@@ -658,7 +667,7 @@ test('pharmacies: add (unique store code), logo upload and remove, delete', asyn
   const list = (await api('GET', '/api/admin/pharmacies')).body;
   const created = list.find((p) => p.storeCode === 'VIC-MP-006');
   assert.ok(created);
-  assert.deepEqual(created.promotionsWithContent.sort(), ['seed-promotion-afternoon', 'seed-promotion-closed', 'seed-promotion-morning', 'seed-promotion-occasions']);
+  assert.deepEqual(created.promotionsWithContent.sort(), ['seed-promotion-afternoon', 'seed-promotion-closed', 'seed-promotion-morning', 'seed-promotion-occasions', 'seed-promotion-sale']);
   // a 1x1 transparent PNG
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
   await page.setInputFiles('#logoIn', { name: 'logo.png', mimeType: 'image/png', buffer: png });
@@ -1124,6 +1133,10 @@ test('pharmacy view: admin/?store=<code> shows only that pharmacy\'s promotions,
   await page.waitForFunction(() => window.pharmacyAdmin && window.pharmacyAdmin.ready, null, { timeout: 20000 });
   assert.equal(await page.evaluate(() => window.pharmacyAdmin.state.lock), 'VIC-MP-005');
   assert.equal(await page.evaluate(() => localStorage.getItem('ps-admin-pharmacy')), null);
+  // It opens on the first tab, Sales Promos (no promotion settings there either); back to Morning.
+  assert.equal(await page.getAttribute('#dpTabs button[data-dp="seed-promotion-sale"]', 'aria-selected'), 'true');
+  assert.equal(await page.isHidden('#promoMeta'), true);
+  await page.click('#dpTabs button:has-text("Morning")');
   // Restore to default (second click confirms): every section inherits the master template again, on the screen too.
   await page.click('#playBtn');
   const master = (await api('GET', '/api/admin/promotions/seed-promotion-morning')).body.master;
@@ -1230,8 +1243,8 @@ test('Open today bar: each message can be shown in the preview, by tab or by cli
   assert.deepEqual(await marked(), []);
   // A new pharmacy or promotion starts on the store's time again.
   await page.click('#barTabs button:text-is("After closing")');
+  await page.click('#dpTabs button:nth-child(3)');
   await page.click('#dpTabs button:nth-child(2)');
-  await page.click('#dpTabs button:nth-child(1)');
   assert.equal(await tab(), "Store's time");
   await settle(page);
   // Put the pharmacy back to inheriting, for the other tests.
@@ -1404,6 +1417,80 @@ test('seasonal master: editing its copy, dates or timings changes no store\'s sc
   assert.equal(copied.template.occasion, 'fallback', 'copying a season does not change what the store plays');
   assert.equal(copied.content.activation, before['VIC-MP-003'].content.activation, 'nor activates it');
   for (const c of CODES.filter((x) => x !== 'VIC-MP-003')) assert.deepEqual(await seasonal(c), before[c], c);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('Sales Promos: the first tab, no promotion settings; a pharmacy\'s own copy (offer, brands, end date by date picker) drives the preview and its screens; others keep the defaults in their own colours; "Sale has ended" once the date is over', async () => {
+  const { ctx, page, errors, firstTab } = await open(undefined, { stay: true, date: '2026-11-26T10:00:00' });
+  assert.equal(firstTab, 'seed-promotion-sale');
+  await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-001');
+  await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-001');
+  await page.click('#dpTabs button:has-text("Sales Promos")');
+  // A built-in like Morning, Afternoon and Closed: no promotion settings section (so no Delete either).
+  assert.equal(await page.isHidden('#promoMeta'), true);
+  assert.equal(await page.isHidden('#pmDel'), true);
+  assert.deepEqual(await page.$$eval('#tl button', (b) => b.map((x) => x.textContent)), ['1The brands', '2The offer']);
+  assert.match(await page.textContent('#tlTime'), / 10\.0s · 2 scenes/);
+  assert.equal(await page.textContent('#pbSecs'), '11s');
+  // The defaults (the Big Brand Sale), drawn by the screen's own template.
+  await page.click('#playBtn'); // pause
+  await page.click('#tl button[data-i="0"]');
+  assert.deepEqual(await page.$$eval('#screen .sl-nm', (n) => n.map((x) => x.textContent)), ['TOSHI', 'CETAPHIL', 'NATIO', 'BLACKMORES']);
+  assert.equal(await page.textContent('#screen .sl-l2'), 'SALE');
+  assert.equal(await page.textContent('#screen .sl-c2'), 'Finishes Wednesday 2nd December');
+  await page.click('#tl button[data-i="1"]');
+  assert.equal(await page.textContent('#screen .sl-pd'), 'Wednesday 2nd December');
+  assert.equal(await page.textContent('#slEndTx'), 'eventWednesday 2nd December');
+  // Offer 25, one brand removed and another added, a new end date from the date picker: preview, caption, panel and
+  // footer follow, with the right weekday.
+  await page.fill('#slVal', '25');
+  await page.waitForFunction(() => document.querySelector('#screen .sl-val').textContent === '25');
+  await page.click('#slBrands .slbrand[data-b="1"] .del');
+  await page.click('#slAdd');
+  await page.fill('#slB3', 'SWISSE');
+  await page.fill('#slEnd', '2026-12-09');
+  await page.waitForFunction(() => document.querySelector('#screen .sl-pd').textContent === 'Wednesday 9th December');
+  assert.equal(await page.textContent('#slEndTx'), 'eventWednesday 9th December');
+  assert.equal(await page.inputValue('#slCap2'), 'Finishes Wednesday 9th December');
+  assert.equal(await page.inputValue('#slF1'), 'BIG BRAND SALE · UP TO 25% OFF');
+  assert.equal(await page.textContent('#screen .sl-foot .f2'), 'Finishes Wednesday 9th December');
+  assert.equal(await page.textContent('#screen .sl-brands'), 'TOSHI · NATIO · BLACKMORES · SWISSE');
+  await settle(page);
+  const rec = (await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-001')).body.content['seed-promotion-sale'].sale;
+  assert.deepEqual([rec.value, rec.brands, rec.endDate], [25, ['TOSHI', 'NATIO', 'BLACKMORES', 'SWISSE'], '2026-12-09']);
+  const pub = (await api('GET', '/api/screens/VIC-MP-001?promo=sale', { token: '' })).body.promotions.sale;
+  assert.deepEqual([pub.template.kind, pub.content.sale.value], ['sale', 25]);
+  // Footer written by hand.
+  await page.check('#slFtOwn');
+  await page.fill('#slF1', 'Our biggest sale');
+  await page.waitForFunction(() => document.querySelector('#screen .sl-foot .f1').textContent === 'Our biggest sale');
+  await page.uncheck('#slFtOwn');
+  await page.waitForFunction(() => document.querySelector('#screen .sl-foot .f1').textContent === 'BIG BRAND SALE · UP TO 25% OFF');
+  // Another pharmacy keeps the defaults, in its own colours; Beaumaris's edits are not there.
+  await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-004');
+  await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-004');
+  await page.click('#dpTabs button:has-text("Sales Promos")');
+  assert.equal(await page.inputValue('#slVal'), '30');
+  assert.equal(await page.inputValue('#slEnd'), '2026-12-02');
+  assert.equal(await page.$$eval('#slBrands .slbrand', (r) => r.length), 4);
+  const primary = await page.evaluate(() => window.pharmacyAdmin.state.cur.colours.primary);
+  assert.equal(await page.$eval('#screen', (e) => e.style.getPropertyValue('--s-p')), primary);
+  assert.equal((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-004')).body.content['seed-promotion-sale'], undefined, 'nothing saved for it');
+  // Back on Beaumaris: an end date before today ("yesterday") and the tab says the sale has ended.
+  await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-001');
+  await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-001');
+  await page.click('#dpTabs button:has-text("Sales Promos")');
+  assert.equal(await page.isVisible('#saleEnded'), false);
+  await page.fill('#slEnd', '2026-11-25');
+  await page.waitForSelector('#saleEnded');
+  assert.match(await page.textContent('#dpTabs button[data-dp="seed-promotion-sale"]'), /Sale has ended$/);
+  assert.match(await page.textContent('#saleEnded'), /Sale has ended\./);
+  // Put the copy back for the other tests.
+  await page.fill('#slEnd', '2026-12-02');
+  await page.waitForSelector('#saleEnded', { state: 'detached' });
+  await page.fill('#slVal', '30');
+  await settle(page);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

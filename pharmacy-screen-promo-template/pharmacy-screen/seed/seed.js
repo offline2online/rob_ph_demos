@@ -3,9 +3,10 @@
 
 // Seed the Pharmacy Screen config store with what the concept prototype
 // holds: the five launch pharmacies (branding, logo, morning / afternoon /
-// closed / occasions content), the four default promotions, the 28-service
-// library, and a check that the nine read-only built-in templates (Promotion
-// scenes, Opening hours, the Fallback and six occasions) are there (they live in code,
+// closed / occasions content), the five default promotions (Sales Promos,
+// Morning, Afternoon, Closed, Seasonal), the 28-service library, and a check
+// that the ten read-only built-in templates (Promotion scenes, Opening hours,
+// Sales promo, the Fallback and six occasions) are there (they live in code,
 // config-api/src/builtins.js, so there is nothing to write for them).
 //
 // Every write goes through the config service (../config-api/src/service.js),
@@ -33,6 +34,10 @@
 // old default timings (no seconds on any of its beats) gets the fixture's
 // seconds; its copy and dates are kept, and a season with seconds on any beat
 // (someone set them in the editor) is left as it is.
+// Sales Promos (26 Nov 2026): on an existing deployment a re-run adds it like
+// any missing default promotion, with its master from promotions.json (the
+// Big Brand Sale copy); no pharmacy's content is written for it, and nothing
+// else changes.
 // With --reset, seeded records that differ from the fixtures are put back to
 // the fixture values (records the seed doesn't know about are never touched,
 // and a pharmacy's content for promotions other than the four defaults is
@@ -202,7 +207,8 @@ async function seedConfig({ store, blobs, reset = false, fixtures = loadFixtures
   const masterPharmacy = fixtures.masterFrom ? (fixtures.pharmacies || []).find((ph) => ph.storeCode === fixtures.masterFrom) : null;
   const masterFor = (promoId) => (masterPharmacy && masterPharmacy.content && masterPharmacy.content[promoId]) || null;
   for (const p of fixtures.promotions) {
-    const master = masterFor(p.promoId);
+    // A master given in promotions.json itself (Sales Promos) wins over masterFrom's content.
+    const master = p.master || masterFor(p.promoId);
     const fields = { name: p.name, promoId: p.promoId, templateId: p.templateId, ...(master ? { master } : {}) };
     const rows = await store.list("promotions");
     const existing = rows.find((r) => r.id === ids.promotion(p.key)) || rows.find((r) => r.promoId === p.promoId);

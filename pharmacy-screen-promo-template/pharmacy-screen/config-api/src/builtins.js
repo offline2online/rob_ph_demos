@@ -1,7 +1,7 @@
 "use strict";
 
-// The built-in templates (requirement 11): "Promotion scenes", "Opening hours"
-// and one per season for the Seasonal promotion (internally "occasion"). They are read-only: the API
+// The built-in templates (requirement 11): "Promotion scenes", "Opening hours",
+// "Sales promo" (the Sales Promos promotion's) and one per season for the Seasonal promotion (internally "occasion"). They are read-only: the API
 // refuses to change or delete them, and they live here in code rather than
 // in the store, so a fresh environment always has them and no admin can
 // remove the fallback that a deleted custom template's promotions return to.
@@ -32,6 +32,12 @@ const OCCASIONS = Object.freeze([
   ["anzac-day", "Anzac Day"],
 ]);
 const OCCASION_KIND = "occasion";
+// "Sales Promos" (26 Nov 2026): the sale template, drawn by the screen page (js/render.js renderSale) from each
+// pharmacy's content.sale. Reserved for the built-in Sales Promos promotion (promo ID `sale`), which plays it, is
+// listed first and cannot be deleted (src/service.js); it has no editable HTML, so it can't be cloned either.
+const SALE_KIND = "sale";
+const SALE_TEMPLATE_ID = "builtin-sale";
+const SALE_PROMO_ID = "sale";
 const occasionTemplateId = (occasion) => `builtin-occasion-${occasion}`;
 
 const BUILTIN_TEMPLATES = Object.freeze([
@@ -49,6 +55,16 @@ const BUILTIN_TEMPLATES = Object.freeze([
     id: "builtin-opening-hours",
     name: "Opening hours",
     kind: "opening-hours",
+    builtIn: true,
+    basedOn: null,
+    html: "",
+    css: "",
+    backgrounds: Object.freeze({ portrait: null, landscape: null }),
+  }),
+  Object.freeze({
+    id: SALE_TEMPLATE_ID,
+    name: "Sales promo",
+    kind: SALE_KIND,
     builtIn: true,
     basedOn: null,
     html: "",
@@ -85,4 +101,4 @@ function builtInView(t) {
   return { ...t, backgrounds: { ...t.backgrounds } };
 }
 
-module.exports = { BUILTIN_TEMPLATES, BUILTIN_BY_ID, OCCASIONS, FALLBACK_OCCASION, OCCASION_KIND, occasionTemplateId, builtInFor, isBuiltInId, builtInView };
+module.exports = { BUILTIN_TEMPLATES, BUILTIN_BY_ID, OCCASIONS, FALLBACK_OCCASION, OCCASION_KIND, SALE_KIND, SALE_TEMPLATE_ID, SALE_PROMO_ID, occasionTemplateId, builtInFor, isBuiltInId, builtInView };
