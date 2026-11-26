@@ -19,7 +19,6 @@ through small adapters (store, blobs, auth, secret store), and this folder suppl
 | PH API token | DynamoDB, **KMS envelope-encrypted** | A fresh AES-256-GCM data key encrypts the token; a customer-managed **KMS key** (90-day rotation) wraps the data key, with an encryption context. Only `PhApi` may use the key, and only `PhApi` ever decrypts, in memory. Write-only in the editor (last 4 shown). See `../pharmacy-screen/ph-proxy/README.md` |
 | Admin sign-in | **Cognito** user pool with group `admin` (default), or **your own OIDC provider** | The editor signs in with authorization code + PKCE and sends the ID token; both APIs verify it against the issuer's keys and require the admin claim (`adapters/oidc-auth.js`) |
 | Origin header | **Secrets Manager** | A generated value CloudFront adds to every API request. Both functions refuse a request without it (`403`: the API Gateway URL called directly answers nothing) and trust the viewer address for their rate limits only on requests that carry it. They get the secret's ARN and read the value at run time (`lambda/origin-secret.js`); it is never in their environment. CloudFront's own copy is a dynamic reference in the template, resolved at deploy (readable with `cloudfront:GetDistributionConfig`); changing the secret needs a redeploy. With `--vpc-endpoints` a Secrets Manager interface endpoint is added (an hourly cost, like the KMS one) |
-| Download MP4 | A third **Lambda**, `VideoWorker` (Node 24, **x86_64**, 6 GB, 15 min, 2 GB of `/tmp`), staged on its own in `.deploy-aws/video-lambda` with Chromium (`@sparticuz/chromium`) and ffmpeg (`ffmpeg-static`) installed for Linux x86_64 whatever machine deploys | `ConfigApi` invokes it asynchronously (no retries) for `POST /api/admin/videos`; one render at a time is the config API's lease in DynamoDB. It loads the site's own screen page (`PS_SCREEN_PAGE_URL`, through CloudFront, so the PH data comes through `PhApi` as on a screen), writes the MP4 to the media bucket under `exports/` (a one-day lifecycle rule; CloudFront never serves that prefix) and a one-hour presigned link on the job. In a VPC it needs outbound internet like the other functions. `../README.md` → "Download MP4" |
 | Content-Security-Policy | CloudFront response headers | `Content-Security-Policy-Report-Only` on the screen and the editor (`/admin/*`, which may also call the sign-in's token endpoint), from `infra/csp.js`; reports go to `/api/csp-report` |
 
 ## Before you start
@@ -116,8 +115,6 @@ The ticket's acceptance steps, against a deployed stack:
 
 - **Uploads up to 4 MB.** A request body reaches Lambda base64-encoded inside a 6 MB event, so images above
   4 MB get `413 too-large` here (the API's own limits are 2 MB for logos and 5 MB for backgrounds).
-- **Download MP4: loops up to 120 s, one at a time.** A render takes about 2 s per second of video, well inside the
-  worker's 15 minutes; a second request while one runs gets `429`.
 - **About 90 pharmacies per write.** A promotion or template edit republishes every pharmacy's screen in the
   same DynamoDB transaction, which holds at most 100 items; beyond that the edit is refused with
   `too-many-writes` before anything is written.
@@ -132,7 +129,6 @@ The ticket's acceptance steps, against a deployed stack:
 | `adapters/aws-kms-provider.js` | AWS KMS wrapping of the PH API token's data key (`ph-proxy/src/secret-store.js` does the envelope) |
 | `adapters/dynamodb-settings.js` | PH API settings record (atomic update) and its audit log |
 | `lambda/config-api.js`, `lambda/ph-proxy.js` | Lambda entries: AWS adapters into the unchanged `createConfigApi()` / `createApi()` |
-| `lambda/video-worker.js` | Download MP4's worker: `runVideoJob()` with DynamoDB, S3 and a presigned link |
 | `lambda/apigw.js` | API Gateway events to the APIs' request shape and back; the client address for rate limits |
 | `infra/stack.js`, `infra/app.js` | The CDK stack and app |
 | `infra/params.js` | Every deployment parameter, with its checks |

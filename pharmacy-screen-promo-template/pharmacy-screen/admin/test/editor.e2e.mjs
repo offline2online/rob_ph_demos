@@ -193,15 +193,13 @@ test('Settings holds the pharmacies, their details and branding, and the API; pr
     pv.style.width = '240px';
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     const b = p.getBoundingClientRect(), pb = play.getBoundingClientRect(), i = document.getElementById('pvInfo').getBoundingClientRect();
-    const d = document.getElementById('dlBtn').getBoundingClientRect();
-    const out = { h: b.height, cut: p.scrollWidth > p.clientWidth, inside: i.right <= d.left + 0.5 && d.right <= row.getBoundingClientRect().right + 0.5, dlSameLine: Math.abs((d.top + d.bottom) / 2 - (pb.top + pb.bottom) / 2) <= 1, sameLine: Math.abs((b.top + b.bottom) / 2 - (pb.top + pb.bottom) / 2) <= 1, overlap: b.left < pb.right, text: p.innerText.replace(/\s+/g, ' '), playName: play.textContent.replace('pause', '').trim(), playW: pb.width };
+    const out = { h: b.height, cut: p.scrollWidth > p.clientWidth, inside: i.right <= row.getBoundingClientRect().right + 0.5, sameLine: Math.abs((b.top + b.bottom) / 2 - (pb.top + pb.bottom) / 2) <= 1, overlap: b.left < pb.right, text: p.innerText.replace(/\s+/g, ' '), playName: play.textContent.replace('pause', '').trim(), playW: pb.width };
     pv.style.width = '';
     return out;
   });
   assert.ok(Math.abs(pvNarrow.h - pvRow.h) < 1, `one line when narrow: ${JSON.stringify(pvNarrow)} vs ${pvRow.h}`);
   assert.equal(pvNarrow.cut, false);
-  assert.equal(pvNarrow.inside, true, `Download MP4 fits after the label, inside the row: ${JSON.stringify(pvNarrow)}`);
-  assert.equal(pvNarrow.dlSameLine, true, JSON.stringify(pvNarrow));
+  assert.equal(pvNarrow.inside, true, JSON.stringify(pvNarrow));
   assert.equal(pvNarrow.sameLine, true, JSON.stringify(pvNarrow));
   assert.equal(pvNarrow.overlap, false, JSON.stringify(pvNarrow));
   assert.equal(pvNarrow.text, 'Sample opening hours');
@@ -1500,81 +1498,6 @@ test('Sales Promos: the first tab, no promotion settings; a pharmacy\'s own copy
   await page.waitForSelector('#slEndPast', { state: 'detached' });
   await page.fill('#slVal', '30');
   await settle(page);
-  assert.deepEqual(errors, []);
-  await ctx.close();
-});
-
-test('Download MP4: on the Pause row at 1024, 1180 and 390px; disabled with a tooltip until a pharmacy with a screen device ID is picked; downloads that pharmacy\'s MP4', async () => {
-  for (const viewport of [{ width: 1024, height: 768 }, { width: 1180, height: 820 }, { width: 390, height: 800 }]) {
-    const { ctx, page, errors } = await open('dev-admin', { viewport, stay: true });
-    for (const or of ['portrait', 'landscape']) {
-      await page.click(`#orTabs [data-or="${or}"]`);
-      await page.waitForTimeout(100);
-      const m = await page.evaluate(() => {
-        const row = document.querySelector('.controls').getBoundingClientRect();
-        const rs = ['playBtn', 'pvData', 'pvInfo', 'dlBtn'].map((id) => document.getElementById(id).getBoundingClientRect());
-        const c = rs.map((r) => (r.top + r.bottom) / 2);
-        return { sameLine: c.every((x) => Math.abs(x - c[0]) <= 1), inside: rs.every((r) => r.left >= row.left - 0.5 && r.right <= row.right + 0.5), afterLabel: rs[3].left >= rs[2].right, icon: document.getElementById('dlIc').textContent, name: document.getElementById('dlTx').textContent, overflow: document.documentElement.scrollWidth - innerWidth };
-      });
-      const where = `${viewport.width}px ${or}: ${JSON.stringify(m)}`;
-      assert.ok(m.sameLine && m.inside && m.afterLabel, `Pause, the label and Download MP4 on one line, inside the row: ${where}`);
-      assert.equal(m.icon, 'download', where);
-      assert.equal(m.name, 'Download MP4', `named for screen readers even as an icon: ${where}`);
-      assert.equal(m.overflow, 0, where);
-    }
-    assert.deepEqual(errors, []);
-    await ctx.close();
-  }
-
-  // The video reads the store's data through the PH API proxy, as a screen does: it needs a token saved.
-  assert.equal((await api('PUT', '/api/settings/ph-api', { body: { token: 'dl-test-token-1234' } })).status, 200);
-  const { ctx, page, errors } = await open('dev-admin', { stay: true });
-  // The master template is not a pharmacy: disabled, and the tooltip says what to do.
-  await page.selectOption('#pvSel', '__master');
-  await page.waitForFunction(() => window.pharmacyAdmin.state.cur.isMaster);
-  await page.waitForFunction(() => document.getElementById('dlBtn').getAttribute('aria-disabled') === 'true');
-  assert.match(await page.getAttribute('#dlBtn', 'title'), /Pick a pharmacy/);
-  assert.equal(await page.isEnabled('#dlBtn'), false, 'disabled for assistive technology too');
-  await page.click('#dlBtn', { force: true });
-  assert.equal(await page.isVisible('#dlMsg'), false, 'a disabled click does nothing');
-  // A pharmacy with no screen device ID: disabled, the tooltip says to add it in Settings. Settings → Screen device ID.
-  await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-002');
-  await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-002');
-  await page.click('#setBtn');
-  assert.equal(await page.inputValue('#sDev'), 'DEVICE-VIC-MP-002');
-  await page.fill('#sDev', '');
-  await page.waitForFunction(() => /screen device ID in Settings/.test(document.getElementById('dlBtn').title));
-  assert.equal(await page.getAttribute('#dlBtn', 'aria-disabled'), 'true');
-  await settle(page);
-  assert.equal((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-002')).body.device, undefined, 'cleared on the server');
-  await page.fill('#sDev', 'DEVICE-VIC-MP-002');
-  await settle(page);
-  assert.equal((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-002')).body.device, 'DEVICE-VIC-MP-002', 'saved on the server');
-  await page.click('#setBtn');
-  // Beaumaris, Sales Promos, portrait: progress while it is made, then the file, named as the ticket says.
-  await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-001');
-  await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-001');
-  await page.click('#dpTabs button[data-dp="seed-promotion-sale"]');
-  await page.click('#orTabs [data-or="portrait"]');
-  await page.waitForFunction(() => document.getElementById('dlBtn').getAttribute('aria-disabled') === 'false');
-  assert.match(await page.getAttribute('#dlBtn', 'title'), /uses the saved version/);
-  const download = page.waitForEvent('download', { timeout: 180000 });
-  await page.click('#dlBtn');
-  await page.waitForFunction(() => document.getElementById('dlBtn').getAttribute('aria-busy') === 'true');
-  assert.equal(await page.getAttribute('#dlBtn', 'aria-disabled'), 'true', 'cannot be clicked twice');
-  assert.equal(await page.textContent('#dlTx'), 'Preparing video…');
-  assert.match(await page.textContent('#dlMsg'), /Preparing video…/);
-  const d = await download;
-  assert.match(d.suggestedFilename(), /^beaumaris-pharmacy-sales-promos-portrait-\d+s_android\.mp4$/);
-  await page.waitForFunction(() => document.getElementById('dlBtn').getAttribute('aria-busy') === 'false');
-  assert.equal(await page.textContent('#dlTx'), 'Download MP4');
-  assert.match(await page.textContent('#dlMsg'), /Downloaded: beaumaris-pharmacy-sales-promos-portrait-\d+s_android\.mp4/);
-  // A failure is a plain message and the button is usable again.
-  await page.route('**/api/admin/videos', (r) => r.fulfill({ status: 429, contentType: 'application/json', body: JSON.stringify({ error: { code: 'video-busy', message: 'A video is already being made. Try again in a minute.' } }) }));
-  await page.click('#dlBtn');
-  await page.waitForFunction(() => document.getElementById('dlMsg').classList.contains('err'));
-  assert.equal(await page.textContent('#dlMsg'), 'A video is already being made. Try again in a minute.');
-  assert.equal(await page.getAttribute('#dlBtn', 'aria-disabled'), 'false');
   assert.deepEqual(errors, []);
   await ctx.close();
 });

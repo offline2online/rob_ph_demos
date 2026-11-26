@@ -266,7 +266,6 @@ export const APIS = [
   "firebasestorage.googleapis.com",
   "identitytoolkit.googleapis.com",
   "firebase.googleapis.com",
-  "cloudtasks.googleapis.com", // Download MP4's worker is a Cloud Tasks queue function
 ];
 
 export function readTargets(projectId, root = ROOT) {
@@ -370,13 +369,6 @@ export function buildPlan({ project, site, bucket, skipSetup = false }) {
       task: "grantKmsToRuntime",
       label: `Let the functions' runtime service account use ${KMS.key} (on that key only)`,
       args: { project, kmsKey },
-    });
-    steps.push({
-      phase: "setup",
-      kind: "task",
-      task: "grantTasksToRuntime",
-      label: "Let the functions' runtime service account queue Download MP4 renders (Cloud Tasks Enqueuer)",
-      args: { project },
     });
     steps.push({
       phase: "setup",
@@ -539,17 +531,6 @@ const TASKS = {
       `--member=${member}`, "--role=roles/cloudkms.cryptoKeyEncrypterDecrypter", "--condition=None", "--quiet",
     ], { quiet: true });
     if (!ok) throw new Error("could not grant roles/cloudkms.cryptoKeyEncrypterDecrypter on the key");
-    return "granted (idempotent)";
-  },
-  async grantTasksToRuntime({ project }) {
-    // The config API enqueues one task per video on pharmacyScreenVideoWorker's queue (config-api/index.js).
-    const number = capture(["gcloud", "projects", "describe", project, "--format=value(projectNumber)"]);
-    const member = `serviceAccount:${number}-compute@developer.gserviceaccount.com`;
-    const ok = run([
-      "gcloud", "projects", "add-iam-policy-binding", project,
-      `--member=${member}`, "--role=roles/cloudtasks.enqueuer", "--condition=None", "--quiet",
-    ], { quiet: true });
-    if (!ok) throw new Error("could not grant roles/cloudtasks.enqueuer");
     return "granted (idempotent)";
   },
   async adminConfig({ project }) {

@@ -12,18 +12,12 @@
 // loaded again, when it becomes visible again after being hidden (visibilitychange, pageshow), and when a season
 // changes at midnight. The held scene still follows the store's clock and new data, redrawn in place.
 //   loop=1             loop forever instead (the behaviour before), for a screen that shows this one campaign only
-//   capture=1          the MP4 export's frame capture (config-api/src/video/): draws the first scene and waits, with no
-//                      service worker, no polling after the first data and no clock ticks, until the renderer calls
-//                      window.pharmacyScreen.capture(), which plays one loop (as loop=1) from the first scene under
-//                      the renderer's stepped clock
 //
 // Testing parameters (not used by the PH player):
 //   mockapi=1          use the seed fixtures (fixtures/campaign-data.json, fixtures/config.json) instead of the API
 //   debug=1            show the debug panel: device, store code, last fetch, server used, test time override
 //   scene=<n>          hold on scene n (0-based) instead of playing the promotion (an occasion: beat n, held still)
 //   now=<day>-<HH:MM>  pretend the store's local time is this, e.g. now=fri-18:45 (the "Open today" bar)
-//   occasion=<id>      a Seasonal promotion plays this season (christmas, fallback, …) whatever the date: the season the
-//                      editor's preview shows, for Download MP4
 //   date=<YYYY-MM-DD>  pretend the store's date is this, e.g. date=2026-12-20 (which season the Seasonal promotion
 //                      plays; MM-DD for this year)
 //
@@ -45,11 +39,9 @@ const params = {
   hold: q.has('scene') ? Math.max(0, parseInt(q.get('scene'), 10) || 0) : null,
   now: q.get('now') || '',
   date: q.get('date') || '',
-  occasion: (q.get('occasion') || '').trim(),
   mock: flag('mockapi'),
   debug: flag('debug'),
-  loop: flag('loop') || flag('capture'),
-  capture: flag('capture'),
+  loop: flag('loop'),
 };
 // An unswapped ${UniqueDeviceID} is not a device ID.
 if (params.device.includes('${')) params.device = '';
@@ -62,7 +54,7 @@ function keepOnDevice() {
   if (!('serviceWorker' in navigator)) return;
   // Off on a local server unless sw=1 (the tests route requests a service worker would hide); nosw=1 turns it off.
   const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
-  if (flag('nosw') || flag('capture') || (local && !flag('sw'))) return;
+  if (flag('nosw') || (local && !flag('sw'))) return;
   // A new version takes over the page: reload once so it runs the new code. Not when the first install takes over
   // an uncontrolled page, which already runs the current code.
   let controlled = !!navigator.serviceWorker.controller, reloading = false;
@@ -82,7 +74,7 @@ const stage = document.getElementById('stage');
 const el = document.getElementById('screen');
 const meta = document.querySelector('meta[name="pharmacy-screen-api"]');
 let config = null, store = null, play = null, data = null, panel = null; // panel: a promise of the debug panel (debug=1)
-let scene = 0, playing = params.hold === null && !params.capture, timers = [], lastStateKey = '', last = null;
+let scene = 0, playing = params.hold === null, timers = [], lastStateKey = '', last = null;
 let testTime = null, started = false, fontsWaited = false, shown = '';
 // Playing once (no loop=1): held is set once the last scene's seconds are up; playStart (performance.now()) is when
 // the current run through began, so a redrawn occasion carries on from where it was.
@@ -223,7 +215,7 @@ async function apply(s) {
   try {
     nextStore = storeModel(s.campaign, s.config);
     const promoId = params.promo || ((s.config.promotions || [])[0] || {}).promoId || ((s.config.promotions || [])[0] || {}).id;
-    nextPlay = resolvePromotion(s.config, nextStore, promoId, { today: todayForStore(), ...(params.occasion ? { occasion: params.occasion } : {}) });
+    nextPlay = resolvePromotion(s.config, nextStore, promoId, { today: todayForStore() });
   } catch (e) { fail(e); return; }
   const first = !started || shown !== 'scene';
   config = s.config; store = nextStore; play = nextPlay;
@@ -232,8 +224,7 @@ async function apply(s) {
     if (play.base === 'occasion') await loadOccasionCss();
     await fontsReady();
     if (!play) return; // replaced by a message while the fonts loaded
-    if (params.capture) show(0, false); // drawn still, so fonts and images are in before capture() plays it
-    else if (params.hold === null) restart();
+    if (params.hold === null) restart();
     else show(params.hold, true);
   } else {
     // New data for the same screen: redraw the current scene in place, playback carries on.
@@ -267,7 +258,7 @@ function minuteTick() {
   // end or another season's begin: then the season for the new date plays from its first beat, with nobody needing
   // to change anything.)
   // (Sales Promos has no schedule here: it plays whatever its end date, so nothing changes at midnight or noon.)
-  if (play && store && play.base === 'occasion' && playing && !params.occasion) {
+  if (play && store && play.base === 'occasion' && playing) {
     let next = null;
     try { next = resolvePromotion(config, store, play.promoId, { today: todayForStore() }); } catch (e) { next = null; }
     if (next && next.occasion !== play.occasion) { play = next; restart(); }
@@ -304,13 +295,12 @@ function start() {
   const catchUp = () => { if (document.visibilityState !== 'hidden') data.refresh(); };
   // Shown again (the player's next turn for this campaign): play from the first scene again, unless loop=1.
   const replay = () => { if (document.visibilityState !== 'hidden' && play && playing && shown === 'scene' && !params.loop) restart(); };
-  if (params.capture) return; // one read of the data; nothing may redraw the screen while frames are captured
   document.addEventListener('visibilitychange', () => { replay(); catchUp(); });
   window.addEventListener('online', catchUp);
   window.addEventListener('pageshow', (e) => { if (e.persisted) { replay(); catchUp(); } });
   // Ask the browser not to evict the screen's copy (the shell, images and last good data) under storage pressure.
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch (e) {}
-  if (!params.capture) setTimeout(minuteTick, 60000 - (Date.now() % 60000) + 50);
+  setTimeout(minuteTick, 60000 - (Date.now() % 60000) + 50);
 }
 
 // The debug panel is loaded only with debug=1, so the PH player never fetches it.
@@ -345,15 +335,6 @@ window.pharmacyScreen = {
   /** Resolves once what is on screen is final (an occasion: its stylesheets and fonts are in and its copy refitted). */
   settled() { return Promise.resolve(occasionCss).then(() => (last && last.ready) || null).then(() => true); },
   audit() { return last ? auditScene(el, last.G) : ['nothing rendered']; },
-  /** capture=1 only: stop reading data and play one loop from the first scene (as loop=1). Returns the loop's
-   *  seconds, or null when there is nothing to play (a message is on screen). */
-  capture() {
-    if (!params.capture || !play || shown !== 'scene') return null;
-    if (data) data.stop();
-    playing = true;
-    restart();
-    return Math.round(sequence(play).reduce((a, s) => a + s.t, 0) * 1000) / 1000;
-  },
 };
 
 start();

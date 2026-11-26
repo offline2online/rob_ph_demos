@@ -20,22 +20,6 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Added
 
-- **Download MP4 (Android 12 signage format).** Under the editor's preview, at the end of the Play/Pause row:
-  an MP4 of the promotion on the preview, for the selected pharmacy and orientation, made on the server from the
-  real screen page stepped frame by frame at 25 fps (headless Chromium and ffmpeg) in the format the Android 12 DMP
-  players play: H.264 Main 4.0, yuv420p, 25 fps CFR, timescale 12800, a keyframe every 2 s, no audio track, BT.709
-  limited range, CRF 18 capped at 6 Mbit/s, no SEI, `mp42`, faststart, no metadata (README.md → "Download MP4").
-  File name `<pharmacy>-<promotion>-<portrait|landscape>-<seconds>s_android.mp4`. The video shows the pharmacy's
-  own store name and opening hours from Personalisation Hub, read with its new optional **Screen device ID**
-  (Settings → Pharmacy details; `device` on the pharmacy record, never published to screens); without one, or for
-  the master template, the button is disabled with a tooltip. Waiting edits are saved first. One render at a time
-  per deployment (`429` otherwise), loops up to 120 s, admin only: `POST /api/admin/videos`,
-  `GET /api/admin/videos/{id}`. Firebase: the Cloud Tasks queue function `pharmacyScreenVideoWorker` (the deploy
-  enables the Cloud Tasks API and grants the functions' service account Cloud Tasks Enqueuer; `PS_SCREEN_PAGE_URL`
-  in `.env.rob-ph-demos`). AWS: the `VideoWorker` Lambda (x86_64), staged on its own by `npm run deploy:aws`.
-  Screen page: `capture=1` (the video's frame capture) and `occasion=<id>` (play one season whatever the date).
-  In a preview column under 310px Play/Pause now shows as its icon (was under 270px), so the row still fits on one
-  line with the new button.
 - **Sales Promos (`promo=sale`), the first promotion tab.** A new default promotion on its own built-in template
   (Sales promo, `builtin-sale`), reproducing the Big Brand Sale video drawn live in each pharmacy's own colours and
   logo: scene 1 "the brands" (headline in the brand panel, 1-6 brand cards popping in, caption; 3.5 s), a 0.65 s

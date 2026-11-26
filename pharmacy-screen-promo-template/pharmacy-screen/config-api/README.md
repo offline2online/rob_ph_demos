@@ -21,20 +21,13 @@ space without overlapping: the proxy serves `/api/settings/**` and
 
 ```
 config-api/
-  index.js                    Cloud Functions (2nd gen) entry: pharmacyScreenConfigApi, and Download MP4's
-                              worker pharmacyScreenVideoWorker (a Cloud Tasks queue function)
+  index.js                    Cloud Functions (2nd gen) entry: pharmacyScreenConfigApi
   src/api.js                  routes + HTTP behaviour, framework-neutral
   src/http.js                 Node / Cloud Functions request adapter
   src/service.js              every read and write (transactions, publishing, audit)
   src/validate.js             input checks and normalising
   src/publish.js              the public screen config, built by allow-list
   src/builtins.js             the two built-in templates (read-only, in code)
-  src/video/                  Download MP4 (../../README.md → "Download MP4"):
-    jobs.js                   POST/GET /api/admin/videos, one render at a time (a lease), runVideoJob()
-    render.js                 the screen page (capture=1) in headless Chromium, 40 ms a frame, piped to ffmpeg
-    clock.js                  the stepped clock the page runs under (timers, rAF, Date, CSS animations)
-    format.js                 the Android 12 signage format: ffmpeg arguments, file name, 120 s cap
-    worker.js                 a cloud worker's render step (@sparticuz/chromium, playwright-core, ffmpeg-static)
   src/adapters/
     memory-store.js           in-memory store (tests, dev server)
     firestore-store.js        Firestore store under pharmacyScreen/
@@ -74,14 +67,12 @@ Firestore (`PS_FIRESTORE_ROOT`, default `pharmacyScreen`):
 
 | Path | What | Client access (rules) |
 | --- | --- | --- |
-| `pharmacyScreen/config/pharmacies/{id}` | `storeCode`, `name`, `device` (only when set: the PH device ID Download MP4 reads the store's data with; never published), `colours {primary, accent}`, `logo {path, url, contentType} \| null`, `content {<promotion id>: {...}}`, `detached {<promotion id>: [section ids]}` (only when a section is managed separately), `tokens {<token name>: text}` (only when a token is set by hand; names as `js/tokens.js` `isSettableToken`, never a template slot or `StoreName` / `CloseTime` / `OpenTime`, which are dropped; text up to 200 characters, 50 per pharmacy; blank values dropped) | none |
+| `pharmacyScreen/config/pharmacies/{id}` | `storeCode`, `name`, `colours {primary, accent}`, `logo {path, url, contentType} \| null`, `content {<promotion id>: {...}}`, `detached {<promotion id>: [section ids]}` (only when a section is managed separately), `tokens {<token name>: text}` (only when a token is set by hand; names as `js/tokens.js` `isSettableToken`, never a template slot or `StoreName` / `CloseTime` / `OpenTime`, which are dropped; text up to 200 characters, 50 per pharmacy; blank values dropped) | none |
 | `pharmacyScreen/config/promotions/{id}` | `name`, `promoId`, `templateId`, `schedule {type: "annual", from, to}` (`"MM-DD"`, inclusive, every year; only for an annual schedule, none stored for No schedule), `master {...}` (the master template's content; only once saved) | none |
 | `pharmacyScreen/config/templates/{id}` | custom templates: `name`, `kind`, `basedOn`, `html`, `css`, `backgrounds {portrait, landscape}` | none |
 | `pharmacyScreen/config/services/{id}` | `label`, `icon`, `category`, `headline`, `accent`, `line1`, `line2`, `offeredBy [store codes]` | none |
 | `pharmacyScreen/audit/entries/{id}` | one per write: `at`, `actorUid`, `actorEmail`, `action`, `entity`, `entityId`, `changedFields`, `before`, `after` (+ `promotionId`, `media`, `clonedFrom`, `fallbackTemplateId`, `promotionsFellBack` where relevant) | none |
 | `pharmacyScreen/published/screens/{storeCode}` | the published screen config (below) | public read |
-| `pharmacyScreen/video/jobs/{id}` | Download MP4 jobs: `status` (`queued`, `rendering`, `done`, `failed`), `progress`, `pharmacyId`, `promotionId`, `orientation`, `occasion`, `pageUrl`, `fileName`, `seconds`, `url`, `error`, `createdBy`, `createdAt`, `finishedAt` | none |
-| `pharmacyScreen/video/locks/render` | the one-render-at-a-time lease: `jobId`, `until` (ms) | none |
 
 Every admin record also has `version`, `createdAt`, `createdBy`,
 `updatedAt`, `updatedBy` (uids). Content is free-form JSON owned by the
@@ -225,8 +216,6 @@ code.
 | GET, POST | `/api/admin/services` | list / create |
 | GET, PATCH, PUT, DELETE | `/api/admin/services/{id}` | read / update / delete |
 | GET | `/api/admin/audit?limit=&entity=&entityId=` | newest first, up to 500 |
-| POST | `/api/admin/videos` | Download MP4: `{pharmacyId, promotionId, orientation, occasion?}` → `201 {id, status: "queued", …}`. `409 no-device` when the pharmacy has no screen device ID, `429 video-busy` while another video is being made, `503` when this deployment has no worker (`PS_SCREEN_PAGE_URL` and a dispatcher) |
-| GET | `/api/admin/videos/{id}` | `{id, status, progress, orientation, seconds, fileName, url, error}`: `url` (a short-lived download link) once `done`, `error` (a plain message) once `failed` |
 
 Rules the API enforces:
 
@@ -262,7 +251,6 @@ All non-secret; set as function environment variables.
 | `PS_MIN_INSTANCES` | `0` | instances kept warm; above 0 is a monthly cost, only with the owner's yes |
 | `PS_RATE_LIMIT_SCREENS_PER_IP_PER_MIN` | `600` | `GET /api/screens/**` per client address per minute, per instance (`429` past it; `0` = off) |
 | `PS_TRUSTED_PROXY_HOPS` | `1` | `X-Forwarded-For` entries our platform appends; the address the limit counts (`src/rate-limit.js`) |
-| `PS_SCREEN_PAGE_URL` | none | this site's `pharmacy-screen.html`, which Download MP4 renders; unset: `/api/admin/videos` answers 503 |
 
 `POST /api/csp-report` takes the Content-Security-Policy reports the screen and the editor send and logs one short
 line per violation (`[csp] report <directive> blocked <origin> on <path> …`, never a full URL or query string),
