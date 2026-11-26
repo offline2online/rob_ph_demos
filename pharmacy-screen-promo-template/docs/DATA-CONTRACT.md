@@ -140,7 +140,7 @@ are 1–40 lower-case letters, digits and hyphens, unique across promotions.
 | `sale` | Sales Promos (the first tab; a built-in: it can't be deleted and its promo ID and template are fixed) | Sales promo (`builtin-sale`, kind `sale`, reserved for this promotion) | Two scenes on the brand shell in the pharmacy's own colours and logo, a 10 s loop at the defaults (playback duration 11 s): **the brands** (headline in the wedge, 1–6 brand cards popping in, a caption; 3.5 s) and, after a 0.65 s transition in which the brand colour fills the screen above the footer band, **the offer** (rays, "UP TO", the value counting up from 0, "OFF", the pulsing end-date panel, the brand list; 5.85 s). The footer band shows the sale. Copy in `content[<promotion id>].sale` (below). It plays whatever its `endDate`: Personalisation Hub schedules it, and the end date is wording only |
 | `morning` | Morning | Promotion scenes (`builtin-promotion-scenes`) | Greeting, service chips, one scene per service, "Walk in today" close; "Open today" bar |
 | `afternoon` | Afternoon | Promotion scenes | The same, with afternoon copy |
-| `closed` | Closed | Opening hours (`builtin-opening-hours`) | Rotating headlines, the full week's hours, "Public Holidays: Please call to confirm", phone |
+| `closed` | Closed | Opening hours (`builtin-opening-hours`) | Rotating headlines, the full week's hours and, when the store has special hours in the next 90 days, its "Special hours" list (the nearest 6), "Public Holidays: Please call to confirm" (left out while that list is shown), phone |
 | `occasions` | Seasonal | The Fallback and the six seasonal templates (published as the Fallback, or as the activated season while an activation runs) | A running "Activate on display" (`content[<promotion id>].activation`), else the season whose dates hold the store's date, else the Fallback (the pharmacy's brand colours, logo and name, "Thank you, ${Suburb}, for supporting your local pharmacy", exactly 7 s). For a season: its standalone animation, its copy as beats, each for its own seconds (seeded: 7 s of beats, playback duration 8 s; with no seconds set, 12 s and 13 s), played once with the last beat held; no "Open today" bar |
 
 **Sales Promos copy** (`content[<promotion id>].sale`, every field optional; the screen fills a missing one from
@@ -208,8 +208,8 @@ is set).
 | `${Decor}` | occasion | Reserved: the occasion templates are drawn whole (`js/occasions.js`), so it renders as nothing |
 | `${Footer}` | scenes | The "Open today" bar, or nothing when it is hidden |
 | `${OpenToday}` | scenes | The bar's message text only |
-| `${HoursCard}` | hours | The weekly opening hours card |
-| `${HolidayNote}` | hours | "Public Holidays: Please call to confirm" |
+| `${HoursCard}` | hours | The weekly opening hours card, plus its "Special hours" list (the nearest 6) when the store has special hours in the next 90 days |
+| `${HolidayNote}` | hours | "Public Holidays: Please call to confirm", or empty while `${HoursCard}` shows the "Special hours" list |
 | `${ContactLine}` | hours | Phone (and address when "show address" is on) |
 | `${Chevron}` | all | The brand chevron graphic |
 | `${ViewBox}` | all | SVG view box of the screen (`0 0 1080 1920` or `0 0 1920 1080`) |
