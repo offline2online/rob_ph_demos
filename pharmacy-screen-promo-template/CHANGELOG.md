@@ -26,6 +26,17 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Changed
 
+- **The opening hours template's badge follows the store's state.** The "Opening hours" card on the Closed
+  promotion read "CLOSED NOW" at any time, so a store that was open showed as closed. It now reads "OPEN NOW" while
+  open, "CLOSING SOON" in the last 30 minutes and "CLOSED NOW" before opening and after closing, from the store's
+  clock in `store_timezone` (special hours included), and changes on the minute with the "Open today" bar
+  (`js/render.js` `hoursBadge`). The pharmacy's own headlines are unchanged.
+- **A `store_timezone` that is not an IANA zone no longer uses the player's clock.** "AEST", "AEDT",
+  "AUS Eastern Standard Time", "(UTC+10:00) Canberra, Melbourne, Sydney", "+10:00" and the like are read as the
+  Australian zone they name (`js/hours.js` `tzOf`); anything empty or unrecognisable is `Australia/Melbourne`
+  (Sydney's time too). Before, such a value made the screen use the player's own clock, which on a player kept in
+  UTC showed the store closed through its open hours.
+
 - **Sales Promos: Personalisation Hub owns scheduling; the end date is wording only.** `promo=sale` now always
   plays the Sales Promos template, before, on and after its end date, at any hour. Removed: the after-end-date
   switch to Morning (before 12:00) or Afternoon (from 12:00) in `resolvePromotion()`, `endedSale` in

@@ -68,6 +68,7 @@ With `debug=1`, use the panel's test time (or `now=<day>-<HH:MM>`), on a store o
 | E2 | Open (`now=mon-12:00`) | "Open today until 7PM" | ☐ | ☐ |
 | E3 | Last 30 minutes (`now=mon-18:45`) | "Closing soon · 7PM" | ☐ | ☐ |
 | E4 | After close (`now=mon-20:00`) | "Closed now" | ☐ | ☐ |
+| E4a | Opening hours card (`promo=closed`) at `now=mon-07:00`, `mon-12:00`, `mon-18:45`, `mon-20:00` | The card's badge reads CLOSED NOW, OPEN NOW, CLOSING SOON, CLOSED NOW; on a real device during the store's open hours (Sydney/Melbourne time) it reads OPEN NOW | ☐ | ☐ |
 | E5 | A session crossing midnight (mock `device=TEST-LATE-NIGHT&mockapi=1`) | Open after midnight until the close time on the next day | ☐ | ☐ |
 
 ## F. Promotions, orientations, copy

@@ -129,3 +129,27 @@ test('nowInState: a store time today for each "Open today" bar message (the edit
   assert.equal(nowInState(always, 'before', wed), null);
   assert.equal(nowInState([], 'open', wed), null);
 });
+
+test('store_timezone that is not an IANA zone: its Australian zone, else Melbourne, never the player clock', async () => {
+  const { tzOf, DEFAULT_TZ } = await import('../js/hours.js');
+  assert.equal(DEFAULT_TZ, 'Australia/Melbourne');
+  for (const [v, z] of [
+    ['Australia/Melbourne', 'Australia/Melbourne'], [' Australia/Sydney ', 'Australia/Sydney'], ['Australia/Perth', 'Australia/Perth'],
+    ['', 'Australia/Melbourne'], [null, 'Australia/Melbourne'], [undefined, 'Australia/Melbourne'],
+    ['AEST', 'Australia/Melbourne'], ['AEDT', 'Australia/Melbourne'], ['AUS Eastern Standard Time', 'Australia/Melbourne'],
+    ['(UTC+10:00) Canberra, Melbourne, Sydney', 'Australia/Melbourne'], ['(UTC+10:00) Brisbane', 'Australia/Brisbane'],
+    ['E. Australia Standard Time', 'Australia/Brisbane'], ['ACDT', 'Australia/Adelaide'], ['AWST', 'Australia/Perth'],
+    ['+10:00', 'Australia/Melbourne'], ['UTC+11', 'Australia/Melbourne'], ['GMT+9:30', 'Australia/Adelaide'], ['+08:00', 'Australia/Perth'],
+    ['Not/AZone', 'Australia/Melbourne'], ['nonsense', 'Australia/Melbourne'],
+  ]) assert.equal(tzOf(v), z, String(v));
+});
+
+test('a non-IANA store_timezone reads the store clock in Sydney/Melbourne time, not the player clock', () => {
+  // Thu 26 Nov 2026 23:30 UTC = Fri 27 Nov 10:30 in Melbourne and Sydney (AEDT, UTC+11): open, whatever the player's zone
+  const at = new Date(Date.UTC(2026, 10, 26, 23, 30));
+  for (const tz of ['AEDT', 'AUS Eastern Standard Time', '+11:00', 'Australia/Sydney', 'Australia/Melbourne', '']) {
+    assert.deepEqual(storeNow(tz, at), { day: 'fri', min: 10 * 60 + 30 }, tz);
+  }
+  const s = parseOpeningHours([{ open_day: 'FRIDAY', open_time: '08:30:00', close_day: 'FRIDAY', close_time: '19:00:00' }]);
+  assert.equal(storeState(s, storeNow('AEST', at)).state, 'open');
+});

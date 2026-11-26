@@ -36,7 +36,7 @@ Only these are kept; the proxy drops everything else before answering the screen
 |---|---|---|
 | `store_location.store_code` | string | Which pharmacy's config to load (`/api/screens/{store_code}`) |
 | `store_location.store_name` | string | The store name, `${StoreName}`: the Location API's value for this device wins; the config's pharmacy name is used only when it is blank |
-| `store_location.store_timezone` | IANA zone, e.g. `Australia/Melbourne` | Store time for the "Open today" bar and today's hours (default `Australia/Melbourne` if empty) |
+| `store_location.store_timezone` | IANA zone, e.g. `Australia/Melbourne` | Store time for the "Open today" bar, the opening hours card's OPEN NOW / CLOSING SOON / CLOSED NOW badge and today's hours (default `Australia/Melbourne` if empty; a non-IANA value such as `AEST`, `AUS Eastern Standard Time`, `(UTC+10:00) Canberra, Melbourne, Sydney` or `+10:00` is read as the Australian zone it names, and an unrecognisable one as `Australia/Melbourne`, never the player's own clock: `js/hours.js` `tzOf`) |
 | `store_info.opening_hours[]` | array | Weekly hours and the bar state |
 | `…opening_hours[].open_day` / `close_day` | `MONDAY` … `SUNDAY` | A session may close the next day (crossing midnight) |
 | `…opening_hours[].open_time` / `close_time` | `HH:MM:SS`, store local time | |
