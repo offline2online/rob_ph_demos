@@ -252,7 +252,7 @@ Split so the admin editor's live preview can reuse the same code:
 
 | Module | What it does |
 |---|---|
-| `hours.js` | Opening hours: parses `opening_hours[]` (sessions may cross midnight) and `special_hours[]` (dated exceptions), store time and date in `store_timezone`, the bar state (open, last 30 minutes, before opening, after closing; `storeStateOn` with special hours), time formats, the weekly hours rows and the upcoming special hours list. No DOM. |
+| `hours.js` | Opening hours: parses `opening_hours[]` (sessions may cross midnight) and `special_hours[]` (dated exceptions), store time and date in `store_timezone` (`tzOf`: a non-IANA value read as the Australian zone it names, else `Australia/Melbourne`, never the player's clock), the bar state (open, last 30 minutes, before opening, after closing; `storeStateOn` with special hours), time formats, the weekly hours rows and the upcoming special hours list. No DOM. |
 | `tokens.js` | Token resolver: `${Suburb}` (blanked with its leading comma or line break when there is no suburb), `${StoreName}` (Occasions copy; the Location API's `store_name`, else the pharmacy name in the config: `storeModel()` in `render.js`), `${CloseTime}` / `${OpenTime}`, `${Phone}` / `${State}` / `${StoreCode}`, the editor's "+ Add token" list (`ADD_TOKENS`), template `${…}` slots, token values a pharmacy sets by hand (Settings → Tokens: `DATA_TOKENS`, `LIVE_TOKENS`, `SLOT_TOKENS`, `cleanTokens`, `applyTokens`; a set value wins over the store's data, except for the live `${StoreName}`, `${CloseTime}` and `${OpenTime}`, which cannot be set), and the rich-text sanitiser (bold, italic, line break, regular and accent spans only). No DOM. |
 | `fit-text.js` | Panel geometry (triangle / arrow; the landscape arrow is 580px wide, tip at x=780, and the headline stays in its straight-sided part), `fitText()` (headline and content shrink to stay inside the panel), `fitOccasion()` (each occasion beat shrinks to stay inside its text box) and `auditScene()` (the overflow check). |
 | `render.js` | Render engine: store model from `campaign_data` + config, promotion and template resolution (built-ins "Promotion scenes", "Opening hours" and the six occasion templates, `OCCASIONS`; custom templates with scoped CSS and backgrounds), scene sequence and durations, brand colours, `renderScene()`, and `renderOccasion()` (an occasion drawn whole, its copy as beats; `occasionCopy()` reads any saved shape). |
@@ -336,7 +336,8 @@ run holds the train's deploy; see "CI" below.
 - `test/ui/offline-cache.test.mjs`: see "Kept on the device" above.
 - `test/ui/landscape-hours.test.mjs`: the landscape opening hours screen: the hours card fills most of the screen
   right of the brand arrow, its rows are 56px or larger, a day with two sessions stays on one line inside its row,
-  the holiday note sits under the card, and portrait is unchanged.
+  the holiday note sits under the card, and portrait is unchanged; the card's badge reads OPEN NOW, CLOSING SOON or
+  CLOSED NOW from the store's clock and fits the card's header in both orientations.
 - `test/ui/live-screen.test.mjs`: the screen in Chromium with the proxy and config read routed: the right store's
   suburb, hours and phone; changed hours at the next store poll (every 20 s) without a reload; network killed and restored; unknown,
   unconfigured and missing device; offline badge; the debug panel at every bar state; no request leaves the page's

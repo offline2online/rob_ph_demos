@@ -332,3 +332,9 @@ div.f{display:grid;gap:4px;font-size:12px;color:var(--muted);min-width:0}
 /* A phone-width editor column: the Pharmacies picker takes its own line and Add pharmacy / Reset / Delete go under it,
    so the bar never runs past its card (it did at 390px). */
 @container edcol (max-width:520px){.toolbar.phbar{flex-wrap:wrap}.toolbar.phbar .pick{flex:1 1 100%}}
+/* Settings → Screen device ID, verified: the values Personalisation Hub supplies, as one read-only line (editor.js
+   renderDevInfo), e.g. "Beaumaris Pharmacy · VIC-MP-001 · Beaumaris 3193". No input, no edit control. */
+.devsum{display:flex;align-items:center;gap:6px;margin:0;font-size:14px;color:var(--text,#333);min-width:0;flex-wrap:wrap}
+.devsum>.ms:first-child{font-size:16px;color:#389e0d}
+.devsum #sDevSum{font-weight:500;overflow-wrap:anywhere;min-width:0}
+.devsum .help{font-size:14px;color:var(--muted);cursor:help}

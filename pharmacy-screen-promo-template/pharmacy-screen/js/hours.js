@@ -35,11 +35,60 @@ export function parseOpeningHours(list) {
   return out.sort((a, b) => a.start - b.start);
 }
 
+// ---------- the store's time zone ----------
+// store_location.store_timezone should be an IANA zone ("Australia/Melbourne"), but a value Intl does not know
+// ("AEST", "AUS Eastern Standard Time", "(UTC+10:00) Canberra, Melbourne, Sydney", "+10:00") used to make the
+// screen fall back to the PLAYER's own clock, which on a player kept in UTC reads "Closed now" all through the
+// store's open hours. tzOf() turns those into the IANA zone they mean, and anything else into DEFAULT_TZ
+// (Melbourne and Sydney keep the same time all year), never the player's clock.
+export const DEFAULT_TZ = 'Australia/Melbourne';
+const TZ_NAMES = [
+  // Windows zone names and Australian abbreviations (exact, case-insensitive)
+  [/^(aus eastern( standard| daylight)? time|aest|aedt|aet|est|eastern standard time \(australia\))$/i, 'Australia/Melbourne'],
+  [/^(e\. australia standard time)$/i, 'Australia/Brisbane'],
+  [/^(cen\. australia standard time|acst|acdt)$/i, 'Australia/Adelaide'],
+  [/^(aus central standard time)$/i, 'Australia/Darwin'],
+  [/^(w\. australia standard time|awst|awt|wst)$/i, 'Australia/Perth'],
+  [/^(tasmania standard time)$/i, 'Australia/Hobart'],
+  // a city named in a longer label ("(UTC+10:00) Canberra, Melbourne, Sydney"); Sydney/Melbourne/Canberra first
+  [/\b(melbourne|sydney|canberra|victoria|new south wales|nsw|vic|act)\b/i, 'Australia/Melbourne'],
+  [/\b(brisbane|queensland|qld)\b/i, 'Australia/Brisbane'],
+  [/\b(hobart|tasmania|tas)\b/i, 'Australia/Hobart'],
+  [/\b(adelaide|south australia)\b/i, 'Australia/Adelaide'],
+  [/\b(darwin|northern territory)\b/i, 'Australia/Darwin'],
+  [/\b(perth|western australia)\b/i, 'Australia/Perth'],
+];
+const tzCache = new Map();
+const knownTz = (z) => {
+  try { new Intl.DateTimeFormat('en-AU', { timeZone: z }); return true; } catch (e) { return false; }
+};
+/** The IANA zone a store_timezone value means; DEFAULT_TZ when it is empty or not recognisable. */
+export function tzOf(tz) {
+  const v = String(tz == null ? '' : tz).trim();
+  if (!v) return DEFAULT_TZ;
+  if (tzCache.has(v)) return tzCache.get(v);
+  let out = '';
+  // A plain IANA zone (Intl ignores case), but not a bare abbreviation such as "EST" that Intl may also accept
+  if (v.includes('/') && knownTz(v)) out = v;
+  if (!out) for (const [re, z] of TZ_NAMES) if (re.test(v)) { out = z; break; }
+  if (!out) {
+    // A fixed offset: "+10:00", "UTC+10", "GMT+9:30" -> the Australian zone at that offset (standard or daylight)
+    const m = /^(?:utc|gmt)?\s*([+-])\s*(\d{1,2})(?::?(\d{2}))?$/i.exec(v);
+    if (m) {
+      const min = (m[1] === '-' ? -1 : 1) * (+m[2] * 60 + +(m[3] || 0));
+      out = min === 480 ? 'Australia/Perth' : min === 570 || min === 630 ? 'Australia/Adelaide' : DEFAULT_TZ;
+    }
+  }
+  if (!out || !knownTz(out)) out = DEFAULT_TZ;
+  tzCache.set(v, out);
+  return out;
+}
+
 /** The store's current weekday and minute of day, in its timezone. `override` = {day, min} for tests and previews. */
 export function storeNow(tz, date = new Date(), override = null) {
   if (override && override.day && Number.isFinite(override.min)) return { day: override.day, min: override.min };
   try {
-    const p = new Intl.DateTimeFormat('en-AU', { timeZone: tz || 'Australia/Melbourne', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(date);
+    const p = new Intl.DateTimeFormat('en-AU', { timeZone: tzOf(tz), weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(date);
     const g = (k) => p.find((x) => x.type === k).value;
     return { day: g('weekday').slice(0, 3).toLowerCase(), min: (+g('hour') % 24) * 60 + +g('minute') };
   } catch (e) {
@@ -50,7 +99,7 @@ export function storeNow(tz, date = new Date(), override = null) {
 /** The store's date ({y, m, d}) at `date` (default now) in time zone tz, for the seasonal promotion's dates. */
 export function storeDate(tz, date = new Date()) {
   try {
-    const p = new Intl.DateTimeFormat('en-AU', { timeZone: tz || 'Australia/Melbourne', year: 'numeric', month: 'numeric', day: 'numeric' }).formatToParts(date);
+    const p = new Intl.DateTimeFormat('en-AU', { timeZone: tzOf(tz), year: 'numeric', month: 'numeric', day: 'numeric' }).formatToParts(date);
     const g = (k) => +p.find((x) => x.type === k).value;
     return { y: g('year'), m: g('month'), d: g('day') };
   } catch (e) {

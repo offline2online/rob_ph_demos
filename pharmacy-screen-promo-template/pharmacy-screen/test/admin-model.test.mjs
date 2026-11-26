@@ -405,12 +405,30 @@ test('device ID: well-formed as the proxy accepts it; each failed lookup has its
 test('storeSummary: name, code, address without the suburb twice, phone, timezone and today\'s hours in the store\'s time zone', () => {
   // 01:00 UTC on Monday 23 Nov 2026 is 12:00 Monday in Melbourne.
   const s = M.storeSummary(BEAUMARIS, new Date('2026-11-23T01:00:00Z'));
-  assert.deepEqual(s, { name: 'Beaumaris Pharmacy', code: 'VIC-MP-001', address: '1A East Concourse, Beaumaris, Victoria', suburb: 'Beaumaris', phone: '03 9589 2676', timezone: 'Australia/Melbourne', today: 'Monday, 8.30am – 7.00pm', hasHours: true, logo: null });
+  assert.deepEqual(s, { name: 'Beaumaris Pharmacy', code: 'VIC-MP-001', address: '1A East Concourse, Beaumaris, Victoria', suburb: 'Beaumaris', state: 'Victoria', postcode: '', phone: '03 9589 2676', timezone: 'Australia/Melbourne', today: 'Monday, 8.30am – 7.00pm', hasHours: true, logo: null });
   assert.equal(M.storeSummary(BEAUMARIS, new Date('2026-11-22T01:00:00Z')).today, 'Sunday, closed');
   const withLogo = { data: { ...BEAUMARIS.data, store_info: { ...BEAUMARIS.data.store_info, logo_url: 'https://cdn.example.com/l.png', address_info: { address: '12 Bay St', suburb: 'Brighton', state: 'VIC', postcode: '3186' } } } };
   const w = M.storeSummary(withLogo);
   assert.equal(w.address, '12 Bay St, Brighton, VIC 3186');
   assert.equal(w.logo, 'https://cdn.example.com/l.png');
+});
+
+test('applyPh: a verified device\'s values are managed in Personalisation Hub; what it has none for stays editable', () => {
+  // Beaumaris has no logo_url: its logo stays editable, everything else PH supplies is managed there.
+  assert.deepEqual(M.phFieldsOf(BEAUMARIS), ['name', 'storeCode', 'Suburb', 'State', 'Phone', 'StoreCode']);
+  const ph = { id: 'a', name: 'Beaumaris Pharmacy Plus', storeCode: 'VIC-MP-001', device: 'D1', tokens: { Suburb: 'Sandringham', StoreCode: 'X', Website: 'w.example' } };
+  M.applyPh(ph, BEAUMARIS);
+  assert.equal(ph.name, 'Beaumaris Pharmacy', 'PH\'s name replaces a typed one');
+  assert.equal(ph.storeCode, 'VIC-MP-001');
+  assert.deepEqual(ph.tokens, { Website: 'w.example' }, 'a value typed earlier never overrides PH\'s');
+  assert.deepEqual([...M.phManaged(ph)], ph.phFields);
+  assert.equal(M.phManaged({ ...ph, device: '' }).size, 0, 'no device: everything editable');
+  assert.equal(M.phManaged({ ...ph, isMaster: true }).size, 0);
+  assert.equal(M.phLine(BEAUMARIS), 'Beaumaris Pharmacy · VIC-MP-001 · Beaumaris');
+  // A store with a logo, a postcode and no phone.
+  const other = { data: { ...BEAUMARIS.data, store_info: { ...BEAUMARIS.data.store_info, logo_url: 'https://cdn.example.com/l.png', address_info: { suburb: 'Beaumaris', state: 'VIC', postcode: '3193' } } } };
+  assert.deepEqual(M.phFieldsOf(other), ['name', 'storeCode', 'Suburb', 'State', 'StoreCode', 'logo']);
+  assert.equal(M.phLine(other), 'Beaumaris Pharmacy · VIC-MP-001 · Beaumaris 3193');
 });
 
 test('fillPlan: fills only what is empty, offers PH\'s value where a person typed another, and refuses another store\'s device', () => {

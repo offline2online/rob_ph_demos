@@ -369,6 +369,8 @@ export function storeSummary(record, now = new Date()) {
     code: normStoreCode(loc.store_code),
     address,
     suburb: String(a.suburb || '').trim(),
+    state: String(a.state || '').trim(),
+    postcode: String(a.postcode || '').trim(),
     phone: String(a.phone_number || '').trim(),
     timezone: tz,
     today: row ? `${row.name}, ${row.text || 'closed'}` : '',
@@ -412,6 +414,48 @@ export function applyFill(ph, plan) {
   if (plan.name === 'fill') { ph.name = plan.summary.name; filled.push('Pharmacy name'); }
   if (plan.storeCode === 'fill') { ph.storeCode = plan.summary.code; filled.push('Store code'); }
   return filled;
+}
+
+// ── Values Personalisation Hub supplies once the Screen device ID is verified ──
+// Each value PH returns for the device is managed there: Settings shows it read-only, with no input, and the config
+// API keeps it (config-api/src/validate.js lockPhFields, PH_FIELDS). A value PH has none for stays editable.
+
+/** The phFields for a verified device's store data: the names of the pharmacy's values PH supplies. */
+export function phFieldsOf(record) {
+  const s = record && 'hasHours' in record ? record : storeSummary(record); // a storeSummary(), or the store data
+  const out = [];
+  if (s.name) out.push('name');
+  if (s.code) out.push('storeCode');
+  if (s.suburb) out.push('Suburb');
+  if (s.state) out.push('State');
+  if (s.phone) out.push('Phone');
+  if (s.code) out.push('StoreCode');
+  if (s.logo) out.push('logo');
+  return out;
+}
+
+/** Take PH's values on `ph`, in place, for a verified device: its name and store code, its phFields, and no
+ *  hand-set value for a token PH supplies (so the preview and screens show PH's). Returns the phFields. */
+export function applyPh(ph, record) {
+  const s = storeSummary(record), fields = phFieldsOf(s);
+  if (s.name) ph.name = s.name;
+  if (s.code) ph.storeCode = s.code;
+  ph.phFields = fields;
+  if (ph.tokens) {
+    const t = { ...ph.tokens };
+    for (const k of ['Suburb', 'State', 'Phone', 'StoreCode']) if (fields.includes(k)) delete t[k];
+    ph.tokens = t;
+  }
+  return fields;
+}
+
+/** The fields of `ph` that are managed in Personalisation Hub (no input in Settings): only with a device. */
+export const phManaged = (ph) => new Set(ph && !ph.isMaster && ph.device && Array.isArray(ph.phFields) ? ph.phFields : []);
+
+/** The one read-only line next to the device ID: "Beaumaris Pharmacy · VIC-MP-001 · Beaumaris 3193". */
+export function phLine(record) {
+  const s = storeSummary(record);
+  return [s.name, s.code, [s.suburb, s.postcode].filter(Boolean).join(' ')].filter(Boolean).join(' · ');
 }
 
 /** The pill under the preview and its tooltip: live store data, or sample data and how to get live data. */
@@ -517,7 +561,7 @@ export const clampDur = (v) => { const n = parseFloat(v); return Number.isFinite
  */
 export function editsSince(sent, ph) {
   const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
-  const details = !same(sent.name, ph.name) || !same(sent.storeCode, ph.storeCode) || !same(sent.colours, ph.colours) || !same(sent.device || '', ph.device || '');
+  const details = !same(sent.name, ph.name) || !same(sent.storeCode, ph.storeCode) || !same(sent.colours, ph.colours) || !same(sent.device || '', ph.device || '') || !same(sent.phFields || [], ph.device ? ph.phFields || [] : []);
   const was = sent.content || {}, now = ph.content || {};
   const content = Object.keys(now).filter((id) => !same(was[id], now[id]));
   return { details, content };

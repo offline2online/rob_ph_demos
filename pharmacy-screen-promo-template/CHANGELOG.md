@@ -26,6 +26,17 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Changed
 
+- **The opening hours template's badge follows the store's state.** The "Opening hours" card on the Closed
+  promotion read "CLOSED NOW" at any time, so a store that was open showed as closed. It now reads "OPEN NOW" while
+  open, "CLOSING SOON" in the last 30 minutes and "CLOSED NOW" before opening and after closing, from the store's
+  clock in `store_timezone` (special hours included), and changes on the minute with the "Open today" bar
+  (`js/render.js` `hoursBadge`). The pharmacy's own headlines are unchanged.
+- **A `store_timezone` that is not an IANA zone no longer uses the player's clock.** "AEST", "AEDT",
+  "AUS Eastern Standard Time", "(UTC+10:00) Canberra, Melbourne, Sydney", "+10:00" and the like are read as the
+  Australian zone they name (`js/hours.js` `tzOf`); anything empty or unrecognisable is `Australia/Melbourne`
+  (Sydney's time too). Before, such a value made the screen use the player's own clock, which on a player kept in
+  UTC showed the store closed through its open hours.
+
 - **Sales Promos: Personalisation Hub owns scheduling; the end date is wording only.** `promo=sale` now always
   plays the Sales Promos template, before, on and after its end date, at any hour. Removed: the after-end-date
   switch to Morning (before 12:00) or Afternoon (from 12:00) in `resolvePromotion()`, `endedSale` in
@@ -36,6 +47,17 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Added
 
+- **Values from Personalisation Hub are not editable once the Screen device ID is verified.** Settings → Pharmacy
+  details: after a verified device ID, the pharmacy name and store code take Personalisation Hub's, and the inputs
+  for every value Personalisation Hub supplies leave Settings, the add-pharmacy flow and the Tokens editor: name,
+  store code, `${StoreCode}`, `${Suburb}`, `${State}`, `${Phone}` and the logo upload, each only when PH returns a
+  value (Beaumaris has no `logo_url`, so its logo stays editable). PH's values show as one read-only line under the
+  device ID ("Beaumaris Pharmacy · VIC-MP-001 · Beaumaris 3193") above the store details, each marked with the token
+  it fills. A value typed earlier for those tokens is dropped, so previews and screens show PH's. The pharmacy
+  record keeps `phFields` (the values PH supplies) with its device, and the config API keeps them: a save with
+  another name, store code or suburb keeps PH's, a logo upload is refused (409 `managed-in-personalisation-hub`)
+  when the logo is PH's. Clearing the device ID brings every input back. The **Use Personalisation Hub's** offers
+  and the "Filled in from Personalisation Hub" line are gone (PH's value is now simply taken).
 - **Screen device ID fills in the pharmacy and gives the preview live data.** Settings → Pharmacy details: the
   Screen device ID is now the first field, full width, with a help line. Pasting an ID (or Enter / leaving the
   field; **Check** reads it again) reads the device's store data through the PH API proxy and shows it under the

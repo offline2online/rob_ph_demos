@@ -1188,7 +1188,7 @@ function detailsError() {
 function showCodeErr(msg) { $('codeErr').textContent = msg; $('codeErr').hidden = !msg; $('sCode').style.borderColor = msg && /code/i.test(msg) ? 'var(--err)' : ''; }
 function syncListRow() {
   const row = S.pharmacies.find((p) => p.id === S.cur.id);
-  if (row) Object.assign(row, { name: S.cur.name, storeCode: S.cur.storeCode, colours: S.cur.colours, logo: S.cur.logo, device: S.cur.device || '', version: S.cur.version });
+  if (row) Object.assign(row, { name: S.cur.name, storeCode: S.cur.storeCode, colours: S.cur.colours, logo: S.cur.logo, device: S.cur.device || '', phFields: S.cur.phFields, version: S.cur.version });
 }
 
 /** Pharmacy details or branding changed: create the pharmacy once it is valid, or save the change. */
@@ -1209,9 +1209,13 @@ function saveDetails(ph) {
   const id = ph.id;
   Save.later(`ph:${id}:details`, `ph:${id}`, async () => {
     try {
-      const res = await api.updatePharmacy(id, { name: ph.name, storeCode: ph.storeCode, colours: ph.colours, device: ph.device || '' }, ph.version);
+      // With the device go the values Personalisation Hub supplies for it (phFields) and the hand-set tokens left
+      // once PH's are taken; the config API keeps PH's values whatever is sent (validate.js lockPhFields).
+      const res = await api.updatePharmacy(id, { name: ph.name, storeCode: ph.storeCode, colours: ph.colours, device: ph.device || '', phFields: ph.device ? ph.phFields || [] : [], tokens: ph.tokens || {} }, ph.version);
       ph.version = res.version;
-      if (S.cur === ph) { syncListRow(); renderStoreSel(); }
+      // The server's word on what it kept: PH's name and store code on a pharmacy with a verified device.
+      if (ph.device && Array.isArray(res.phFields)) { ph.phFields = res.phFields; ph.name = res.name; ph.storeCode = res.storeCode; }
+      if (S.cur === ph) { syncListRow(); renderStoreSel(); applyLocks(); }
     } catch (e) {
       if (e.code === 'duplicate-store-code' || e.status === 400) { if (S.cur === ph) showCodeErr(e.message); return; }
       throw e;
@@ -1222,11 +1226,14 @@ function saveDetails(ph) {
 // ───────────────────────── Screen device ID ─────────────────────────
 // Settings → Pharmacy details, first field. Entering an ID (paste, Enter, or leaving the field; Check reads it again)
 // reads the device's store data through the PH API proxy (GET /api/device/{id}/campaign_data, the route the screen
-// uses, with the proxy's own cache in front of PH), shows it under the field, fills the pharmacy's empty name and
-// store code from it, and gives every preview of this pharmacy that store's own data (liveFor). The ID is saved only
-// once Personalisation Hub confirms its store is this pharmacy's: never for a malformed or unknown ID, a device of
-// another store, or while PH cannot answer. Opening hours, suburb and logo are never copied into the pharmacy: the
-// preview reads them live, as the screen does. Read when a pharmacy is picked and on Check; nothing polls.
+// uses, with the proxy's own cache in front of PH) and gives every preview of this pharmacy that store's own data
+// (liveFor). The ID is saved only once Personalisation Hub confirms its store is this pharmacy's: never for a
+// malformed or unknown ID, a device of another store, or while PH cannot answer. Once it is verified, every value PH
+// supplies is managed there (M.applyPh, phFields): the name and store code take PH's, a hand-set value for a token
+// PH fills is dropped, and the inputs for them leave Settings (applyLocks); PH's values show as read-only text under
+// the field. A value PH has none for (no logo_url, say) stays editable. Clearing the ID brings every input back.
+// Opening hours, suburb and logo are never copied into the pharmacy: the preview reads them live, as the screen
+// does. Read when a pharmacy is picked and on Check; nothing polls.
 
 const LIVE = new Map(); // device ID -> {data, readAt}: the last store data read for it (kept through an outage)
 const devState = new WeakMap(); // pharmacy record -> {state, typed, error, filled}
@@ -1259,7 +1266,7 @@ function readDevice(id) {
   return p;
 }
 
-function liveChanged() { ver++; lastKey = ''; renderDevInfo(); renderTokens(); renderPill(); }
+function liveChanged() { ver++; lastKey = ''; renderDevInfo(); renderTokens(); renderPill(); applyLocks(); renderLogo(); }
 
 /** Read the saved device's store data again (a pharmacy picked, or Check). */
 async function refreshLive(ph) {
@@ -1273,6 +1280,13 @@ async function refreshLive(ph) {
   if (ph.device !== id || ui.typed) return;
   ui.state = r.ok ? 'ok' : 'error';
   ui.error = r.ok ? null : M.lookupError(r.err, { readAt: LIVE.has(id) ? LIVE.get(id).readAt : null });
+  // A pharmacy whose device was verified before PH's values were managed takes them now (the config API accepts
+  // its phFields once, then keeps them).
+  if (r.ok && ph.id && !S.lock && !Array.isArray(ph.phFields) && !M.fillPlan(ph, r.entry.data, S.pharmacies).refusal) {
+    M.applyPh(ph, r.entry.data);
+    if (S.cur === ph) { $('sName').value = ph.name; $('sCode').value = ph.storeCode; renderStoreSel(); }
+    saveDetails(ph);
+  }
   if (S.cur === ph) liveChanged();
 }
 
@@ -1285,7 +1299,7 @@ async function commitDevice() {
   const seq = ++devSeq;
   if (!id) {
     // Cleared: saved at once. The preview goes back to sample data and Download MP4 is off.
-    ph.device = ''; ui.state = 'idle'; ui.typed = null; ui.error = null; ui.filled = [];
+    ph.device = ''; ph.phFields = undefined; ui.state = 'idle'; ui.typed = null; ui.error = null; ui.filled = [];
     renderStoreSel(); renderDl(); detailsChanged(); liveChanged();
     return;
   }
@@ -1305,7 +1319,9 @@ async function commitDevice() {
   }
   const plan = M.fillPlan(ph, r.entry.data, S.pharmacies);
   if (plan.refusal) { ui.state = 'refused'; ui.error = { kind: 'wrong-store', message: plan.refusal }; renderDevInfo(); return; }
+  // Verified: PH's name and store code are taken, with every other value it supplies (M.applyPh).
   ui.filled = M.applyFill(ph, plan);
+  M.applyPh(ph, r.entry.data);
   ph.device = id; ui.typed = null; ui.state = 'ok'; ui.error = null;
   $('sName').value = ph.name; $('sCode').value = ph.storeCode;
   renderStoreSel(); renderDl(); detailsChanged(); liveChanged();
@@ -1332,36 +1348,57 @@ function renderDevInfo() {
   } else if (ui.error) {
     out.push(alert(ui.error.kind === 'down' ? 'warn' : 'err', ui.error.kind === 'down' ? 'cloud_off' : 'error', esc(ui.error.message), '<button type="button" class="text" data-dev-retry>Check again</button>'));
   }
+  const managed = M.phManaged(ph);
+  if (managed.size && !ui.typed && ui.state !== 'checking') {
+    // The values Personalisation Hub supplies, as plain read-only text next to the device ID: which pharmacy was
+    // matched and what its tokens resolve to. With no read yet (PH down), the saved name and store code.
+    const line = entry ? M.phLine(entry.data) : [ph.name, ph.storeCode].filter(Boolean).join(' · ');
+    out.unshift(`<p class="devsum" data-dev="managed"><span class="ms">verified</span><span id="sDevSum">${esc(line)}</span><span class="ms help" title="Managed in Personalisation Hub for this screen device ID, so they cannot be changed here. Clear the device ID to edit them here again.">info</span></p>`);
+  }
   if (entry && plan && !plan.refusal && ui.state !== 'checking') {
     const s = plan.summary, stale = !!(ui.error && ui.error.kind === 'down');
-    const tag = (t, ok) => `<span class="devfill${ok ? ' ok' : ''}">${t}</span>`;
-    const use = (field, mine) => `<span class="devdiff">This pharmacy: <b>${esc(mine)}</b><button type="button" class="text" data-use="${field}">Use Personalisation Hub's</button></span>`;
-    const filled = (label) => ui.filled.includes(label);
+    const tag = (t) => `<span class="devfill">${t}</span>`;
+    // Each value PH supplies says which token it fills (the name is ${StoreName}).
+    const tok = (field, name = field) => (managed.has(field) ? tag(`\${${name}}`) : '');
     const rows = [
-      ['Store name', esc(s.name || '–') + (plan.name === 'differs' ? ' ' + use('name', ph.name) : filled('Pharmacy name') ? tag('filled in', true) : '')],
-      ['Store code', esc(s.code || '–') + (filled('Store code') ? tag('filled in', true) : '')],
+      ['Store name', esc(s.name || '–') + tok('name', 'StoreName')],
+      ['Store code', esc(s.code || '–') + tok('StoreCode')],
       ['Address', esc(s.address || '–')],
-      ['Suburb', esc(s.suburb || '–') + (plan.suburb === 'differs' ? ' ' + use('suburb', plan.handSuburb) : plan.suburb === 'live' ? tag('used for ${Suburb}') : '')],
-      ['Phone', esc(s.phone || '–')],
+      ['Suburb', esc(s.suburb || '–') + tok('Suburb')],
+      ['State', esc(s.state || '–') + tok('State')],
+      ['Postcode', esc(s.postcode || '–')],
+      ['Phone', esc(s.phone || '–') + tok('Phone')],
       ['Timezone', esc(s.timezone || '–')],
       ['Today', esc(s.today || 'No opening hours in Personalisation Hub')],
       ['Logo', s.logo ? `<img class="devlogo" src="${esc(s.logo)}" alt="">${tag('shown on screens')}` : `None in Personalisation Hub, so screens show the logo uploaded under Branding${ph.logo ? '' : ' (none yet)'}`],
     ];
     out.push(`<div class="devcard" data-dev="live"><div class="devcard-h"><span class="dot" style="background:var(--${stale ? 'warn' : 'ok'})"></span><b>${stale ? 'Last read from Personalisation Hub' : 'Live from Personalisation Hub'}</b><span>· read ${esc(M.readAtText(entry.readAt))}</span></div>`
       + `<dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd data-f="${k}">${v}</dd>`).join('')}</dl>`
-      + (ui.filled.length ? `<span class="hint" data-dev="filled">Filled in from Personalisation Hub: ${esc(ui.filled.join(', '))}.</span>` : '')
       + '</div>');
   }
   box.innerHTML = out.join('');
   box.querySelectorAll('[data-dev-retry]').forEach((b) => { b.onclick = () => (ui.typed ? commitDevice() : refreshLive(ph)); });
-  box.querySelectorAll('[data-use]').forEach((b) => {
-    b.onclick = () => {
-      if (S.lock || !plan) return;
-      if (b.dataset.use === 'name') { ph.name = plan.summary.name; $('sName').value = ph.name; renderStoreSel(); detailsChanged(); }
-      else { ph.tokens = M.setToken(ph, 'Suburb', ''); saveTokens(ph); }
-      liveChanged(); renderJson();
-    };
-  });
+  applyLocks();
+}
+
+/** Settings without an input for any value Personalisation Hub supplies (M.phManaged): the pharmacy name and store
+ *  code, the tokens it fills, and the logo upload. Everything comes back when the device ID is cleared. */
+function applyLocks() {
+  const ph = S.cur, managed = M.phManaged(ph);
+  const name = managed.has('name'), code = managed.has('storeCode');
+  $('sName').closest('label').hidden = name;
+  $('sCode').closest('label').hidden = code;
+  $('sName').closest('.grid2').hidden = name && code;
+  const logo = managed.has('logo');
+  $('logoBtn').hidden = logo;
+  if (logo) $('logoRm').hidden = true;
+  $('logoPh').hidden = !logo;
+  const inputs = [...$('tokList').querySelectorAll('input[data-token]')];
+  for (const e of inputs) e.closest('label').hidden = managed.has(e.dataset.token);
+  // Every token the pharmacy uses comes from Personalisation Hub: the card says so rather than standing empty.
+  const allPh = inputs.length > 0 && inputs.every((e) => managed.has(e.dataset.token));
+  $('tokEmpty').textContent = allPh ? 'Every token this pharmacy uses comes from Personalisation Hub.' : 'No promotion or template uses a token yet.';
+  $('tokEmpty').hidden = !allPh && inputs.length > 0;
 }
 $('sDev').addEventListener('input', (e) => {
   if (e.inputType === 'insertFromPaste' || e.inputType === 'insertFromDrop') { commitDevice(); return; }
@@ -1462,10 +1499,10 @@ $('dlBtn').onclick = downloadMp4;
 async function createPharmacy() {
   const draft = S.cur;
   if (draft.id || detailsError()) return;
-  const sent = M.clone({ storeCode: draft.storeCode, name: draft.name, colours: draft.colours, content: draft.content || {}, ...(draft.device ? { device: draft.device } : {}) });
+  const sent = M.clone({ storeCode: draft.storeCode, name: draft.name, colours: draft.colours, content: draft.content || {}, ...(draft.device ? { device: draft.device, phFields: draft.phFields || [] } : {}), ...(draft.tokens ? { tokens: draft.tokens } : {}) });
   try {
     const rec = await api.createPharmacy(sent);
-    draft.id = rec.id; draft.version = rec.version;
+    draft.id = rec.id; draft.version = rec.version; if (draft.device) draft.phFields = rec.phFields || [];
     S.pharmacies.push({ ...rec, content: undefined });
     if (S.cur === draft) { pref.set('pharmacy', rec.id); renderStoreSel(); renderLogo(); renderTokens(); lastKey = ''; }
     saveEditsMadeDuring(draft, sent);
@@ -1506,15 +1543,18 @@ function renderTokens() {
   const s = S.cur, list = M.usedTokens(s, S.promotions, S.templates);
   $('tokEmpty').hidden = list.length > 0;
   $('tokList').innerHTML = list.map((t) => {
+    // A token Personalisation Hub fills for a verified device has no input (applyLocks hides it).
     const live = t.name === 'Suburb' && liveFor(s), sub = live ? M.storeSummary(live.data).suburb : '';
     const ph = sub ? `${sub} (from Personalisation Hub)` : t.data ? M.TOKEN_SOURCES[t.name] : 'Not set, shows nothing';
     const used = t.promotions.length ? `Used in ${t.promotions.join(', ')}` : 'Not used by any promotion';
     return `<label class="f"><span>\${${esc(t.name)}}</span><input data-token="${esc(t.name)}" value="${esc(t.value)}" placeholder="${esc(ph)}" maxlength="200" autocomplete="off"${s.id ? '' : ' disabled title="Add the pharmacy name and store code first"'}><span class="hint">${esc(used)}</span></label>`;
   }).join('');
   for (const e of $('tokList').querySelectorAll('input[data-token]')) e.oninput = () => {
+    if (M.phManaged(s).has(e.dataset.token)) return;
     s.tokens = M.setToken(s, e.dataset.token, e.value);
     ver++; lastKey = ''; renderJson(); saveTokens(s);
   };
+  applyLocks();
 }
 /** Save pharmacy `ph`'s hand-set token values. */
 function saveTokens(ph) {
@@ -1526,11 +1566,14 @@ function saveTokens(ph) {
   });
 }
 function renderLogo() {
-  const s = S.cur, url = s.logo && s.logo.url;
+  // A logo from Personalisation Hub (a verified device's logo_url) is the one screens show, and has no upload.
+  const live = M.phManaged(S.cur).has('logo') && liveFor(S.cur), phLogo = live ? M.storeSummary(live.data).logo : null;
+  const s = S.cur, url = phLogo || (s.logo && s.logo.url);
   $('logoPrev').innerHTML = url ? `<img src="${esc(url)}" alt="">` : '<span class="hint" style="color:#fff">No logo</span>';
   $('logoPrev').style.background = s.colours.primary;
   $('logoRm').hidden = !url; $('logoBtnTx').textContent = url ? 'Replace logo' : 'Upload logo';
   $('logoBtn').disabled = !s.id; $('logoBtn').title = s.id ? '' : 'Add the pharmacy name and store code first';
+  applyLocks();
 }
 function logoErr(m) { $('logoErr').textContent = m || ''; $('logoErr').hidden = !m; }
 $('logoBtn').onclick = () => $('logoIn').click();

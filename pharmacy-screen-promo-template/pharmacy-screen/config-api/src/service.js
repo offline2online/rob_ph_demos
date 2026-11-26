@@ -19,6 +19,7 @@ const {
   ApiError,
   bad,
   normalisePharmacy,
+  lockPhFields,
   normalisePromotion,
   normaliseTemplate,
   normaliseService,
@@ -281,7 +282,7 @@ function createConfigService({ store, blobs, now = () => new Date().toISOString(
 
   async function createPharmacy(actor, body, opts) {
     return write(actor, (cfg) => {
-      const data = normalisePharmacy(body);
+      const data = normalisePharmacy(lockPhFields(body, null));
       assertStoreCodeFree(cfg, data.storeCode);
       const id = newRecordId(cfg, "pharmacies", opts);
       const rec = stamp(data, actor, cfg.at);
@@ -305,7 +306,8 @@ function createConfigService({ store, blobs, now = () => new Date().toISOString(
         const extra = Object.keys(fields).filter((k) => !STORE_USER_FIELDS.has(k));
         if (extra.length) throw new ApiError(403, "forbidden", "Only an administrator can change a pharmacy's details");
       }
-      const data = normalisePharmacy(fields, stripMeta(stored));
+      // Values Personalisation Hub supplies for a verified Screen device ID are kept (validate.js lockPhFields).
+      const data = normalisePharmacy(lockPhFields(fields, stored), stripMeta(stored));
       assertStoreCodeFree(cfg, data.storeCode, id);
       const rec = stamp(data, actor, cfg.at, stored);
       return {
@@ -631,7 +633,11 @@ function createConfigService({ store, blobs, now = () => new Date().toISOString(
 
   async function setLogo(actor, id, contentType, buffer) {
     const img = checkImage("logo", contentType, buffer);
-    await getPharmacy(id);
+    const current = await getPharmacy(id);
+    // The logo comes from Personalisation Hub for this pharmacy's verified Screen device ID (validate.js PH_FIELDS).
+    if (current.device && Array.isArray(current.phFields) && current.phFields.includes("logo")) {
+      throw conflict("managed-in-personalisation-hub", "This pharmacy's logo comes from Personalisation Hub, so it cannot be uploaded here");
+    }
     const path = `${MEDIA_PREFIX}logos/${id}/${img.hash}.${img.ext}`;
     return withUpload(path, buffer, img.type, (media) =>
       write(actor, (cfg) => {

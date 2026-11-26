@@ -356,6 +356,14 @@ export const FOOTER_DEFAULT = {
 };
 export const footerConfig = (content) => Object.assign({}, FOOTER_DEFAULT, (content && content.footer) || {});
 
+/**
+ * The opening hours card's badge for the store's state at the time shown (its own clock, store_timezone): "OPEN NOW"
+ * while open, "CLOSING SOON" in the last 30 minutes, "CLOSED NOW" before opening and after closing. It used to read
+ * "CLOSED NOW" whatever the time, so the Closed promotion said the store was closed while it was open.
+ */
+export const HOURS_BADGE = { open: 'OPEN NOW', closing: 'CLOSING SOON', before: 'CLOSED NOW', closed: 'CLOSED NOW' };
+export const hoursBadge = (state) => HOURS_BADGE[state && state.state] || HOURS_BADGE.closed;
+
 export const HOLIDAY_NOTE = 'Public Holidays: Please call to confirm';
 /** The opening hours template's default third headline, which says the same as HOLIDAY_NOTE. */
 export const HOLIDAY_HEADLINE = 'Public Holidays:<br><span class="reg">Please call to confirm</span>';
@@ -638,7 +646,7 @@ export function renderScene(el, opts) {
     const special = upcomingSpecialHours(s.special, state.ymd);
     hasSpecial = special.length > 0;
     const sp = special.map((r) => `<div class="s-row s-sp${r.times.length > 1 ? ' multi' : ''}"><span class="sd">${esc(r.label)}</span><span class="sn">${esc(r.name)}</span>${r.open ? `<span class="st">${r.times.map((t) => `<span>${esc(t)}</span>`).join('')}</span>` : '<span class="st closed">Closed</span>'}</div>`).join('');
-    T.HoursCard = `<div class="s-card"><div class="ch"><h3>Opening hours</h3><span class="s-badge">CLOSED NOW</span></div>${rows}${hasSpecial ? `<div class="s-sph"><h4>Special hours</h4></div>${sp}` : ''}</div>`;
+    T.HoursCard = `<div class="s-card"><div class="ch"><h3>Opening hours</h3><span class="s-badge">${hoursBadge(state)}</span></div>${rows}${hasSpecial ? `<div class="s-sph"><h4>Special hours</h4></div>${sp}` : ''}</div>`;
     const bits = [s.phone ? `Phone ${esc(s.phone)}` : '', d.showAddress && s.address ? esc(s.address) : ''].filter(Boolean).join(' · ');
     T.HolidayNote = hasSpecial ? '' : `<span class="n1">${HOLIDAY_NOTE}</span>`;
     T.ContactLine = bits ? `<span class="n2">${bits}</span>` : '';

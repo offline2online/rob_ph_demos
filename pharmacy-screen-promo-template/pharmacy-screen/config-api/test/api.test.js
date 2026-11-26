@@ -620,6 +620,56 @@ test("tokens set by hand: saved on the pharmacy, published to its screens, blank
   assert.ok(!("tokens" in (await pub())));
 });
 
+test("Screen device ID verified: the values Personalisation Hub supplies (phFields) are kept, the rest stay editable", async () => {
+  const { call } = setup();
+  const { ph } = await seedBasics(call);
+  const patch = (body) => call("PATCH", `/api/admin/pharmacies/${ph.id}`, { body });
+  const pub = async () => (await call("GET", "/api/screens/VIC-MP-001", { auth: null })).body;
+  await patch({ tokens: { Suburb: "Sandringham", Website: "mipharmacy.example" } });
+
+  // Verified (the editor sends the device with the fields PH returned; no logo_url for this store): a hand-set
+  // value for a PH-supplied token is dropped, so screens show PH's.
+  const DEV = "6890ee6121f42e90ded7baa4d80cc63b2a2b4eb4bfad71c88601712b5397aece";
+  const v = await patch({ device: DEV, name: "Beaumaris Pharmacy", storeCode: "VIC-MP-001", phFields: ["name", "storeCode", "Suburb", "State", "Phone"] });
+  assert.equal(v.status, 200);
+  assert.deepEqual(v.body.phFields, ["name", "storeCode", "Suburb", "State", "Phone", "StoreCode"], "${StoreCode} goes with the store code");
+  assert.deepEqual(v.body.tokens, { Website: "mipharmacy.example" });
+  assert.deepEqual((await pub()).tokens, { Website: "mipharmacy.example" });
+  assert.ok(!("phFields" in (await pub())), "the published config is unchanged in shape");
+
+  // A save with a different name, store code or suburb keeps PH's (silently: 200 with the stored values).
+  const e = await patch({ name: "Somewhere Else", storeCode: "VIC-MP-099", tokens: { Suburb: "Testville", StoreCode: "X1", Website: "new.example" } });
+  assert.equal(e.status, 200);
+  assert.equal(e.body.name, "Beaumaris Pharmacy");
+  assert.equal(e.body.storeCode, "VIC-MP-001");
+  assert.deepEqual(e.body.tokens, { Website: "new.example" }, "a token PH has no value for stays editable");
+  // phFields cannot be shrunk without the device changing, so it cannot unlock anything.
+  assert.deepEqual((await patch({ phFields: [], device: DEV, name: "Again" })).body.name, "Beaumaris Pharmacy");
+  assert.equal((await patch({ phFields: ["colours"], device: "OTHER-1" })).status, 400, "unknown field names refused");
+
+  // The logo is editable here (PH has none for this store)…
+  assert.equal((await call("PUT", `/api/admin/pharmacies/${ph.id}/logo`, { body: PNG, headers: { "content-type": "image/png" } })).status, 200);
+  // …and refused once PH supplies one.
+  await patch({ device: "" });
+  await patch({ device: DEV, phFields: ["name", "storeCode", "logo"] });
+  assert.equal((await call("PUT", `/api/admin/pharmacies/${ph.id}/logo`, { body: PNG2, headers: { "content-type": "image/png" } })).status, 409);
+
+  // Device cleared: everything is editable again.
+  const c = await patch({ device: "", name: "Beaumaris Pharmacy Plus", tokens: { Suburb: "Testville" } });
+  assert.equal(c.body.device, undefined);
+  assert.equal(c.body.phFields, undefined);
+  assert.equal(c.body.name, "Beaumaris Pharmacy Plus");
+  assert.deepEqual(c.body.tokens, { Suburb: "Testville" });
+
+  // A pharmacy verified before phFields existed takes the editor's list once (backfill), then it is locked.
+  await patch({ device: DEV });
+  const b = await patch({ device: DEV, name: "Beaumaris Pharmacy", phFields: ["name", "storeCode", "Suburb"] });
+  assert.deepEqual(b.body.phFields, ["name", "storeCode", "Suburb", "StoreCode"]);
+  assert.equal(b.body.name, "Beaumaris Pharmacy");
+  assert.deepEqual(b.body.tokens, undefined);
+  assert.equal((await patch({ name: "Nope" })).body.name, "Beaumaris Pharmacy");
+});
+
 test("screen read endpoint: an ETag lets a poll that finds nothing new cost a 304 with no body", async () => {
   const { call } = setup();
   const { ph } = await seedBasics(call);

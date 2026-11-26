@@ -90,3 +90,30 @@ test('portrait: the opening hours card is unchanged', async () => {
   for (const r of m.rows) assert.equal(r.dayPx, 44);
   for (const r of m.rows) assert.equal(r.timePx, 44);
 });
+
+// The card's badge follows the store's state (it used to read "CLOSED NOW" at any time), in both orientations, and
+// the longest wording still fits the card's header with nothing overflowing.
+test('opening hours card badge: OPEN NOW, CLOSING SOON, CLOSED NOW from the store clock', async () => {
+  for (const orientation of ['portrait', 'landscape']) {
+    const land = orientation === 'landscape';
+    for (const [now, want] of [['wed-07:00', 'CLOSED NOW'], ['wed-12:00', 'OPEN NOW'], ['wed-18:45', 'CLOSING SOON'], ['wed-22:00', 'CLOSED NOW']]) {
+      const ctx = await browser.newContext({ viewport: land ? { width: 1920, height: 1080 } : { width: 1080, height: 1920 } });
+      try {
+        const page = await ctx.newPage();
+        await page.goto(`${base}?mockapi=1&device=DEVICE-VIC-MP-001&orientation=${orientation}&promo=closed&scene=0&now=${now}&date=2027-06-02`);
+        await page.waitForFunction(() => window.pharmacyScreen && window.pharmacyScreen.ready);
+        await page.evaluate(() => document.fonts.ready);
+        const r = await page.evaluate(async () => {
+          window.pharmacyScreen.show('closed', 0);
+          await window.pharmacyScreen.settled();
+          const b = document.querySelector('.s-card .s-badge'), h = document.querySelector('.s-card .ch');
+          const bb = b.getBoundingClientRect(), hb = h.getBoundingClientRect(), tb = h.querySelector('h3').getBoundingClientRect();
+          return { text: b.textContent, inside: bb.right <= hb.right + 1 && bb.left >= tb.right, problems: window.pharmacyScreen.audit() };
+        });
+        assert.equal(r.text, want, `${orientation} ${now}`);
+        assert.ok(r.inside, `${orientation} ${now}: badge clear of the title and inside the card header`);
+        assert.deepEqual(r.problems, [], `${orientation} ${now}`);
+      } finally { await ctx.close(); }
+    }
+  }
+});
