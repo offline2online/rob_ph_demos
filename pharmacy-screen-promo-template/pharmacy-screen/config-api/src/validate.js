@@ -175,6 +175,69 @@ function keepMedia(stored) {
   return { path: stored.path, url: stored.url, contentType: String(stored.contentType || "") };
 }
 
+// Values Personalisation Hub supplies for a pharmacy with a verified Screen device ID (Admin → Settings → Screen
+// device ID). The editor reads the device's store data through the PH API proxy and saves, with the device, the
+// names of the values PH returned (phFields). Those are managed in PH: the editor shows them read-only and the API
+// keeps them (lockPhFields). A value PH has none for (logo_url null, say) is not listed and stays editable.
+//   name       store_location.store_name        -> the pharmacy name
+//   storeCode  store_location.store_code        -> the store code, and the ${StoreCode} token
+//   Suburb / State / Phone   store_info.address_info.suburb / .state / .phone_number -> those tokens
+//   logo       store_info.logo_url              -> the logo upload (screens already show PH's logo first)
+const PH_FIELDS = Object.freeze(["name", "storeCode", "Suburb", "State", "Phone", "StoreCode", "logo"]);
+const PH_TOKENS = Object.freeze(["Suburb", "State", "Phone", "StoreCode"]);
+
+function normalisePhFields(value) {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) throw bad("phFields must be a list of field names");
+  const out = [];
+  for (const f of value) {
+    if (!PH_FIELDS.includes(f)) throw bad(`phFields has an unknown field "${String(f).slice(0, 40)}" (one of ${PH_FIELDS.join(", ")})`);
+    if (!out.includes(f)) out.push(f);
+  }
+  // ${StoreCode} is the store code: one is never managed without the other.
+  if (out.includes("storeCode") && !out.includes("StoreCode")) out.push("StoreCode");
+  return PH_FIELDS.filter((f) => out.includes(f));
+}
+
+/**
+ * An update's fields (or a create's body, with `stored` null) with the Personalisation Hub rule applied:
+ *   - a device cleared: phFields is dropped, so everything is editable again;
+ *   - a device set or changed (a fresh verification): the request's phFields are taken, and its name and store
+ *     code are PH's (the editor sends them);
+ *   - the same device (or none sent): the stored phFields stand, a phFields in the request is ignored (it cannot
+ *     unlock anything), and a name or store code in the request is replaced by the stored one. The one exception:
+ *     a pharmacy verified before phFields existed takes the editor's list once (a backfill), and only grows it.
+ * Tokens named in the resulting phFields are dropped, so a value typed earlier never overrides PH's on a screen.
+ * Locked values are kept silently (the answer is the stored record), not refused.
+ */
+function lockPhFields(fields, stored) {
+  if (!isPlainObject(fields)) return fields; // normalisePharmacy refuses it
+  const out = { ...fields };
+  const before = (stored && stored.device) || "";
+  const device = out.device === undefined ? before : normaliseDevice(out.device);
+  const storedFields = stored && Array.isArray(stored.phFields) ? normalisePhFields(stored.phFields) : null;
+  let ph;
+  if (!device) ph = [];
+  else if (device !== before || !stored) ph = normalisePhFields(out.phFields);
+  else if (!storedFields || !storedFields.length) ph = out.phFields === undefined ? storedFields || [] : normalisePhFields(out.phFields);
+  else {
+    ph = storedFields;
+    if (out.phFields !== undefined) ph = normalisePhFields([...storedFields, ...normalisePhFields(out.phFields)]);
+    if (ph.includes("name")) delete out.name;
+    if (ph.includes("storeCode")) delete out.storeCode;
+  }
+  out.phFields = ph;
+  const locked = PH_TOKENS.filter((t) => ph.includes(t));
+  if (locked.length) {
+    const tokens = isPlainObject(out.tokens) ? { ...out.tokens } : out.tokens === undefined && stored && isPlainObject(stored.tokens) ? { ...stored.tokens } : out.tokens;
+    if (isPlainObject(tokens)) {
+      for (const t of locked) delete tokens[t];
+      out.tokens = tokens;
+    }
+  }
+  return out;
+}
+
 function normalisePharmacy(input, stored = {}) {
   if (!isPlainObject(input)) throw bad("Request body must be a JSON object");
   const merged = { ...stored, ...input };
@@ -187,6 +250,7 @@ function normalisePharmacy(input, stored = {}) {
   const detached = normaliseDetached(merged.detached);
   const tokens = normaliseTokens(merged.tokens);
   const device = normaliseDevice(merged.device);
+  const phFields = device ? normalisePhFields(merged.phFields) : [];
   return {
     storeCode: normaliseStoreCode(merged.storeCode),
     name: str(merged.name, "name"),
@@ -200,6 +264,8 @@ function normalisePharmacy(input, stored = {}) {
     ...(Object.keys(tokens).length ? { tokens } : {}),
     // Only when set: the screen device ID Download MP4 reads the store's data with.
     ...(device ? { device } : {}),
+    // Only with a device: the values Personalisation Hub supplies, kept read-only (lockPhFields).
+    ...(phFields.length ? { phFields } : {}),
   };
 }
 
@@ -370,6 +436,9 @@ module.exports = {
   normaliseDevice,
   normalisePromoId,
   normalisePharmacy,
+  normalisePhFields,
+  lockPhFields,
+  PH_FIELDS,
   normalisePromotion,
   normaliseTemplate,
   normaliseService,

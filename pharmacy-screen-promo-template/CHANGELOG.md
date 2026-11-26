@@ -36,6 +36,17 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Added
 
+- **Values from Personalisation Hub are not editable once the Screen device ID is verified.** Settings → Pharmacy
+  details: after a verified device ID, the pharmacy name and store code take Personalisation Hub's, and the inputs
+  for every value Personalisation Hub supplies leave Settings, the add-pharmacy flow and the Tokens editor: name,
+  store code, `${StoreCode}`, `${Suburb}`, `${State}`, `${Phone}` and the logo upload, each only when PH returns a
+  value (Beaumaris has no `logo_url`, so its logo stays editable). PH's values show as one read-only line under the
+  device ID ("Beaumaris Pharmacy · VIC-MP-001 · Beaumaris 3193") above the store details, each marked with the token
+  it fills. A value typed earlier for those tokens is dropped, so previews and screens show PH's. The pharmacy
+  record keeps `phFields` (the values PH supplies) with its device, and the config API keeps them: a save with
+  another name, store code or suburb keeps PH's, a logo upload is refused (409 `managed-in-personalisation-hub`)
+  when the logo is PH's. Clearing the device ID brings every input back. The **Use Personalisation Hub's** offers
+  and the "Filled in from Personalisation Hub" line are gone (PH's value is now simply taken).
 - **Screen device ID fills in the pharmacy and gives the preview live data.** Settings → Pharmacy details: the
   Screen device ID is now the first field, full width, with a help line. Pasting an ID (or Enter / leaving the
   field; **Check** reads it again) reads the device's store data through the PH API proxy and shows it under the

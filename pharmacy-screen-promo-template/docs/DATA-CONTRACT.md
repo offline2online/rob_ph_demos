@@ -246,6 +246,12 @@ record also has `version`, `createdAt`, `createdBy`, `updatedAt`, `updatedBy`. F
 {
   "storeCode": "VIC-MP-001",              // 2-32 letters, digits, hyphens; stored upper-case; unique; must equal PH's store_code
   "name": "Beaumaris Pharmacy",           // admin label; ${StoreName} only when the Location API has no store_name
+  "device": "6890ee61…",                  // optional: the verified Screen device ID (never published)
+  "phFields": ["name", "storeCode", "Suburb", "State", "Phone", "StoreCode"],
+                                          // only with a device: the values Personalisation Hub supplies for it
+                                          // (any of name, storeCode, Suburb, State, Phone, StoreCode, logo). They are
+                                          // managed in PH: the config API keeps the stored name and store code, drops a
+                                          // hand-set token of these names and refuses a logo upload; see below
   "colours": { "primary": "#0f1050", "accent": "#5ee6b0" },
   "logo": { "path": "…", "url": "https://…", "contentType": "image/webp" },   // or null; set by the upload endpoint
   "content": {                            // keyed by promotion record id
@@ -329,6 +335,27 @@ Promotion: `{ "name", "promoId", "templateId", "schedule"?, "master"? }`, where 
 "backgrounds": { "portrait", "landscape" } }`. Service (library slot): `{ "label", "icon", "category",
 "headline", "accent", "line1", "line2", "offeredBy": [store codes] }`.
 
+### Values managed in Personalisation Hub (`phFields`)
+
+Once a pharmacy's Screen device ID is verified, each value the Location API returns for the device is managed in
+Personalisation Hub and not editable in the admin (`REQUIREMENTS.md` item 31). The mapping, and what stays editable:
+
+| Location API field | Admin value | With a value from PH | With none (e.g. `logo_url: null`) |
+|---|---|---|---|
+| `store_location.store_name` | Pharmacy name (`name`) | read-only, PH's name | editable |
+| `store_location.store_code` | Store code (`storeCode`) and `${StoreCode}` | read-only, PH's code | editable |
+| `store_info.address_info.suburb` | `${Suburb}` | no hand-set value, PH's suburb | editable |
+| `store_info.address_info.state` | `${State}` | no hand-set value, PH's state | editable |
+| `store_info.address_info.phone_number` | `${Phone}` | no hand-set value, PH's phone | editable |
+| `store_info.logo_url` | Logo upload | no upload, PH's logo | editable |
+| `store_timezone`, `opening_hours`, `special_hours`, `address`, `postcode` | none (always read live) | shown read-only | – |
+
+Colours, every other token and all promotion copy have no API source and stay editable. The editor sends
+`phFields` with the verified `device` (`admin/js/model.js` `phFieldsOf` / `applyPh`); the config API
+(`config-api/src/validate.js` `lockPhFields`) takes a new list only when the device is set or changed (or, once, for
+a pharmacy verified before the list existed), drops it when the device is cleared, and otherwise keeps the stored
+name, store code and list whatever a save sends. `phFields` is never published.
+
 ### Published screen config (what a screen reads)
 
 `GET /api/screens/{storeCode}`: public, no sign-in, no secrets, cached 5 s. Rebuilt in the same transaction
@@ -407,5 +434,6 @@ as every write that affects it, copied field by field (`config-api/src/publish.j
 
 400 `invalid-request`, 401 `unauthenticated`, 403 `forbidden` / `read-only` (built-in templates), 404
 `not-found` / `unknown-promo`, 405, 409 `duplicate-store-code` / `duplicate-promo-id` / `version-conflict`,
-413 `too-large`, 415 `unsupported-media-type`. On AWS, a promotion or template edit that would republish more
+413 `too-large`, 415 `unsupported-media-type`; 409 `managed-in-personalisation-hub` for a logo upload on a
+pharmacy whose logo comes from Personalisation Hub (`phFields` includes `logo`). On AWS, a promotion or template edit that would republish more
 than about 90 pharmacies in one transaction is refused with `too-many-writes` before anything is written.

@@ -45,6 +45,13 @@ Personalisation Hub API. **Back to promotions** returns.
    must be exactly the store's `store_code` in Personalisation Hub (e.g. `VIC-MP-006`): that is how a screen
    finds its pharmacy. It is checked as you type and must be unique.
 3. The pharmacy is created as soon as both are valid. Carry on editing; nothing is lost.
+
+Or start from the **Screen device ID** (the first field): paste it and the pharmacy is set up from Personalisation
+Hub. Once the ID is verified, everything Personalisation Hub supplies for that store (the pharmacy name, store code,
+suburb, state, phone number and, when it has one, the logo) is managed there: those fields and tokens disappear from
+Settings, and their values show as read-only text under the device ID, e.g. "Beaumaris Pharmacy · VIC-MP-001 ·
+Beaumaris 3193". A value Personalisation Hub has none for stays editable here. To edit them here again, clear the
+device ID.
 4. In Personalisation Hub, register the pharmacy's screens to that store and add them to the campaign
    ([DEPLOYMENT.md](DEPLOYMENT.md) → "Register screens in PH"). Nothing else is needed: the campaign URL is the
    same for every pharmacy.

@@ -53,6 +53,7 @@ async function open(token = 'dev-admin', { viewport = { width: 1400, height: 100
 }
 // Beaumaris's special hours (the mock data) start on 24 Dec 2026: none within 90 days of 1 Jun 2026.
 const NO_SPECIAL_DATE = '2026-06-01T02:00:00Z';
+async function deviceOf(id) { return (await api('GET', `/api/admin/pharmacies/${id}`)).body.device; }
 const settle = (page) => page.evaluate(async () => { await window.pharmacyAdmin.flush(); for (let i = 0; i < 100 && window.pharmacyAdmin.pending(); i++) await new Promise((r) => setTimeout(r, 50)); });
 const api = async (method, path, { token = 'dev-admin', body } = {}) => {
   const r = await fetch(dev.base + path, { method, headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
@@ -228,7 +229,11 @@ test('Settings holds the pharmacies, their details and branding, and the API; pr
   await page.evaluate(() => document.activeElement.blur());
   // Settings: pharmacies, details, branding and the PH API; the store record section is gone
   await page.click('#setBtn');
-  for (const id of ['#pharmaciesCard', '#addBtn', '#detailsCard', '#sName', '#sCode', '#brandingCard', '#cP', '#cA', '#logoBtn', '#apiBase']) assert.equal(await page.isVisible(id), true, id);
+  for (const id of ['#pharmaciesCard', '#addBtn', '#detailsCard', '#sDev', '#brandingCard', '#cP', '#cA', '#logoBtn', '#apiBase']) assert.equal(await page.isVisible(id), true, id);
+  // Its Screen device ID is verified: the name and store code come from Personalisation Hub, read-only, no inputs.
+  await page.waitForSelector('#sDevSum');
+  assert.equal(await page.textContent('#sDevSum'), 'Ocean Grove Terrace Pharmacy · VIC-MP-003 · Ocean Grove');
+  for (const id of ['#sName', '#sCode']) assert.equal(await page.isVisible(id), false, id);
   assert.equal(await page.inputValue('#sCode'), 'VIC-MP-003');
   assert.equal((await page.$$('#devId, #devGo, #recBody')).length, 0);
   assert.doesNotMatch(await page.textContent('#settingsView'), /Store record/);
@@ -243,6 +248,10 @@ test('Settings holds the pharmacies, their details and branding, and the API; pr
 });
 
 test('Settings → Tokens: lists the tokens the pharmacy uses (master included); a value set by hand shows and is published', async () => {
+  // Tokens set by hand are for a pharmacy without a verified Screen device ID (with one, PH's values are not
+  // editable: see the Screen device ID tests). Its device is put back at the end.
+  const device = await deviceOf('seed-pharmacy-vic-mp-001');
+  assert.equal((await api('PATCH', '/api/admin/pharmacies/seed-pharmacy-vic-mp-001', { body: { device: '' } })).status, 200);
   const { ctx, page, errors } = await open();
   await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-001');
   await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-001');
@@ -292,6 +301,7 @@ test('Settings → Tokens: lists the tokens the pharmacy uses (master included);
   assert.match(html, /Visit mi\.example/);
   assert.deepEqual(errors, []);
   await ctx.close();
+  assert.equal((await api('PATCH', '/api/admin/pharmacies/seed-pharmacy-vic-mp-001', { body: { device } })).status, 200);
 });
 
 test('promotions: create, unique promo ID, rename, delete with confirm', async () => {
@@ -1625,7 +1635,8 @@ const paste = (page, sel, text) => page.evaluate(([s, t]) => {
 }, [sel, text]);
 const enter = async (page, sel, text) => { await page.fill(sel, text); await page.press(sel, 'Enter'); };
 const devInfo = (page) => page.textContent('#sDevInfo');
-const deviceOf = async (id) => (await api('GET', `/api/admin/pharmacies/${id}`)).body.device;
+// Shown and usable: an input that can be typed in, or a button that can be clicked.
+const canEdit = async (page, sel) => (await page.isVisible(sel)) && (await page.$eval(sel, (e) => (e.matches('input') ? !e.readOnly && !e.disabled : !e.disabled)));
 
 test('Screen device ID: the first field of Settings; fits at 1024, 1180 and 390px with the live pill on the Pause row', async () => {
   assert.equal((await api('PUT', '/api/settings/ph-api', { body: { token: 'device-id-token-1234' } })).status, 200);
@@ -1645,9 +1656,10 @@ test('Screen device ID: the first field of Settings; fits at 1024, 1180 and 390p
     await page.waitForSelector('#sDevInfo [data-dev="live"]');
     const m = await page.evaluate(() => {
       const box = (id) => document.getElementById(id).getBoundingClientRect();
-      const card = box('detailsCard'), dev = box('sDev'), name = box('sName'), info = box('sDevInfo'), check = box('sDevCheck');
+      // Its device ID is verified, so the name and store code have no inputs: PH's values show under the field.
+      const card = box('detailsCard'), dev = box('sDev'), info = box('sDevInfo'), check = box('sDevCheck');
       const first = document.querySelector('#detailsCard .sect').nextElementSibling;
-      return { first: first && first.id, above: dev.bottom <= name.top, wide: dev.right - card.left > (card.right - card.left) * 0.75 && name.right - name.left < (card.right - card.left) * 0.75 + 1,
+      return { first: first && first.id, above: dev.bottom <= info.top && document.getElementById('sName').offsetParent === null, wide: dev.right - card.left > (card.right - card.left) * 0.75,
         inside: [dev, info, check, box('delBtn'), box('addBtn')].every((x) => x.left >= card.left - 0.5 && x.right <= card.right + 0.5),
         overflow: document.documentElement.scrollWidth - innerWidth, help: document.getElementById('sDevHelp').textContent };
     });
@@ -1663,7 +1675,7 @@ test('Screen device ID: the first field of Settings; fits at 1024, 1180 and 390p
   }
 });
 
-test('Screen device ID: a pasted ID is read from Personalisation Hub, shown under the field and fills in; a different name or suburb is offered, not overwritten; every preview uses the live data', async () => {
+test('Screen device ID: a pasted ID is read from Personalisation Hub and shown under the field; once verified, every value PH supplies is read-only and kept by the config API; every preview uses the live data', async () => {
   const { ctx, page, errors } = await open();
   await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-001');
   await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-001');
@@ -1676,11 +1688,14 @@ test('Screen device ID: a pasted ID is read from Personalisation Hub, shown unde
   assert.match(await page.$eval('#storeSel option:checked', (o) => o.textContent), /Beaumaris Pharmacy.* · VIC-MP-001 · no screen device ID$/);
   assert.equal(await page.textContent('#pvData'), 'Sample opening hours');
   assert.match(await page.textContent('#pvTip'), /add its Screen device ID in Settings\./);
+  // Test step 1: with no device ID, name, store code, the tokens and the logo upload are all shown and editable.
+  for (const id of ['#sName', '#sCode', '#tokList input[data-token="Suburb"]', '#logoBtn']) assert.equal(await canEdit(page, id), true, id);
+  assert.equal(await page.isVisible('#sDevSum'), false);
   // A name typed by hand and a suburb set by hand, both different from Personalisation Hub's.
   await page.fill('#sName', 'Beaumaris Pharmacy Plus');
   await page.fill('#tokList input[data-token="Suburb"]', 'Sandringham');
   await settle(page);
-  // Paste the test site's example ID: the store's details appear under the field, marked live.
+  // Test step 2: paste the test site's example ID: the store's details appear under the field, marked live.
   await paste(page, '#sDev', EXAMPLE_DEVICE);
   await page.waitForFunction((d) => window.pharmacyAdmin.state.cur.device === d, EXAMPLE_DEVICE);
   const info = await devInfo(page);
@@ -1689,19 +1704,51 @@ test('Screen device ID: a pasted ID is read from Personalisation Hub, shown unde
   await settle(page);
   assert.equal(await deviceOf('seed-pharmacy-vic-mp-001'), EXAMPLE_DEVICE, 'saved: the store is this pharmacy\'s');
   assert.doesNotMatch(await page.$eval('#storeSel option:checked', (o) => o.textContent), /no screen device ID/);
-  // Not overwritten: PH's value is offered beside each.
-  assert.equal(await page.inputValue('#sName'), 'Beaumaris Pharmacy Plus');
-  assert.match(await page.textContent('#sDevInfo dd[data-f="Store name"]'), /This pharmacy: Beaumaris Pharmacy Plus\s*Use Personalisation Hub's/);
-  assert.match(await page.textContent('#sDevInfo dd[data-f="Suburb"]'), /This pharmacy: Sandringham\s*Use Personalisation Hub's/);
-  await page.click('#sDevInfo [data-use="name"]');
-  assert.equal(await page.inputValue('#sName'), 'Beaumaris Pharmacy');
-  await page.click('#sDevInfo [data-use="suburb"]');
-  await settle(page);
+  // PH's values replace the typed ones and show as read-only text next to the ID; their inputs are gone.
+  const readOnly = async () => {
+    await page.waitForSelector('#sDevSum');
+    assert.equal(await page.textContent('#sDevSum'), 'Beaumaris Pharmacy · VIC-MP-001 · Beaumaris');
+    for (const id of ['#sName', '#sCode']) assert.equal(await page.isVisible(id), false, `${id} has no input`);
+    const shown = await page.$$eval('#tokList input[data-token]', (l) => l.filter((e) => e.offsetParent).map((e) => e.dataset.token));
+    for (const t of ['Suburb', 'State', 'Phone', 'StoreCode']) assert.ok(!shown.includes(t), `no input for \${${t}}: ${shown}`);
+    // Test step 3: Personalisation Hub has no logo for Beaumaris, so the logo upload stays.
+    assert.equal(await page.isVisible('#logoBtn'), true);
+    assert.equal(await page.isVisible('#logoPh'), false);
+    assert.match(await page.textContent('#sDevInfo dd[data-f="Suburb"]'), /Beaumaris\s*\$\{Suburb\}/);
+    assert.match(await page.textContent('#sDevInfo dd[data-f="Store name"]'), /Beaumaris Pharmacy\s*\$\{StoreName\}/);
+  };
+  await readOnly();
   const rec = (await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-001')).body;
   assert.equal(rec.name, 'Beaumaris Pharmacy');
-  assert.equal((rec.tokens || {}).Suburb, undefined, 'the hand-set suburb is cleared, so screens show PH\'s');
-  assert.match(await page.textContent('#sDevInfo dd[data-f="Suburb"]'), /Beaumaris\s*used for \$\{Suburb\}/);
-  assert.equal(await page.getAttribute('#tokList input[data-token="Suburb"]', 'placeholder'), 'Beaumaris (from Personalisation Hub)');
+  assert.equal((rec.tokens || {}).Suburb, undefined, 'the hand-set suburb is dropped, so screens show PH\'s');
+  assert.deepEqual(rec.phFields, ['name', 'storeCode', 'Suburb', 'State', 'Phone', 'StoreCode']);
+  assert.equal(((await api('GET', '/api/screens/VIC-MP-001', { token: null })).body.tokens || {}).Suburb, undefined, 'screens get PH\'s suburb');
+  // Test step 5: the config API keeps PH's values whatever a save sends.
+  const kept = await api('PATCH', '/api/admin/pharmacies/seed-pharmacy-vic-mp-001', { body: { name: 'Somewhere Else', storeCode: 'VIC-MP-099', tokens: { Suburb: 'Testville' } } });
+  assert.equal(kept.status, 200);
+  assert.deepEqual([kept.body.name, kept.body.storeCode, (kept.body.tokens || {}).Suburb], ['Beaumaris Pharmacy', 'VIC-MP-001', undefined]);
+  // Test step 4: still read-only after a reload.
+  await page.reload();
+  await page.waitForFunction(() => window.pharmacyAdmin && window.pharmacyAdmin.ready, null, { timeout: 20000 });
+  await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-001');
+  await page.click('#setBtn');
+  await page.waitForSelector('#sDevInfo [data-dev="live"]');
+  await readOnly();
+  // Test step 7: clearing the device ID brings every input back; then it is entered again.
+  await enter(page, '#sDev', '');
+  await page.waitForFunction(() => !window.pharmacyAdmin.state.cur.device);
+  for (const id of ['#sName', '#sCode', '#tokList input[data-token="Suburb"]', '#logoBtn']) assert.equal(await canEdit(page, id), true, `${id} back`);
+  assert.equal(await page.isVisible('#sDevSum'), false);
+  await settle(page);
+  assert.equal((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-001')).body.phFields, undefined);
+  // Test step 6: an ID that does not resolve says so, and the inputs stay editable.
+  await enter(page, '#sDev', 'NO-SUCH-DEVICE-123');
+  await page.waitForFunction(() => /Personalisation Hub does not know this device/.test(document.getElementById('sDevInfo').textContent));
+  for (const id of ['#sName', '#sCode', '#tokList input[data-token="Suburb"]']) assert.equal(await canEdit(page, id), true, `${id} after an unknown ID`);
+  await paste(page, '#sDev', EXAMPLE_DEVICE);
+  await page.waitForFunction((d) => window.pharmacyAdmin.state.cur.device === d, EXAMPLE_DEVICE);
+  await readOnly();
+  await settle(page);
   // Every promotion, both orientations: the live store data, and the pill says so.
   await page.click('#setBtn');
   await page.click('#playBtn'); // pause
@@ -1776,21 +1823,25 @@ test('Screen device ID: another store\'s device, a malformed ID, an unknown ID a
   await page.click('#addBtn');
   assert.equal(await page.evaluate(() => document.activeElement.id), 'sDev');
   await paste(page, '#sDev', DEV_DEVICES.newStore);
-  await page.waitForSelector('#sDevInfo [data-dev="filled"]');
+  await page.waitForSelector('#sDevSum');
   assert.equal(await page.inputValue('#sName'), 'Brighton Pharmacy');
   assert.equal(await page.inputValue('#sCode'), 'VIC-MP-006');
-  assert.equal(await page.textContent('#sDevInfo [data-dev="filled"]'), 'Filled in from Personalisation Hub: Pharmacy name, Store code.');
+  assert.equal(await page.textContent('#sDevSum'), 'Brighton Pharmacy · VIC-MP-006 · Brighton 3186');
+  for (const id of ['#sName', '#sCode']) assert.equal(await page.isVisible(id), false, `${id}: from Personalisation Hub, no input`);
   await page.waitForFunction(() => !!window.pharmacyAdmin.state.cur.id);
   await settle(page);
   const made = (await api('GET', '/api/admin/pharmacies')).body.find((p) => p.storeCode === 'VIC-MP-006');
   assert.ok(made, 'created');
   assert.equal(made.name, 'Brighton Pharmacy');
   assert.equal(made.device, DEV_DEVICES.newStore);
+  assert.deepEqual(made.phFields, ['name', 'storeCode', 'Suburb', 'State', 'Phone', 'StoreCode']);
   // A new pharmacy from a device whose store is already set up is refused, naming it.
   await page.click('#addBtn');
+  for (const id of ['#sName', '#sCode']) assert.equal(await canEdit(page, id), true, `${id}: a new pharmacy has its inputs`);
   await paste(page, '#sDev', 'DEVICE-VIC-MP-002');
   await page.waitForFunction(() => /already set up here as North Ringwood Family Pharmacy/.test(document.getElementById('sDevInfo').textContent));
   assert.equal(await page.inputValue('#sCode'), '');
+  assert.equal(await canEdit(page, '#sCode'), true, 'not verified: still editable');
   assert.equal((await api('DELETE', `/api/admin/pharmacies/${made.id}`)).status < 300, true);
   assert.deepEqual(errors, []);
   await ctx.close();
