@@ -304,3 +304,37 @@ div.f{display:grid;gap:4px;font-size:12px;color:var(--muted);min-width:0}
 .slpct{display:flex;align-items:center;gap:6px;color:var(--text,#333)}
 .slpct input{flex:1;min-width:0}
 .slot input[readonly]{background:var(--panel);color:var(--muted)}
+/* Settings → Pharmacy details → Screen device ID: the first field, full width, with its help line and, under it, the
+   store details read live from Personalisation Hub (editor.js renderDevInfo). */
+.devrow{display:grid;gap:4px;min-width:0}
+.devpick{display:flex;gap:6px;min-width:0}
+.devpick input{flex:1;min-width:0;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px}
+.devpick button{flex:none;white-space:nowrap}
+.devpick input[aria-invalid=true]{border-color:var(--err)}
+@container edcol (max-width:520px){#sDevCheck .tlb{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}#sDevCheck{padding:4px 8px}}
+.devinfo{display:grid;gap:8px;min-width:0}
+.devinfo:empty{display:none}
+.devinfo .inh-alert.err{background:rgba(255,77,79,.08);border-color:var(--err)}
+.devinfo .inh-alert.err>.ms{color:var(--err)}
+.devinfo .inh-alert button{min-height:28px;padding:0 8px;white-space:nowrap}
+.devcard{border:1px solid var(--divider);border-radius:8px;background:var(--panel);padding:10px 12px;display:grid;gap:8px;min-width:0}
+.devcard-h{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);min-width:0;flex-wrap:wrap}
+.devcard-h .dot{flex:none}
+.devcard-h b{color:var(--text);font-weight:500}
+.devcard dl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:4px 12px;margin:0;font-size:13px}
+.devcard dt{color:var(--muted)}
+.devcard dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.devcard dd .devfill{margin-left:6px;font-size:12px;color:var(--muted)}
+.devcard dd .devfill.ok{color:#389e0d}
+.devcard dd .devdiff{display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.devcard dd button.text{min-height:24px;padding:0 6px;font-size:12px}
+.devcard .devlogo{height:28px;max-width:120px;object-fit:contain;vertical-align:middle;background:#262626;border-radius:4px;padding:2px 4px}
+/* A phone-width editor column: the Pharmacies picker takes its own line and Add pharmacy / Reset / Delete go under it,
+   so the bar never runs past its card (it did at 390px). */
+@container edcol (max-width:520px){.toolbar.phbar{flex-wrap:wrap}.toolbar.phbar .pick{flex:1 1 100%}}
+/* Settings → Screen device ID, verified: the values Personalisation Hub supplies, as one read-only line (editor.js
+   renderDevInfo), e.g. "Beaumaris Pharmacy · VIC-MP-001 · Beaumaris 3193". No input, no edit control. */
+.devsum{display:flex;align-items:center;gap:6px;margin:0;font-size:14px;color:var(--text,#333);min-width:0;flex-wrap:wrap}
+.devsum>.ms:first-child{font-size:16px;color:#389e0d}
+.devsum #sDevSum{font-weight:500;overflow-wrap:anywhere;min-width:0}
+.devsum .help{font-size:14px;color:var(--muted);cursor:help}

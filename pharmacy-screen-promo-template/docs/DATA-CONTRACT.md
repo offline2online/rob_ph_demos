@@ -36,11 +36,16 @@ Only these are kept; the proxy drops everything else before answering the screen
 |---|---|---|
 | `store_location.store_code` | string | Which pharmacy's config to load (`/api/screens/{store_code}`) |
 | `store_location.store_name` | string | The store name, `${StoreName}`: the Location API's value for this device wins; the config's pharmacy name is used only when it is blank |
-| `store_location.store_timezone` | IANA zone, e.g. `Australia/Melbourne` | Store time for the "Open today" bar and today's hours (default `Australia/Melbourne` if empty) |
+| `store_location.store_timezone` | IANA zone, e.g. `Australia/Melbourne` | Store time for the "Open today" bar, the opening hours card's OPEN NOW / CLOSING SOON / CLOSED NOW badge and today's hours (default `Australia/Melbourne` if empty; a non-IANA value such as `AEST`, `AUS Eastern Standard Time`, `(UTC+10:00) Canberra, Melbourne, Sydney` or `+10:00` is read as the Australian zone it names, and an unrecognisable one as `Australia/Melbourne`, never the player's own clock: `js/hours.js` `tzOf`) |
 | `store_info.opening_hours[]` | array | Weekly hours and the bar state |
 | `…opening_hours[].open_day` / `close_day` | `MONDAY` … `SUNDAY` | A session may close the next day (crossing midnight) |
 | `…opening_hours[].open_time` / `close_time` | `HH:MM:SS`, store local time | |
 | `…opening_hours[].is_active` | boolean | `false` sessions are ignored |
+| special hours (PH's `specialHours[]`) | array | Dated exceptions to the weekly hours (Christmas Day closed, Christmas Eve 08:30-19:00), set in Personalisation Hub. Returned as `store_info.special_hours[]` (always present; `[]` when PH sends none): the first list found at `store_info.specialHours`, `store_info.special_hours`, `data.specialHours`, `data.special_hours`, `store_location.specialHours` (a list, or an object holding one as `specialHours`) |
+| `…special_hours[].date` | `YYYY-MM-DD`, the store's own date | Must be a real date, or the entry is dropped |
+| `…special_hours[].name` | string or `""` | PH's name for the day ("Christmas Eve", "Boxing Day"), shown beside the date; `""` shows the date alone (40 characters at most) |
+| `…special_hours[].open` | boolean | `false`: closed all that date, whatever the weekly hours say. `true`: the times below replace that weekday's weekly hours for that date, even when they are the same. Anything but a boolean drops the entry |
+| `…special_hours[].open_time` / `close_time` | `HH:MM` (PH's `openTime` / `closeTime`; `open_time` / `close_time` and `HH:MM:SS` accepted), or `null` when closed | An open entry without both drops. A close not after the open runs past midnight, as a weekly session does; two entries on one date are two sessions. PH's `appointmentSlots`, `storeId` and `schoolHolidays` are not kept |
 | `store_info.address_info.suburb` | string | `${Suburb}`; blank removes the token with its leading comma or line break |
 | `store_info.address_info.address` | string | Opening hours template ("show address") |
 | `store_info.address_info.postcode`, `state` | string | Passed through; not drawn today |
@@ -69,6 +74,11 @@ PH may send more fields, which are ignored):
         { "open_day": "FRIDAY",    "open_time": "08:30:00", "close_day": "FRIDAY",    "close_time": "19:00:00", "is_active": true },
         { "open_day": "SATURDAY",  "open_time": "09:00:00", "close_day": "SATURDAY",  "close_time": "13:30:00", "is_active": true }
       ],
+      "specialHours": [
+        { "name": "Christmas Eve",  "date": "2026-12-24", "open": true, "openTime": "08:30", "closeTime": "19:00", "appointmentSlots": 0 },
+        { "name": "Christmas Day",  "date": "2026-12-25", "open": false },
+        { "name": "Boxing Day",     "date": "2026-12-26", "open": false }
+      ],
       "address_info": {
         "address": "1A East Concourse, Beaumaris",
         "suburb": "Beaumaris",
@@ -90,6 +100,10 @@ What the proxy returns to the screen (`GET /api/device/DEVICE-VIC-MP-001/campaig
     "store_location": { "store_code": "VIC-MP-001", "store_name": "Beaumaris Pharmacy", "store_timezone": "Australia/Melbourne" },
     "store_info": {
       "opening_hours": [ { "open_day": "MONDAY", "open_time": "08:30:00", "close_day": "MONDAY", "close_time": "19:00:00", "is_active": true } ],
+      "special_hours": [
+        { "name": "Christmas Eve", "date": "2026-12-24", "open": true, "open_time": "08:30", "close_time": "19:00" },
+        { "name": "Christmas Day", "date": "2026-12-25", "open": false, "open_time": null, "close_time": null }
+      ],
       "address_info": { "suburb": "Beaumaris", "address": "1A East Concourse, Beaumaris", "postcode": "", "state": "Victoria", "phone_number": "03 9589 2676" },
       "logo_url": null
     }
@@ -98,12 +112,23 @@ What the proxy returns to the screen (`GET /api/device/DEVICE-VIC-MP-001/campaig
 }
 ```
 
-(`opening_hours` shortened here; every active session is returned.) A session crossing midnight looks like
+(`opening_hours` and `special_hours` shortened here; every active session and every valid special entry is
+returned. `specialHours` is where the mock data carries them, in the shape the account owner pasted for Beaumaris on
+26 Nov 2026; where PH's real campaign_data carries them is not yet confirmed, hence the list of places above. If
+`special_hours` is `[]` for a store that has special hours set in PH, PH's campaign_data does not include them yet.) The admin editor reads the same route for a
+pharmacy's **Screen device ID** (Settings → Pharmacy details) and previews with this exact shape through the
+screen's own `storeModel()`; it compares `store_location.store_code` with the pharmacy's store code before saving
+the ID, and treats `DEVICE_NOT_FOUND` (404), `INVALID_DEVICE_ID` (400), `NOT_CONFIGURED` (503) /
+`UPSTREAM_AUTH_FAILED` (502) and any other failure ("could not be reached") as its four messages
+(`admin/js/model.js` → `lookupError`). `meta.fetchedAt` is shown as when the details were read. A session crossing midnight looks like
 `{"open_day": "FRIDAY", "open_time": "18:00:00", "close_day": "SATURDAY", "close_time": "02:00:00"}`; fixture
 device `TEST-LATE-NIGHT` has one, and `TEST-NO-SUBURB` has no suburb.
 
 Mock devices in `fixtures/campaign-data.json` (used with `mockapi=1`, by the local dev server and by the
-tests): `TEST`, `DEVICE-VIC-MP-001` … `DEVICE-VIC-MP-005`, `TEST-NO-SUBURB`, `TEST-LATE-NIGHT`.
+tests): `TEST`, `DEVICE-VIC-MP-001` … `DEVICE-VIC-MP-005`, `TEST-NO-SUBURB`, `TEST-LATE-NIGHT`. The local dev server
+(`admin/tools/dev-server.mjs`) also knows `DEVICE-VIC-MP-006` (Brighton Pharmacy, a store no seeded pharmacy has,
+for adding a pharmacy from its device ID) and the test site's Beaumaris device
+`6890ee6121f42e90ded7baa4d80cc63b2a2b4eb4bfad71c88601712b5397aece`.
 
 ## 2. Promo IDs
 
@@ -115,7 +140,7 @@ are 1–40 lower-case letters, digits and hyphens, unique across promotions.
 | `sale` | Sales Promos (the first tab; a built-in: it can't be deleted and its promo ID and template are fixed) | Sales promo (`builtin-sale`, kind `sale`, reserved for this promotion) | Two scenes on the brand shell in the pharmacy's own colours and logo, a 10 s loop at the defaults (playback duration 11 s): **the brands** (headline in the wedge, 1–6 brand cards popping in, a caption; 3.5 s) and, after a 0.65 s transition in which the brand colour fills the screen above the footer band, **the offer** (rays, "UP TO", the value counting up from 0, "OFF", the pulsing end-date panel, the brand list; 5.85 s). The footer band shows the sale. Copy in `content[<promotion id>].sale` (below). It plays whatever its `endDate`: Personalisation Hub schedules it, and the end date is wording only |
 | `morning` | Morning | Promotion scenes (`builtin-promotion-scenes`) | Greeting, service chips, one scene per service, "Walk in today" close; "Open today" bar |
 | `afternoon` | Afternoon | Promotion scenes | The same, with afternoon copy |
-| `closed` | Closed | Opening hours (`builtin-opening-hours`) | Rotating headlines, the full week's hours, "Public Holidays: Please call to confirm", phone |
+| `closed` | Closed | Opening hours (`builtin-opening-hours`) | Rotating headlines, the full week's hours and, when the store has special hours in the next 90 days, its "Special hours" list (the nearest 6), "Public Holidays: Please call to confirm" (left out while that list is shown), phone |
 | `occasions` | Seasonal | The Fallback and the six seasonal templates (published as the Fallback, or as the activated season while an activation runs) | A running "Activate on display" (`content[<promotion id>].activation`), else the season whose dates hold the store's date, else the Fallback (the pharmacy's brand colours, logo and name, "Thank you, ${Suburb}, for supporting your local pharmacy", exactly 7 s). For a season: its standalone animation, its copy as beats, each for its own seconds (seeded: 7 s of beats, playback duration 8 s; with no seconds set, 12 s and 13 s), played once with the last beat held; no "Open today" bar |
 
 **Sales Promos copy** (`content[<promotion id>].sale`, every field optional; the screen fills a missing one from
@@ -183,8 +208,8 @@ is set).
 | `${Decor}` | occasion | Reserved: the occasion templates are drawn whole (`js/occasions.js`), so it renders as nothing |
 | `${Footer}` | scenes | The "Open today" bar, or nothing when it is hidden |
 | `${OpenToday}` | scenes | The bar's message text only |
-| `${HoursCard}` | hours | The weekly opening hours card |
-| `${HolidayNote}` | hours | "Public Holidays: Please call to confirm" |
+| `${HoursCard}` | hours | The weekly opening hours card, plus its "Special hours" list (the nearest 6) when the store has special hours in the next 90 days |
+| `${HolidayNote}` | hours | "Public Holidays: Please call to confirm", or empty while `${HoursCard}` shows the "Special hours" list |
 | `${ContactLine}` | hours | Phone (and address when "show address" is on) |
 | `${Chevron}` | all | The brand chevron graphic |
 | `${ViewBox}` | all | SVG view box of the screen (`0 0 1080 1920` or `0 0 1920 1080`) |
@@ -221,6 +246,12 @@ record also has `version`, `createdAt`, `createdBy`, `updatedAt`, `updatedBy`. F
 {
   "storeCode": "VIC-MP-001",              // 2-32 letters, digits, hyphens; stored upper-case; unique; must equal PH's store_code
   "name": "Beaumaris Pharmacy",           // admin label; ${StoreName} only when the Location API has no store_name
+  "device": "6890ee61…",                  // optional: the verified Screen device ID (never published)
+  "phFields": ["name", "storeCode", "Suburb", "State", "Phone", "StoreCode"],
+                                          // only with a device: the values Personalisation Hub supplies for it
+                                          // (any of name, storeCode, Suburb, State, Phone, StoreCode, logo). They are
+                                          // managed in PH: the config API keeps the stored name and store code, drops a
+                                          // hand-set token of these names and refuses a logo upload; see below
   "colours": { "primary": "#0f1050", "accent": "#5ee6b0" },
   "logo": { "path": "…", "url": "https://…", "contentType": "image/webp" },   // or null; set by the upload endpoint
   "content": {                            // keyed by promotion record id
@@ -304,6 +335,27 @@ Promotion: `{ "name", "promoId", "templateId", "schedule"?, "master"? }`, where 
 "backgrounds": { "portrait", "landscape" } }`. Service (library slot): `{ "label", "icon", "category",
 "headline", "accent", "line1", "line2", "offeredBy": [store codes] }`.
 
+### Values managed in Personalisation Hub (`phFields`)
+
+Once a pharmacy's Screen device ID is verified, each value the Location API returns for the device is managed in
+Personalisation Hub and not editable in the admin (`REQUIREMENTS.md` item 31). The mapping, and what stays editable:
+
+| Location API field | Admin value | With a value from PH | With none (e.g. `logo_url: null`) |
+|---|---|---|---|
+| `store_location.store_name` | Pharmacy name (`name`) | read-only, PH's name | editable |
+| `store_location.store_code` | Store code (`storeCode`) and `${StoreCode}` | read-only, PH's code | editable |
+| `store_info.address_info.suburb` | `${Suburb}` | no hand-set value, PH's suburb | editable |
+| `store_info.address_info.state` | `${State}` | no hand-set value, PH's state | editable |
+| `store_info.address_info.phone_number` | `${Phone}` | no hand-set value, PH's phone | editable |
+| `store_info.logo_url` | Logo upload | no upload, PH's logo | editable |
+| `store_timezone`, `opening_hours`, `special_hours`, `address`, `postcode` | none (always read live) | shown read-only | – |
+
+Colours, every other token and all promotion copy have no API source and stay editable. The editor sends
+`phFields` with the verified `device` (`admin/js/model.js` `phFieldsOf` / `applyPh`); the config API
+(`config-api/src/validate.js` `lockPhFields`) takes a new list only when the device is set or changed (or, once, for
+a pharmacy verified before the list existed), drops it when the device is cleared, and otherwise keeps the stored
+name, store code and list whatever a save sends. `phFields` is never published.
+
 ### Published screen config (what a screen reads)
 
 `GET /api/screens/{storeCode}`: public, no sign-in, no secrets, cached 5 s. Rebuilt in the same transaction
@@ -382,5 +434,6 @@ as every write that affects it, copied field by field (`config-api/src/publish.j
 
 400 `invalid-request`, 401 `unauthenticated`, 403 `forbidden` / `read-only` (built-in templates), 404
 `not-found` / `unknown-promo`, 405, 409 `duplicate-store-code` / `duplicate-promo-id` / `version-conflict`,
-413 `too-large`, 415 `unsupported-media-type`. On AWS, a promotion or template edit that would republish more
+413 `too-large`, 415 `unsupported-media-type`; 409 `managed-in-personalisation-hub` for a logo upload on a
+pharmacy whose logo comes from Personalisation Hub (`phFields` includes `logo`). On AWS, a promotion or template edit that would republish more
 than about 90 pharmacies in one transaction is refused with `too-many-writes` before anything is written.

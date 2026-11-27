@@ -25,14 +25,15 @@
 //   occasion=<id>      a Seasonal promotion plays this season (christmas, fallback, …) whatever the date: the season the
 //                      editor's preview shows, for Download MP4
 //   date=<YYYY-MM-DD>  pretend the store's date is this, e.g. date=2026-12-20 (which season the Seasonal promotion
-//                      plays; MM-DD for this year)
+//                      plays, and which special opening hours apply; MM-DD for this year). With now= too, the time
+//                      comes from now= and the weekday from the date.
 //
 // Scheduling: Personalisation Hub's campaign schedules decide when Morning, Afternoon, Sales Promos and Closed play.
 // Only the Seasonal promotion carries a schedule here (each season's dates). promo=sale always plays the Sales Promos
 // template: its end date is wording only ("Finishes Wednesday 2nd December"), never when it plays.
 
-import { storeModel, resolvePromotion, sequence, sceneName, renderScene, renderMessage, renderNotSetUp, ScreenError, OCCASION_IDS } from './render.js';
-import { parseTestTime, parseTestDate, storeNow, storeDate, storeState } from './hours.js';
+import { storeModel, resolvePromotion, sequence, sceneName, renderScene, renderMessage, renderNotSetUp, ScreenError, OCCASION_IDS, storeStateFor } from './render.js';
+import { parseTestTime, parseTestDate, storeNow, storeDate, weekdayOf, ymdOf } from './hours.js';
 import { auditScene } from './fit-text.js';
 import { parseServers, createLiveClient, createMockClient, createScreenData, screenView } from './live-data.js';
 
@@ -117,18 +118,36 @@ function fit() {
 addEventListener('resize', fit);
 
 const tzOf = () => (store && store.tz) || 'Australia/Melbourne';
-function testNow() {
-  if (testTime) return testTime;
-  if (!params.now) return undefined;
-  return parseTestTime(params.now, storeNow(tzOf()).day) || undefined;
+/** The test date (date=), as {y, m, d}, or null. */
+const testDate = (at = new Date()) => (params.date ? parseTestDate(params.date, storeDate(tzOf(), at).y) : null);
+/**
+ * The test clock, or undefined for the real one. date= sets the date and so its weekday; now= (or the debug panel's
+ * test time) sets the time, and its weekday too when there is no date= (the next date with that weekday, today
+ * included: hours.js storeClock). date= alone: the real time on that date.
+ */
+function testNow(at = new Date()) {
+  const t = testTime || (params.now ? parseTestTime(params.now, storeNow(tzOf(), at).day) : null);
+  const d = testDate(at);
+  if (d) return { day: weekdayOf(ymdOf(d)), min: (t || storeNow(tzOf(), at)).min };
+  return t || undefined;
 }
-const nowForStore = () => testNow() || storeNow(tzOf());
-/** The store's date ({y, m, d}): which season the Seasonal promotion plays. */
-const todayForStore = () => { const real = storeDate(tzOf()); return (params.date && parseTestDate(params.date, real.y)) || real; };
+const nowForStore = (at = new Date()) => testNow(at) || storeNow(tzOf(), at);
+/** The store's date ({y, m, d}): which season the Seasonal promotion plays, and the special opening hours that apply. */
+const todayForStore = (at = new Date()) => testDate(at) || storeDate(tzOf(), at);
+/**
+ * The store's time and date read from ONE instant, so at the stroke of midnight the weekday and the date always agree
+ * (two reads either side of midnight would put Thursday's time on Friday's date: storeClock then jumps a week).
+ */
+function clockForStore() {
+  const at = new Date();
+  return { now: nowForStore(at), today: todayForStore(at) };
+}
 
 function stateKey() {
-  const s = storeState(store.sessions, nowForStore());
-  return [s.state, s.openTime, s.closeTime].join('|');
+  const c = clockForStore();
+  const s = storeStateFor(store, c.now, c.today);
+  // The date too: the opening hours template's list of special hours moves on at midnight.
+  return [s.state, s.openTime, s.closeTime, s.ymd].join('|');
 }
 
 function clearTimers() { timers.forEach(clearTimeout); timers = []; }
@@ -150,7 +169,8 @@ function show(i, enter) {
   const occ = playing && play.base === 'occasion';
   if (occ) scene = 0;
   const at = occ && once ? (performance.now() - playStart) / 1000 : 0;
-  last = renderScene(el, { store, play, orientation: params.orientation, scene, now: testNow(), enter, loop: occ, once: occ && once, at });
+  const c = clockForStore();
+  last = renderScene(el, { store, play, orientation: params.orientation, scene, now: c.now, today: c.today, enter, loop: occ, once: occ && once, at });
   lastStateKey = stateKey();
   shown = 'scene';
   clearTimers();
@@ -256,7 +276,7 @@ function debugInfo(s) {
     server: latest ? latest.server : null,
     health,
     storeTime: t,
-    barState: store ? storeState(store.sessions, nowForStore()).state : null,
+    barState: store ? (({ now, today }) => storeStateFor(store, now, today))(clockForStore()).state : null,
     testTime: testNow() || null,
   };
 }
@@ -271,7 +291,12 @@ function minuteTick() {
     let next = null;
     try { next = resolvePromotion(config, store, play.promoId, { today: todayForStore() }); } catch (e) { next = null; }
     if (next && next.occasion !== play.occasion) { play = next; restart(); }
-  } else if (play && store && play.base !== 'occasion' && stateKey() !== lastStateKey) show(scene, false);
+  } else if (play && store && play.base !== 'occasion' && stateKey() !== lastStateKey) {
+    // A new state or a new date: the opening hours template's headlines follow the special hours listed (render.js
+    // resolvePromotion), so the promotion is resolved again before it is redrawn.
+    try { play = resolvePromotion(config, store, play.promoId, { today: todayForStore() }); } catch (e) { /* keep it */ }
+    show(scene, false);
+  }
   if (panel && data) panel.then((p) => p && p.update(debugInfo(data.state)));
   setTimeout(minuteTick, 60000 - (Date.now() % 60000) + 50);
 }

@@ -8,7 +8,34 @@ release handed to miPharmacy is tagged and packaged with this file and the `docs
 Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 ([docs/RELEASING.md](docs/RELEASING.md)).
 
+### Added
+
+- **Special opening hours on the screen (Christmas, New Year, Australia Day).** The proxy passes a store's special
+  hours through from Personalisation Hub as `store_info.special_hours[]` (`name`, `date`, `open`, `open_time`,
+  `close_time`; checked strictly, `[]` when PH sends none; docs/DATA-CONTRACT.md). The "Open today" bar and
+  `${OpenTime}` / `${CloseTime}` on every template use them for their dates in the store's time zone (`js/hours.js`
+  `storeStateOn`). The opening hours template (Closed) lists the nearest 6 upcoming special dates (90 days ahead at
+  most) under the weekly hours, in place of "Public Holidays: Please call to confirm" and its default headline, and
+  its card shrinks to fit (`fitCard`, covered by the copy-fit audit). A store with none looks exactly as before.
+  `date=` now also sets the date the special hours are read for (with `now=`, the weekday comes from the date). The
+  mock data gives Beaumaris (`DEVICE-VIC-MP-001`) the special hours PH holds for it. The editor's preview plays
+  exactly what the screen plays (the same headlines, the default "Public Holidays" one left out while special hours
+  are listed), and its "Open today bar in the preview" tabs pick a time on the real dates, so a closed special day is
+  never previewed as open (`nowInStateOn`). The screen reads its time and date from one instant, so the bar cannot
+  jump a week at the stroke of midnight.
+
 ### Changed
+
+- **The opening hours template's badge follows the store's state.** The "Opening hours" card on the Closed
+  promotion read "CLOSED NOW" at any time, so a store that was open showed as closed. It now reads "OPEN NOW" while
+  open, "CLOSING SOON" in the last 30 minutes and "CLOSED NOW" before opening and after closing, from the store's
+  clock in `store_timezone` (special hours included), and changes on the minute with the "Open today" bar
+  (`js/render.js` `hoursBadge`). The pharmacy's own headlines are unchanged.
+- **A `store_timezone` that is not an IANA zone no longer uses the player's clock.** "AEST", "AEDT",
+  "AUS Eastern Standard Time", "(UTC+10:00) Canberra, Melbourne, Sydney", "+10:00" and the like are read as the
+  Australian zone they name (`js/hours.js` `tzOf`); anything empty or unrecognisable is `Australia/Melbourne`
+  (Sydney's time too). Before, such a value made the screen use the player's own clock, which on a player kept in
+  UTC showed the store closed through its open hours.
 
 - **Sales Promos: Personalisation Hub owns scheduling; the end date is wording only.** `promo=sale` now always
   plays the Sales Promos template, before, on and after its end date, at any hour. Removed: the after-end-date
@@ -20,6 +47,32 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Added
 
+- **Values from Personalisation Hub are not editable once the Screen device ID is verified.** Settings → Pharmacy
+  details: after a verified device ID, the pharmacy name and store code take Personalisation Hub's, and the inputs
+  for every value Personalisation Hub supplies leave Settings, the add-pharmacy flow and the Tokens editor: name,
+  store code, `${StoreCode}`, `${Suburb}`, `${State}`, `${Phone}` and the logo upload, each only when PH returns a
+  value (Beaumaris has no `logo_url`, so its logo stays editable). PH's values show as one read-only line under the
+  device ID ("Beaumaris Pharmacy · VIC-MP-001 · Beaumaris 3193") above the store details, each marked with the token
+  it fills. A value typed earlier for those tokens is dropped, so previews and screens show PH's. The pharmacy
+  record keeps `phFields` (the values PH supplies) with its device, and the config API keeps them: a save with
+  another name, store code or suburb keeps PH's, a logo upload is refused (409 `managed-in-personalisation-hub`)
+  when the logo is PH's. Clearing the device ID brings every input back. The **Use Personalisation Hub's** offers
+  and the "Filled in from Personalisation Hub" line are gone (PH's value is now simply taken).
+- **Screen device ID fills in the pharmacy and gives the preview live data.** Settings → Pharmacy details: the
+  Screen device ID is now the first field, full width, with a help line. Pasting an ID (or Enter / leaving the
+  field; **Check** reads it again) reads the device's store data through the PH API proxy and shows it under the
+  field (store name, code, address, phone, timezone, today's hours, logo; "Live from Personalisation Hub", read
+  time), fills an empty pharmacy name and store code, and offers **Use Personalisation Hub's** where a typed name or
+  a hand-set `${Suburb}` differs. It is saved only when the store is this pharmacy's: another store's device ("This
+  device belongs to … not this pharmacy"), a malformed or unknown ID, PH unreachable or not set up each get their
+  own message and save nothing. A pharmacy without an ID is prompted and marked "· no screen device ID" in the
+  pharmacy lists; Add pharmacy starts from the device ID. Every preview of a pharmacy with an ID (every promotion,
+  both orientations, the pharmacy view too) now uses its store's live opening hours, suburb, store name and logo
+  through the screen's own `storeModel()`, and the pill reads **Live opening hours** (tooltip: for which store,
+  read when); otherwise **Sample opening hours**, whose tooltip now says to add the device ID. Read when a pharmacy
+  is picked and on Check; nothing polls. Opening hours, suburb and logo are never copied into the pharmacy. The
+  master template keeps sample data. Settings' pharmacy bar no longer runs past its card at 390px. Dev server: mock
+  devices `DEVICE-VIC-MP-006` and the test site's Beaumaris device.
 - **Download MP4 (Android 12 signage format).** Under the editor's preview, at the end of the Play/Pause row:
   an MP4 of the promotion on the preview, for the selected pharmacy and orientation, made on the server from the
   real screen page stepped frame by frame at 25 fps (headless Chromium and ffmpeg) in the format the Android 12 DMP

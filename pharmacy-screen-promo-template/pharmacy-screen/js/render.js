@@ -6,7 +6,7 @@
 //   const seq   = sequence(play)                              // [{k, t}] scenes and their seconds
 //   renderScene(screenEl, { store, play, orientation: 'portrait', scene: 0, now, enter: true })
 
-import { DAYS, parseOpeningHours, storeNow, storeState, fmtShort, weeklyRows } from './hours.js';
+import { DAYS, parseOpeningHours, parseSpecialHours, storeNow, storeDate, storeClock, storeStateOn, upcomingSpecialHours, fmtShort, weeklyRows } from './hours.js';
 import { esc, rich, fill, timeTokens, fillTemplate, applyStoreName, cleanTokens, applyTokens, DATA_TOKENS } from './tokens.js';
 import { geom, ptsPath, ptsClip, fitText, fitOccasion, fitSale } from './fit-text.js';
 import { OCCASION_DESIGNS, OCCASION_CSS } from './occasions.js';
@@ -356,7 +356,17 @@ export const FOOTER_DEFAULT = {
 };
 export const footerConfig = (content) => Object.assign({}, FOOTER_DEFAULT, (content && content.footer) || {});
 
+/**
+ * The opening hours card's badge for the store's state at the time shown (its own clock, store_timezone): "OPEN NOW"
+ * while open, "CLOSING SOON" in the last 30 minutes, "CLOSED NOW" before opening and after closing. It used to read
+ * "CLOSED NOW" whatever the time, so the Closed promotion said the store was closed while it was open.
+ */
+export const HOURS_BADGE = { open: 'OPEN NOW', closing: 'CLOSING SOON', before: 'CLOSED NOW', closed: 'CLOSED NOW' };
+export const hoursBadge = (state) => HOURS_BADGE[state && state.state] || HOURS_BADGE.closed;
+
 export const HOLIDAY_NOTE = 'Public Holidays: Please call to confirm';
+/** The opening hours template's default third headline, which says the same as HOLIDAY_NOTE. */
+export const HOLIDAY_HEADLINE = 'Public Holidays:<br><span class="reg">Please call to confirm</span>';
 
 // Content a promotion falls back to when a pharmacy has none for it yet (as the prototype does).
 const S = (label, icon, title, sub, line1, line2) => ({ label, icon, title, sub, line1, line2 });
@@ -364,7 +374,7 @@ export function defaultContent(base) {
   if (base === 'sale') return { sale: defaultSale() };
   if (base === 'occasion') return { occasions: Object.fromEntries(OCCASION_IDS.map((id) => [id, defaultOccasion(id)])) };
   if (base === 'hours') {
-    return { headlines: ["Sorry, we're closed", 'Serving ${Suburb}', 'Public Holidays:<br><span class="reg">Please call to confirm</span>'], showAddress: false };
+    return { headlines: ["Sorry, we're closed", 'Serving ${Suburb}', HOLIDAY_HEADLINE], showAddress: false };
   }
   return {
     greeting: 'Hello,<br>${Suburb}', introTitle: 'Three reasons to walk in', introSub: 'No fuss. Just ask in store.',
@@ -408,6 +418,9 @@ export function storeModel(campaignData, config) {
     storeCode: tokens.StoreCode || code,
     address: addr.address || '',
     sessions: parseOpeningHours(info.opening_hours),
+    // Dated exceptions (Christmas Day closed, Christmas Eve 08:30-19:00): the proxy's store_info.special_hours, or
+    // PH's own specialHours (the mock data). Empty: the screen works from the weekly hours alone, as before.
+    special: parseSpecialHours(Array.isArray(info.special_hours) ? info.special_hours : info.specialHours),
     brand: { p: (ph.brand && ph.brand.p) || '#0f1050', a: (ph.brand && ph.brand.a) || '#5ee6b0' },
     // The store logo from the Location API (PH-181; the proxy returns it at store_info.logo_url) wins over the config logo.
     logo: safeUrl(info.logo_url) || safeUrl(data.logo_url) || ph.logo || null,
@@ -419,8 +432,9 @@ export function storeModel(campaignData, config) {
 /**
  * A promotion by its promo ID, with its template (custom or built-in) and this store's content for it.
  * opts.today: the store's date ({y, m, d}, hours.js storeDate()): a seasonal promotion plays the season whose dates
- * hold it (activeOccasion), else the one it is set to. opts.occasion: play that season instead (a seasonal promotion
- * only; the copy-fit audit uses it to check every season).
+ * hold it (activeOccasion), else the one it is set to; the opening hours template lists the special hours coming up
+ * from it (unset: the store's date now, as on the screen). opts.occasion: play that season instead (a seasonal
+ * promotion only; the copy-fit audit uses it to check every season).
  */
 export function resolvePromotion(config, store, promoId, opts = {}) {
   const promos = (config && config.promotions) || [];
@@ -454,7 +468,25 @@ export function resolvePromotion(config, store, promoId, opts = {}) {
   const base = template.base === 'hours' ? 'hours' : 'scenes';
   const fits = base === 'hours' ? content && Array.isArray(content.headlines) : content && Array.isArray(content.slots);
   if (!fits) content = defaultContent(base);
-  return { promo, promoId: promoIdOf(promo), template, base, content };
+  // The opening hours template lists the store's special hours when it has some coming up (from opts.today, else the
+  // store's own date, the same date renderScene() lists them from, so the editor's preview plays what the screen
+  // does): the default "Public Holidays: Please call to confirm" headline, still as it was written, is then left out
+  // (with its seconds), so the screen never says "call to confirm" beside the confirmed hours. Edited copy is kept.
+  // droppedHeadline: its index in the saved headlines, so the editor can map its headline fields to the scenes.
+  let droppedHeadline = -1;
+  if (base === 'hours' && store.special && store.special.length && content.headlines.length > 1
+    && upcomingSpecialHours(store.special, ymdOfToday(opts.today || storeDate(store.tz))).length) {
+    const i = content.headlines.indexOf(HOLIDAY_HEADLINE);
+    if (i >= 0) {
+      droppedHeadline = i;
+      const durs = Array.isArray(content.headlineDurs) ? content.headlineDurs : null;
+      const n = content.headlines.length;
+      content = { ...content, headlines: content.headlines.filter((_, j) => j !== i), ...(durs ? { headlineDurs: durs.filter((_, j) => j !== i) } : {}) };
+      // Unset seconds were the defaults for n headlines: keep each remaining one's, so nothing else changes speed.
+      if (!durs) content.headlineDurs = defaultHeadlineSeconds(n).filter((_, j) => j !== i);
+    }
+  }
+  return { promo, promoId: promoIdOf(promo), template, base, content, ...(base === 'hours' ? { droppedHeadline } : {}) };
 }
 
 /** The scenes of a promotion and their durations in seconds. */
@@ -527,6 +559,17 @@ function logoHtml(store) {
   return src ? `<img src="${esc(src)}" alt="${esc(store.name)}">` : '<div class="s-mark">Pharmacy logo</div>';
 }
 
+const ymdOfToday = (t) => `${t.y}-${String(t.m).padStart(2, '0')}-${String(t.d).padStart(2, '0')}`;
+
+/**
+ * The store's open/closed state (hours.js storeStateOn, special hours included) at `now` ({day, min}) on `today`
+ * ({y, m, d}), each the store's real clock when not given; with `ymd`, the date it worked from ("YYYY-MM-DD").
+ */
+export function storeStateFor(store, now, today) {
+  const clock = storeClock(now || storeNow(store.tz), today || storeDate(store.tz));
+  return { ...storeStateOn(store.sessions, store.special, clock), ymd: clock.ymd };
+}
+
 /** The store's "Open today" bar message for its current state. */
 export function footerMessage(store, content, state) {
   const F = footerConfig(content);
@@ -580,8 +623,7 @@ export function renderScene(el, opts) {
   const hours = play.base === 'hours';
   const seq = sequence(play);
   const scene = Math.max(0, Math.min(seq.length - 1, opts.scene | 0));
-  const now = opts.now || storeNow(store.tz);
-  const state = storeState(store.sessions, now);
+  const state = storeStateFor(store, opts.now, opts.today);
   const s = store, d = play.content, sub = s.suburb;
 
   el.style.setProperty('--s-p', s.brand.p);
@@ -593,15 +635,20 @@ export function renderScene(el, opts) {
   el.style.setProperty('--s-bg2', '#e6eaf3');
   el.style.setProperty('--s-ink', s.brand.p);
 
-  let hl = '', acc = '', body = '';
+  let hl = '', acc = '', body = '', hasSpecial = false;
   const T = {};
   if (hours) {
     hl = `<h2>${rich((d.headlines || [])[seq[scene].k], sub)}</h2>`;
     // .multi: a day with more than one session, whose longer line the landscape card sets smaller (css/screen.css)
     const rows = weeklyRows(s.sessions).map((r) => `<div class="s-row${r.text && r.text.includes(', ') ? ' multi' : ''}"><span>${r.name}</span>${r.text ? `<span>${esc(r.text)}</span>` : '<span class="closed">Closed</span>'}</div>`).join('');
-    T.HoursCard = `<div class="s-card"><div class="ch"><h3>Opening hours</h3><span class="s-badge">CLOSED NOW</span></div>${rows}</div>`;
+    // Special hours coming up (today to 90 days ahead, the nearest 6): their own dated list under the weekly rows, in
+    // place of the "Public Holidays: Please call to confirm" note. None: the card and note exactly as before.
+    const special = upcomingSpecialHours(s.special, state.ymd);
+    hasSpecial = special.length > 0;
+    const sp = special.map((r) => `<div class="s-row s-sp${r.times.length > 1 ? ' multi' : ''}"><span class="sd">${esc(r.label)}</span><span class="sn">${esc(r.name)}</span>${r.open ? `<span class="st">${r.times.map((t) => `<span>${esc(t)}</span>`).join('')}</span>` : '<span class="st closed">Closed</span>'}</div>`).join('');
+    T.HoursCard = `<div class="s-card"><div class="ch"><h3>Opening hours</h3><span class="s-badge">${hoursBadge(state)}</span></div>${rows}${hasSpecial ? `<div class="s-sph"><h4>Special hours</h4></div>${sp}` : ''}</div>`;
     const bits = [s.phone ? `Phone ${esc(s.phone)}` : '', d.showAddress && s.address ? esc(s.address) : ''].filter(Boolean).join(' · ');
-    T.HolidayNote = `<span class="n1">${HOLIDAY_NOTE}</span>`;
+    T.HolidayNote = hasSpecial ? '' : `<span class="n1">${HOLIDAY_NOTE}</span>`;
     T.ContactLine = bits ? `<span class="n2">${bits}</span>` : '';
   } else {
     const sc = seq[scene].k;
@@ -629,7 +676,7 @@ export function renderScene(el, opts) {
   }
 
   const G = geom(land, hours);
-  el.className = 'screen' + (land ? ' land' : '') + (hours ? ' closed' : '') + (opts.enter ? ' enter' : '');
+  el.className = 'screen' + (land ? ' land' : '') + (hours ? ' closed' : '') + (hasSpecial ? ' special' : '') + (opts.enter ? ' enter' : '');
   Object.assign(T, {
     ViewBox: `0 0 ${G.W} ${G.H}`, EdgePath: ptsPath(G.edge), Logo: logoHtml(s), Headline: hl, AccentLine: acc,
     Chevron: `<svg class="s-chev" viewBox="0 0 90 50" style="${G.chev}"><path d="M8 8 L45 42 L82 8"/></svg>`,
@@ -668,19 +715,20 @@ export const fitMemoStats = { hits: 0, misses: 0 };
 function fitScene(el, G, key) {
   const fonts = el.ownerDocument && el.ownerDocument.fonts;
   const keep = !fonts || fonts.status === 'loaded';
-  const head = el.querySelector('.s-head'), body = el.querySelector('.s-body');
+  const head = el.querySelector('.s-head'), body = el.querySelector('.s-body'), card = el.querySelector('.s-card');
   const hit = keep ? FIT_MEMO.get(key) : null;
   if (hit) {
     fitMemoStats.hits++;
     if (head && hit.k !== null) head.style.setProperty('--k', hit.k);
     if (body && hit.kb !== null) body.style.setProperty('--kb', hit.kb);
+    if (card && hit.kc) card.style.setProperty('--kc', hit.kc);
     return { ...hit.fit };
   }
   fitMemoStats.misses++;
   const fit = fitText(el, G);
   if (keep) {
     if (FIT_MEMO.size >= FIT_MEMO_MAX) FIT_MEMO.clear();
-    FIT_MEMO.set(key, { fit: { ...fit }, k: head ? head.style.getPropertyValue('--k') : null, kb: body ? body.style.getPropertyValue('--kb') : null });
+    FIT_MEMO.set(key, { fit: { ...fit }, k: head ? head.style.getPropertyValue('--k') : null, kb: body ? body.style.getPropertyValue('--kb') : null, kc: card ? card.style.getPropertyValue('--kc') : null });
   }
   return fit;
 }
@@ -740,7 +788,7 @@ export function renderOccasion(el, opts) {
   const occ = occasionOf(play.occasion), design = OCCASION_DESIGNS[occ.design];
   const beats = play.content.beats;
   const scene = Math.max(0, Math.min(beats.length - 1, opts.scene | 0));
-  const state = storeState(store.sessions, opts.now || storeNow(store.tz));
+  const state = storeStateFor(store, opts.now, opts.today);
   const doc = el.ownerDocument;
   occasionStyles(doc);
   // Tokens the pharmacy set by hand (Settings → Tokens) beyond the store's data, as in the other templates' copy.
@@ -795,7 +843,7 @@ export function renderSale(el, opts) {
   const land = opts.orientation === 'landscape';
   const c = play.content.sale;
   const scene = Math.max(0, Math.min(1, opts.scene | 0)), offer = scene === 1;
-  const state = storeState(store.sessions, opts.now || storeNow(store.tz));
+  const state = storeStateFor(store, opts.now, opts.today);
   const s = store;
   el.removeAttribute('style');
   el.style.setProperty('--s-p', s.brand.p);

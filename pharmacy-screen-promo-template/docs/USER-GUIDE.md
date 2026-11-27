@@ -22,9 +22,13 @@ recorded in the audit log.
 
 The right-hand side is a **live preview** drawn by the screen's own code: Portrait and Landscape tabs, the
 scene timeline with its total time, Play and Pause. Click a scene to jump to its fields; click into a field to
-show its scene. The **Sample opening hours** label, under the preview to the right of the Pause button, says the preview's hours are sample ones (Monday to
-Friday 9:00 am to 5:30 pm, Saturday 9:00 am to 1:00 pm); its info tooltip explains that each screen uses its own
-store's actual opening and closing hours from Personalisation Hub, for the day and time the promotion plays.
+show its scene. The label under the preview, to the right of the Pause button, says whose opening hours it shows. For a pharmacy
+with a **Screen device ID** (Settings → Pharmacy details) it reads **Live opening hours**: every promotion, in both
+orientations, is drawn with that store's own opening hours, suburb, store name and logo, read from Personalisation
+Hub when you pick the pharmacy (its info tooltip says for which store and when). Without one, and for the master
+template, it reads **Sample opening hours** (Monday to Friday 9:00 am to 5:30 pm, Saturday 9:00 am to 1:00 pm); its
+tooltip says to add the Screen device ID in Settings for live data, and that each screen uses its own store's actual
+opening and closing hours from Personalisation Hub, for the day and time the promotion plays.
 It stays beside the editor when Personalisation Hub's left menu is expanded (it just gets narrower), so you can
 keep the menu open while you edit.
 
@@ -41,6 +45,13 @@ Personalisation Hub API. **Back to promotions** returns.
    must be exactly the store's `store_code` in Personalisation Hub (e.g. `VIC-MP-006`): that is how a screen
    finds its pharmacy. It is checked as you type and must be unique.
 3. The pharmacy is created as soon as both are valid. Carry on editing; nothing is lost.
+
+Or start from the **Screen device ID** (the first field): paste it and the pharmacy is set up from Personalisation
+Hub. Once the ID is verified, everything Personalisation Hub supplies for that store (the pharmacy name, store code,
+suburb, state, phone number and, when it has one, the logo) is managed there: those fields and tokens disappear from
+Settings, and their values show as read-only text under the device ID, e.g. "Beaumaris Pharmacy · VIC-MP-001 ·
+Beaumaris 3193". A value Personalisation Hub has none for stays editable here. To edit them here again, clear the
+device ID.
 4. In Personalisation Hub, register the pharmacy's screens to that store and add them to the campaign
    ([DEPLOYMENT.md](DEPLOYMENT.md) → "Register screens in PH"). Nothing else is needed: the campaign URL is the
    same for every pharmacy.
@@ -173,15 +184,26 @@ Service copy needs TGA advertising review before go-live.
 - To see each bar message in the preview, use **Open today bar in the preview** under the bar: Store's time (what
   screens do), While open, Last 30 minutes, Before opening or After closing. The message shown is marked "In
   preview". Clicking into a message you can edit shows it too; clicking anywhere else in the promotion goes back to
-  the store's time. This only changes the preview: screens always show the message for the store's own time.
+  the store's time. This only changes the preview: screens always show the message for the store's own time. A
+  message is previewed on a real date when it happens, so a closed special day (Christmas Day) is never shown as
+  "While open": the preview moves on to the next day the store opens.
 - Long headlines shrink automatically to stay inside the brand panel; if one becomes very small, shorten it.
-- "Public Holidays: Please call to confirm" is always shown; you don't need to write it.
+- "Public Holidays: Please call to confirm" is shown under the opening hours unless the store has special hours
+  coming up (see Opening hours below); you don't need to write it.
 
 ## Opening hours (Closed)
 
 Three rotating **headlines** (e.g. "Sorry, we're closed", "Serving ${Suburb}"), each with its own seconds on screen
 (1–60; by default 2.7, 2.7 and 2.6, an 8-second loop), and **Show address under phone**.
 The weekly hours, the public holiday line and the phone number come from Personalisation Hub.
+
+**Special hours** (Christmas, New Year, Australia Day and the like) are set in Personalisation Hub, not here. When
+the store has some in the next 90 days, the screen lists the nearest six under the weekly hours as "Special hours",
+for example "Thu 24 Dec  Christmas Eve  8.30am – 7.00pm" and "Fri 25 Dec  Christmas Day  Closed", in place of
+"Public Holidays: Please call to confirm" (and the default "Public Holidays" headline is skipped while they are
+shown). A date drops off the list once it has passed. On a special day the "Open today" bar on every promotion uses
+that day's hours: closed all day when it is marked closed, or its own times when it has them. The editor's preview
+and Download MP4 show the same.
 
 ## Seasonal
 
@@ -319,11 +341,21 @@ to get a new one.
 **Settings** (the cog beside Promo preview) shows:
 
 - **Pharmacies**: the pharmacy picker, **Add pharmacy**, **Reset** and **Delete** ("Add a pharmacy" above).
-- **Pharmacy details**: name, store code and **Screen device ID**. On screens `${StoreName}` is the store name from Personalisation
-  Hub's Location API for the screen's device; the **Pharmacy name** (the token is shown beside its label) is used
-  only when Personalisation Hub has no store name for the store. The Screen device ID is the Personalisation Hub
-  device ID of one of the pharmacy's screens; **Download MP4** needs it to read the store's own name and opening
-  hours ("Download MP4" below). Optional; nothing else uses it.
+- **Pharmacy details**: **Screen device ID** first, then name and store code. Paste the Personalisation Hub device
+  ID of one of the pharmacy's screens (or type it and press Enter; **Check** reads it again). Its store details
+  appear under the field, marked "Live from Personalisation Hub" with the time they were read: store name, store
+  code, address, phone, timezone, today's opening hours and logo. An empty name and store code are filled in for
+  you, so a new pharmacy can be added from its device ID alone (**Add pharmacy** puts you in that field). A name you
+  typed, or a `${Suburb}` you set by hand, that differs from Personalisation Hub's is never overwritten: click
+  **Use Personalisation Hub's** beside it to take Personalisation Hub's (for the suburb, that clears your value so
+  the store's own suburb shows). Opening hours, suburb and logo are always read live, never copied. The ID is
+  saved only once Personalisation Hub confirms the device belongs to this pharmacy's store: a device of another
+  store is refused ("This device belongs to Beaumaris Pharmacy (VIC-MP-001), not this pharmacy."), and a
+  malformed ID, an ID Personalisation Hub does not know, Personalisation Hub not answering, or its API not set up
+  below each say so under the field and save nothing. A pharmacy without an ID is marked "no screen device ID" in
+  the pharmacy list and prompted here: its preview uses sample data and **Download MP4** is off ("Download MP4"
+  below). On screens `${StoreName}` is the store name from Personalisation Hub for the screen's device; the
+  **Pharmacy name** (the token is shown beside its label) is used only when Personalisation Hub has none.
 - **Tokens**: every `${…}` token this pharmacy's promotions and templates use, including the master template's
   sections it inherits, with the promotions that use each. Leave a token blank to show the store's own data
   (the placeholder says where it comes from, e.g. "Suburb from store details": the suburb, phone number, state
