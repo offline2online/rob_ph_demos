@@ -136,6 +136,11 @@ UI (Playwright) cases get **one retry inside the run**; nothing else retries.
   TC-65 also reads the open form (title, estimate, description) in one
   snapshot after each rotation and waits on it, since the resize can redraw
   the modal after it was first seen open.
+- A case that types into the New task form waits until the form has put the
+  cursor in its title first: the form focuses `#f-title` on a 30 ms timer,
+  and a late timer moved the cursor out of the estimate while it was being
+  filled, so "3h" landed in the title (TC-65, "Expected values to be strictly
+  equal", `'Half written3h'`). The console suite's `openNewTask` does the same.
 - A change made on a ticket's form is made, checked and saved as one retried
   step: the form can be redrawn (the ticket re-read) after Save was seen on,
   which puts the old value back and switches Save off, and a tap on Save then

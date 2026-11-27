@@ -1215,7 +1215,10 @@ export function defineNewCases(E) {
       await p.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
     };
     // mid-edit
+    // The form puts the cursor in its title on a short timer; wait for it, or a late timer moves the cursor out of
+    // the estimate while it is being filled and "3h" lands in the title ("Half written3h").
     await press(p, "#kb-new-btn"); await p.waitForSelector("#f-title");
+    await eventually(async () => assert.equal(await p.evaluate(() => document.activeElement && document.activeElement.id), "f-title", "the form has put the cursor in its title"));
     await p.fill("#f-title", "Half written"); await p.fill("#f-estimate", "3h"); await typeDescription(p, "Some words");
     await swap();
     await eventually(async () => assert.equal(await modalOpen(p), true, "the form is still open"));
