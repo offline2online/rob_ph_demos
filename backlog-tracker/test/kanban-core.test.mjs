@@ -385,6 +385,27 @@ t("needs more work (KB-BOARD-5a): sent back from testing with a stamp, drawn fir
   assert.deepEqual(k.dropNeighbours(list, 0, { priority: "high" }), { prev: null, next: list[3] });
   assert.deepEqual(k.dropNeighbours(list, 4, { priority: "high", needsMoreWork: { reason: "z" } }), { prev: list[0], next: null });
 });
+t("needs more work (KB-BOARD-5a): to Backlog with its developer, then straight back to the tester who sent it", () => {
+  const first = (e) => (e || "").split("@")[0];
+  const stamp = { reason: "Still greys out", by: "rob@x", at: "2026-11-26T04:00:00.000Z" };
+  // the board's button sends it to Backlog, stamped, and returns it to the developer
+  const back = k.statusChange({ status: "ready-for-testing", assignee: "rob@x", previousAssignee: "duc@x" }, "backlog", { firstName: first, needsMoreWork: stamp });
+  assert.equal(back.patch.status, "backlog");
+  assert.equal(back.patch.assignee, "duc@x");
+  assert.equal(back.patch.needsMoreWork.reason, "Still greys out");
+  assert.equal(back.activity, "Ready for Testing → Backlog · returned to duc");
+  // a plain move to Backlog (no stamp) still leaves the assignee alone
+  assert.equal("assignee" in k.statusChange({ status: "ready-for-testing", assignee: "rob@x", previousAssignee: "duc@x" }, "backlog", {}).patch, false);
+  // reaching Ready for Testing again hands it to the tester who sent it back, ahead of a designated or chosen tester
+  const stamped = { status: "in-progress", assignee: "duc@x", previousAssignee: "duc@x", tester: "ana@x", needsMoreWork: back.patch.needsMoreWork };
+  const again = k.statusChange(stamped, "ready-for-testing", { firstName: first, tester: "lan@x" });
+  assert.equal(again.patch.assignee, "rob@x");
+  assert.equal(again.patch.previousAssignee, "duc@x");
+  assert.equal(again.patch.needsMoreWork, null);
+  assert.equal(again.activity, "In Progress → Ready for Testing · reassigned to rob for testing");
+  // an unstamped ticket keeps today's rule: designated tester, else the chosen one
+  assert.equal(k.statusChange({ status: "in-progress", assignee: "duc@x" }, "ready-for-testing", { tester: "lan@x" }).patch.assignee, "lan@x");
+});
 t("Ready for Testing order (KB-BOARD-3b): bugs, then tasks, then epics, each by priority then rank; other columns unchanged", () => {
   const rft = (key, type, priority, rank) => ({ key, type, priority, rank, status: "ready-for-testing" });
   const list = [

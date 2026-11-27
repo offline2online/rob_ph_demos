@@ -195,12 +195,16 @@ labels, linked/unlinked tickets); status moves keep their own line.
 
 **KB-BOARD-5a Needs more work** (24 Nov 2026). A ticket in Ready for Testing
 that doesn't pass testing is sent back with a **Needs more work** stamp: the
-red **Needs more work** button at the top of the open ticket (shown while it is
-in Ready for Testing, to anyone who can edit) asks what still needs doing (required, up to 500
+red **Needs more work** button in the open ticket's details column, directly
+above Status (shown while it is in Ready for Testing, to anyone who can edit;
+26 Nov 2026, it used to sit at the top of the ticket) asks what still needs doing (required, up to 500
 characters, with a count under the box; typed, or **dictated** with the mic
 inside the box, the same mic as the description and comment boxes, and
-editable before sending) and moves it to **Ready for Dev**, returning it to its developer as
-KB-BOARD-5 does. The ticket and its card carry `needsMoreWork` `{reason, by,
+editable before sending) and moves it to **Backlog** (26 Nov 2026; it used to
+be Ready for Dev), returning it to its developer as KB-BOARD-5 does. When the
+ticket reaches Ready for Testing again it is assigned straight back to the
+tester who sent it back (`needsMoreWork.by`), with no "who will test" prompt
+and ahead of a designated or chosen tester. The ticket and its card carry `needsMoreWork` `{reason, by,
 at}`. While stamped, the card has a thin red left edge and a full-width
 "Needs more work" note across its top in the platform's quiet alert style
 (light red fill, small sentence-case red heading, the reason in body text;
@@ -214,12 +218,14 @@ Approved / Completed / Withdrawn) clears the stamp. Both changes write their own
 activity line ("marked Needs more work: <reason>", "cleared Needs more work").
 A plain drag back out of Ready for Testing does not stamp a ticket. Over MCP,
 `kanban_move_task` takes `needsMoreWork` (the reason) with status `backlog`,
-`ready-for-dev` or `in-progress` on a ticket in Ready for Testing. AC: send a
+`ready-for-dev` or `in-progress` on a ticket in Ready for Testing (any of them
+returns it to its developer). AC: send a
 Ready for Testing ticket back with a reason (dictated or typed); it is first
-in Ready for Dev, above a Highest ticket, with the light "Needs more work" note
+in Backlog, above a Highest ticket, with the light "Needs more work" note
 and reason, assigned to its
 developer; move it to In Progress and it is still stamped and first; move it to
-Ready for Testing and the stamp is gone. `kanban-core.js` `statusChange` /
+Ready for Testing and the stamp is gone and it is assigned to the tester who
+sent it back. `kanban-core.js` `statusChange` /
 `byBoardOrder`, `kanban-core.test.mjs`, `kanban-mcp.test.js`,
 `kanban-rules.test.js`, `staff-kanban.test.mjs` ("KB-NEEDS-WORK").
 
@@ -261,7 +267,12 @@ button shows how many secondary filters are on. The Project filter is kept in th
 address (`#staff-kanban?project=<id>`), so a reload or a shared link keeps it. **Search**
 sits in the pinned filter bar between **My tasks** and **Release** (23 Nov 2026),
 so it stays on screen while the board scrolls, and matches key, title,
-description text and labels. (The prototype still shows it in the page header.) **Clear filters** resets all.
+description text and labels. (The prototype still shows it in the page header.) **Clear filters** resets all,
+the search box included. It shows whenever any filter is on, and a search
+counts (26 Nov 2026, G6dtTBUsozoUVjannNcE): typing in the search box shows it at
+once, without waiting for another filter change, and the box keeps focus;
+emptying the box (its own clear × or deleting the text) hides it again when
+nothing else is filtered.
 
 **KB-FLT-1a Dashboard filter** (24 Nov 2026, uAp6fukjDyNxKusotmcQ). A Staff
 Kanban count on the console's Dashboard opens the board on exactly that
@@ -579,7 +590,8 @@ create path does the same: the board's form and `kanban_create_task`,
 `kanban_create_contract_ticket`. A move into a column still goes to its end. The heading and primary button follow the type: **Create task**,
 **Raise bug**, **Create epic**. Right-hand details column order: Priority,
 Type, Parent epic, Assignee, Reporter, Release, Estimate, Time logged (then
-any other shown optional fields; Status last when editing).
+any other shown optional fields). When editing, Status sits directly under
+Type, above Parent epic and Assignee (26 Nov 2026; it used to be last).
 
 **Open the new ticket from its confirmation (19 Nov 2026).** The "PH-n created
 in Backlog" toast (also its "· added to <epic>" and "· <names> notified" forms)
@@ -662,8 +674,8 @@ remembered and the column reopens if a required field in it is empty.
 column sits beside the ticket (wider than 760 px, in a window at least 520 px
 tall), it is frozen in the modal: scrolling moves only the ticket itself (title,
 description, criteria, links, attachments, comments, "N more fields" and the
-Created line), and every control down the right (Priority, Type, Parent, people,
-Release, estimate and time, Sprint, Project, Due date, Labels, Status) stays on
+Created line), and every control down the right (Priority, Type, Status, Parent, people,
+Release, estimate and time, Sprint, Project, Due date, Labels) stays on
 screen, pinned under the modal's header. The column is never taller than the modal
 can show above the pinned Save bar; a column longer than that scrolls on its own,
 inside the modal, without moving the ticket. On a phone the details still stack

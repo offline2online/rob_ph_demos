@@ -355,6 +355,28 @@ T("TC-07", "My tasks shows only the signed-in person's tasks", async (prof) => {
   await p.done();
 });
 
+T("KB-SEARCH-CLEAR", "typing a search shows Clear filters at once; Clear filters empties the search box; the box's own clear (×) hides it again", async (prof) => {
+  const p = await open(prof);
+  const all = await p.locator(".kb-card").count();
+  assert.equal(await p.locator("#kb-clear").count(), 0, "no Clear filters with nothing filtered");
+  await p.focus("#kb-q");
+  await p.keyboard.type("zzqx-no-such-ticket");
+  await eventually(async () => assert.equal(await p.locator("#kb-clear").count(), 1, "Clear filters shows as soon as a search is typed"));
+  assert.equal(await p.evaluate(() => document.activeElement && document.activeElement.id), "kb-q", "the search box keeps focus while typing");
+  await eventually(async () => assert.equal(await p.locator(".kb-card").count(), 0, "the search filters the board"));
+  await press(p, "#kb-clear");
+  await eventually(async () => assert.equal(await p.inputValue("#kb-q"), "", "Clear filters empties the search box"));
+  await eventually(async () => assert.equal(await p.locator(".kb-card").count(), all, "every ticket is back"));
+  assert.equal(await p.locator("#kb-clear").count(), 0, "Clear filters goes once nothing is filtered");
+  // The search box's own clear (×) empties it with an input event, like select-all + delete.
+  await p.fill("#kb-q", "zzqx");
+  await eventually(async () => assert.equal(await p.locator("#kb-clear").count(), 1));
+  await p.fill("#kb-q", "");
+  await eventually(async () => assert.equal(await p.locator("#kb-clear").count(), 0, "clearing the box with nothing else filtered hides Clear filters"));
+  await eventually(async () => assert.equal(await p.locator(".kb-card").count(), all));
+  await p.done();
+});
+
 T("TC-08", "secondary filters live in the Filters menu; a filter change keeps the scroll position", async (prof) => {
   const p = await open(prof, "#staff-kanban", { height: Math.min(prof.height, 700) });
   assert.equal(await p.$eval("#kb-filter-panel", (e) => e.hidden), true);
@@ -548,18 +570,20 @@ T("KB-TESTING-ORDER", "Ready for Testing lists bugs first, then tasks, then epic
 });
 
 // Needs more work (DHtgfhGz2t1gcKX8adz0, KB-BOARD-5a): a ticket in Ready for Testing that didn't pass goes
-// back to Ready for Dev and its developer with a red stamp and the reason, drawn above every other ticket.
-T("KB-NEEDS-WORK", "Needs more work sends a tested ticket back to Ready for Dev, stamped and first in the column", { on: on.desktop }, async (prof) => {
+// back to Backlog and its developer with a red stamp and the reason, drawn above every other ticket. The
+// button sits in the details column just above Status, which sits under Type (5wtdXjwCApXyn351hBBa), and
+// the ticket goes straight back to the tester who sent it when it reaches Ready for Testing again.
+T("KB-NEEDS-WORK", "Needs more work sends a tested ticket back to Backlog, stamped and first in the column, then back to its tester", { on: on.desktop }, async (prof) => {
   const seed = kanbanSeed();
   const base = Object.values(KB.kanbanTasks).find((t) => t.open && t.type === "task");
   const mk = (key, n, over) => { const t = { ...base, key, number: n, open: true, resolution: null, labels: [], epic: "", links: [], attachments: [], flagged: false, ...over }; delete t.closedAt; return t; };
   const tested = mk("PH-3000", 3000, { title: "Sent back from testing", status: "ready-for-testing", priority: "low", rank: 5, assignee: LINH, previousAssignee: HUY });
-  const top = mk("PH-3001", 3001, { title: "Highest in Ready for Dev", status: "ready-for-dev", priority: "highest", rank: -5000, assignee: HUY, previousAssignee: "" });
+  const top = mk("PH-3001", 3001, { title: "Highest in Backlog", status: "backlog", priority: "highest", rank: -5000, assignee: HUY, previousAssignee: "" });
   seed.docs.kanbanTasks = { ...seed.docs.kanbanTasks, [tested.key]: tested, [top.key]: top };
   seed.docs.kanbanCards = { ...seed.docs.kanbanCards, [tested.key]: cardOfTask(tested), [top.key]: cardOfTask(top) };
   // The reason is dictated (syB6fGiu5wIc1UBksHGa): the prompt's mic talks into the box, like the comment box's.
   const p = await open(prof, "#staff-kanban", { seed, height: 2000, init: speechStub("save button still greys out on the iPad") });
-  const devKeys = () => p.$$eval('.kb-col[data-status="ready-for-dev"] .kb-card', (e) => e.map((x) => x.dataset.key));
+  const devKeys = () => p.$$eval('.kb-col[data-status="backlog"] .kb-card', (e) => e.map((x) => x.dataset.key));
   // A ticket outside Ready for Testing has no such action.
   await press(p, '.kb-card[data-key="PH-3001"] .card-title');
   await until(async () => !!(await p.$("#f-status")), "the open ticket");
@@ -568,6 +592,11 @@ T("KB-NEEDS-WORK", "Needs more work sends a tested ticket back to Ready for Dev,
   await p.waitForFunction(() => document.getElementById("task-backdrop").hidden, null, { timeout: 5000 });
   await press(p, '.kb-card[data-key="PH-3000"] .card-title');
   await until(async () => !!(await p.$("#f-needs-work")), "the Needs more work action in the open ticket");
+  // Status sits under Type, above the parent and Assignee; the button sits in the details column just above Status.
+  const side = await p.$$eval("#kb-task-side .kb-edit-body > *, #kb-task-side > *", (e) => e.map((x) => x.id === "f-needs-work" || x.querySelector("#f-needs-work") ? "needs-work" : x.dataset.field).filter(Boolean));
+  assert.deepEqual(side.slice(0, 5), ["priority", "type", "needs-work", "status", "epic"]);
+  assert.ok(side.indexOf("assignee") > side.indexOf("status"), "Status is above Assignee");
+  assert.equal(await p.$$eval("#task-form > .kb-needs-work-bar", (e) => e.length), 0, "no longer at the top of the ticket");
   await press(p, "#f-needs-work");
   await until(async () => !!(await p.$("#kb-needs-work-reason")), "the reason prompt");
   assert.equal(await p.$eval("#kb-needs-work-ok", (b) => b.disabled), true, "a reason is required");
@@ -579,8 +608,8 @@ T("KB-NEEDS-WORK", "Needs more work sends a tested ticket back to Ready for Dev,
   assert.equal(await p.$eval("#kb-needs-work-ok", (b) => b.disabled), false, "a dictated reason can be sent");
   assert.match(await p.textContent("#kb-needs-work-count"), /^39 \/ 500/);
   await press(p, "#kb-needs-work-ok");
-  await eventually(async () => assert.equal((await devKeys())[0], "PH-3000", "first in Ready for Dev, above the Highest ticket"));
-  const card = '.kb-col[data-status="ready-for-dev"] .kb-card[data-key="PH-3000"]';
+  await eventually(async () => assert.equal((await devKeys())[0], "PH-3000", "first in Backlog, above the Highest ticket"));
+  const card = '.kb-col[data-status="backlog"] .kb-card[data-key="PH-3000"]';
   assert.ok(await p.$eval(card, (c) => c.classList.contains("kb-card-needs-work")), "the card is marked");
   assert.match(await p.$eval(`${card} .kb-needs-work`, (e) => e.innerText), /Needs more work/i);
   assert.match(await p.$eval(`${card} .kb-needs-work-reason`, (e) => e.textContent), /Save button still greys out on the iPad/);
@@ -593,7 +622,7 @@ T("KB-NEEDS-WORK", "Needs more work sends a tested ticket back to Ready for Dev,
   assert.equal(banner.caps, "none", "the heading is not shouted in capitals");
   assert.ok(banner.size <= 12, "the heading is small");
   const stored = await p.evaluate(() => globalThis.__fbStub.col("kanbanTasks").get("PH-3000"));
-  assert.equal(stored.status, "ready-for-dev");
+  assert.equal(stored.status, "backlog");
   assert.equal(stored.assignee, HUY, "back with its developer");
   assert.equal(stored.needsMoreWork.reason, "Save button still greys out on the iPad");
   const storedCard = await p.evaluate(() => globalThis.__fbStub.col("kanbanCards").get("PH-3000"));
@@ -602,6 +631,16 @@ T("KB-NEEDS-WORK", "Needs more work sends a tested ticket back to Ready for Dev,
   await press(p, `${card} .card-title`);
   await until(async () => !!(await p.$("#task-form .kb-needs-work-modal")), "the stamp in the open ticket");
   assert.match(await p.$eval("#task-form .kb-needs-work-modal", (e) => e.innerText), /Save button still greys out on the iPad/);
+  await press(p, "#f-cancel");
+  await p.waitForFunction(() => document.getElementById("task-backdrop").hidden, null, { timeout: 5000 });
+  // Dragged back to Ready for Testing: no "who will test" prompt, it goes straight to the tester who sent it back.
+  await moveBy(p, "drag", "PH-3000", "ready-for-testing");
+  await eventually(async () => assert.equal((await p.evaluate(() => globalThis.__fbStub.col("kanbanTasks").get("PH-3000"))).status, "ready-for-testing"));
+  assert.equal(await p.$("#kb-tester-pick"), null, "no tester prompt");
+  const retested = await p.evaluate(() => globalThis.__fbStub.col("kanbanTasks").get("PH-3000"));
+  assert.equal(retested.assignee, stored.needsMoreWork.by, "back with the tester who sent it back");
+  assert.equal(retested.previousAssignee, HUY);
+  assert.equal(retested.needsMoreWork, null, "the stamp is cleared");
   await p.done();
 });
 
