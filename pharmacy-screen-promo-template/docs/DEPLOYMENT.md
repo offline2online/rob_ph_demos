@@ -230,7 +230,7 @@ CLI asks to confirm the cost.
 
 Firebase keeps each function's container images in Artifact Registry and wants a cleanup policy for them in each
 region it deploys to. The CI service account (`pharmacy-screen-ci`: Firebase Admin, Cloud Functions Admin, Service
-Account User, Cloud Build Editor) may not set it, so CI does not try. **The project owner sets it once per region**
+Account User, Cloud Build Editor, Cloud Tasks Admin) may not set it, so CI does not try. **The project owner sets it once per region**
 (and again after a move to a new region):
 
 ```bash
@@ -243,6 +243,23 @@ alone with a warning naming the command above, and carries on to Hosting. Any ot
 message together with a function that failed to create or update, stops the deploy. Letting CI set the policy
 itself would need Artifact Registry Administrator (`roles/artifactregistry.admin`) on the service account, broader
 than a deploy account needs; the one-time owner command is preferred.
+
+### CI service account
+
+`pharmacy-screen-ci` (the `FIREBASE_SERVICE_ACCOUNT_ROB_PH_DEMOS` key) needs **Cloud Tasks Admin**
+(`roles/cloudtasks.admin`) as well as Firebase Admin, Cloud Functions Admin, Service Account User and Cloud Build
+Editor: deploying the Cloud Tasks queue function `pharmacyScreenVideoWorker` reads, creates and updates its queue.
+Without it the functions step ends in `lacks IAM permission "cloudtasks.queues.get"` for that queue, the deploy stops
+before Hosting, and re-running the same run fails the same way (26 Nov 2026: runs 29 to 31 after Download MP4 and
+special opening hours merged). The deploy now prints the owner's command when it sees that error. The project owner
+grants it once:
+
+```bash
+gcloud projects add-iam-policy-binding rob-ph-demos --member=serviceAccount:pharmacy-screen-ci@rob-ph-demos.iam.gserviceaccount.com --role=roles/cloudtasks.admin --condition=None
+```
+
+`npm run deploy` without `--skip-setup` grants it too (setup step `grantTasksAdminToCi`, skipped when the project has
+no `pharmacy-screen-ci`). CI never grants itself roles.
 
 ### Moving the functions to another region
 

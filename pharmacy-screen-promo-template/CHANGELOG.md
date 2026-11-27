@@ -8,6 +8,13 @@ release handed to miPharmacy is tagged and packaged with this file and the `docs
 Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 ([docs/RELEASING.md](docs/RELEASING.md)).
 
+### Fixed
+
+- **Firebase test-environment deploys stopped at the functions step** after Download MP4 merged: the CI account
+  `pharmacy-screen-ci` lacked Cloud Tasks Admin for `pharmacyScreenVideoWorker`'s queue. The owner's
+  `npm run deploy` setup now grants it, and a CI deploy that hits the error prints the one command that fixes it
+  (docs/DEPLOYMENT.md → "CI service account").
+
 ### Added
 
 - **Special opening hours on the screen (Christmas, New Year, Australia Day).** The proxy passes a store's special

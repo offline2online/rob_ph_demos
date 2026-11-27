@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { hasGit } from "../scripts/release.mjs";
 import { createRequire } from "node:module";
-import { ROOT, buildPlan, readTargets, urls, parseArgs, stage, stagePublic, adminConfigJs, writeAdminConfig, CODEBASES, RULES_SOURCE, STAGE_DIR, ADMIN_WEB_APP, REGION, CLEANUP_POLICY_ARGS, functionsDeployOutcome, checkApi, EXPORTS_LIFECYCLE, APIS } from "../scripts/deploy.mjs";
+import { ROOT, buildPlan, readTargets, urls, parseArgs, stage, stagePublic, adminConfigJs, writeAdminConfig, CODEBASES, RULES_SOURCE, STAGE_DIR, ADMIN_WEB_APP, REGION, CLEANUP_POLICY_ARGS, functionsDeployOutcome, checkApi, ciTasksGrantCommand, CLOUD_TASKS_DENIED, CI_TASKS_ROLE, EXPORTS_LIFECYCLE, APIS } from "../scripts/deploy.mjs";
 
 const csp = createRequire(import.meta.url)("../aws/infra/csp.js");
 
@@ -379,7 +379,7 @@ test("Download MP4 on Firebase: setup lets the worker sign one-hour links and de
   const t = readTargets();
   const plan = buildPlan(t);
   const step = (task) => plan.find((s) => s.task === task);
-  for (const task of ["grantTasksToRuntime", "grantSignToRuntime", "expireVideoExports"]) {
+  for (const task of ["grantTasksToRuntime", "grantTasksAdminToCi", "grantSignToRuntime", "expireVideoExports"]) {
     assert.equal(step(task) && step(task).phase, "setup", `${task} is a setup step`);
   }
   assert.equal(step("expireVideoExports").args.bucket, t.bucket);
@@ -393,4 +393,19 @@ test("Download MP4 on Firebase: setup lets the worker sign one-hour links and de
   // The worker's time limit stays inside the render lease (src/video/jobs.js LEASE_MS, 20 minutes).
   assert.match(index, /const WORKER_SECONDS = 900;/);
   assert.match(index, /timeoutSeconds: WORKER_SECONDS/);
+});
+
+test("CI deploy account: setup grants Cloud Tasks Admin, and the queue's 403 names the owner's command", () => {
+  // 26 Nov 2026: deploys 29-31 stopped at the functions step on "lacks IAM permission cloudtasks.queues.get"
+  // for pharmacyScreenVideoWorker's queue, and re-running them failed identically.
+  assert.equal(CI_TASKS_ROLE, "roles/cloudtasks.admin");
+  assert.deepEqual(ciTasksGrantCommand("p"), [
+    "gcloud", "projects", "add-iam-policy-binding", "p",
+    "--member=serviceAccount:pharmacy-screen-ci@p.iam.gserviceaccount.com",
+    "--role=roles/cloudtasks.admin", "--condition=None", "--quiet",
+  ]);
+  const denied = 'Request to https://cloudtasks.googleapis.com/v2/projects/p/locations/r/queues/pharmacyScreenVideoWorker had HTTP Error: 403, The principal (user or service account) lacks IAM permission "cloudtasks.queues.get" for the resource';
+  assert.match(denied, CLOUD_TASKS_DENIED);
+  assert.equal(functionsDeployOutcome(1, `${denied}\nFunctions deploy had errors with the following functions:`), "failed");
+  assert.ok(!buildPlan({ ...readTargets(), skipSetup: true }).some((s) => s.task === "grantTasksAdminToCi"), "CI never grants itself roles");
 });

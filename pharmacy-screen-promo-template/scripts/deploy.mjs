@@ -386,6 +386,13 @@ export function buildPlan({ project, site, bucket, skipSetup = false }) {
     steps.push({
       phase: "setup",
       kind: "task",
+      task: "grantTasksAdminToCi",
+      label: `Let the CI deploy account (${CI_SERVICE_ACCOUNT_NAME}@${project}.iam.gserviceaccount.com) manage the Download MP4 worker's queue (Cloud Tasks Admin)`,
+      args: { project },
+    });
+    steps.push({
+      phase: "setup",
+      kind: "task",
       task: "grantSignToRuntime",
       label: "Let the functions' runtime service account sign Download MP4's one-hour links (Token Creator, on itself only)",
       args: { project },
@@ -467,6 +474,21 @@ export const CLEANUP_POLICY_MESSAGE = /Functions successfully deployed but could
 // Both strings are firebase-tools' own wording (pinned by FIREBASE_TOOLS above); re-check them when it is upgraded.
 // Unrecognised output fails closed: only the exact cleanup-policy sentence, with no failure line, is passable.
 const FUNCTION_FAILURE = /Functions deploy had errors|Failed to (create|update|delete) function/i;
+// The CI deploy account (the FIREBASE_SERVICE_ACCOUNT_ROB_PH_DEMOS key). Deploying the Cloud Tasks queue function
+// pharmacyScreenVideoWorker reads, creates and updates its queue and the queue's IAM policy, which Firebase Admin and
+// Cloud Functions Admin do not cover: without Cloud Tasks Admin every CI deploy stops at the functions step with
+// "lacks IAM permission cloudtasks.queues.get" (26 Nov 2026, runs 29-31). The owner's setup grants it.
+export const CI_SERVICE_ACCOUNT_NAME = "pharmacy-screen-ci";
+export const CI_TASKS_ROLE = "roles/cloudtasks.admin";
+export const CLOUD_TASKS_DENIED = /lacks IAM permission "?cloudtasks\./i;
+export function ciTasksGrantCommand(project) {
+  return [
+    "gcloud", "projects", "add-iam-policy-binding", project,
+    `--member=serviceAccount:${CI_SERVICE_ACCOUNT_NAME}@${project}.iam.gserviceaccount.com`,
+    `--role=${CI_TASKS_ROLE}`, "--condition=None", "--quiet",
+  ];
+}
+
 export function functionsDeployOutcome(status, output = "") {
   if (status === 0) return "ok";
   const text = String(output);
@@ -569,6 +591,15 @@ const TASKS = {
       `--member=${member}`, "--role=roles/cloudtasks.enqueuer", "--condition=None", "--quiet",
     ], { quiet: true });
     if (!ok) throw new Error("could not grant roles/cloudtasks.enqueuer");
+    return "granted (idempotent)";
+  },
+  async grantTasksAdminToCi({ project }) {
+    // Only when the CI account exists in this project (a fresh project deployed by hand has none).
+    const sa = `${CI_SERVICE_ACCOUNT_NAME}@${project}.iam.gserviceaccount.com`;
+    if (!run(["gcloud", "iam", "service-accounts", "describe", sa, `--project=${project}`], { quiet: true })) {
+      return `no ${sa} in this project, nothing to grant`;
+    }
+    if (!run(ciTasksGrantCommand(project), { quiet: true })) throw new Error(`could not grant ${CI_TASKS_ROLE} to ${sa}`);
     return "granted (idempotent)";
   },
   async grantSignToRuntime({ project }) {
@@ -689,6 +720,11 @@ async function main() {
         console.warn(`     The project owner runs this once: npx ${FIREBASE_TOOLS} ${CLEANUP_POLICY_ARGS.join(" ")} --project ${t.project}`);
         console.warn("     (docs/DEPLOYMENT.md → \"Image cleanup policy\"). Carrying on to Hosting.");
       } else if (outcome === "failed") {
+        if (CLOUD_TASKS_DENIED.test(output)) {
+          console.error(`   ! this account may not manage the Download MP4 worker's Cloud Tasks queue. Re-running will fail the same way.`);
+          console.error(`     The project owner runs this once, then re-runs the deploy: ${show(ciTasksGrantCommand(t.project))}`);
+          console.error("     (or `npm run deploy` without --skip-setup, which grants it; docs/DEPLOYMENT.md → \"CI service account\").");
+        }
         throw new Error(`Failed: ${step.label}. Hosting was not published, so the site still uses the functions it had before this deploy.`);
       }
     } else if (!run(step.cmd)) {
