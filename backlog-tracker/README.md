@@ -2644,8 +2644,17 @@ into the live `skills` collection on 8 Nov 2026 (through the board API, same
 document shape as the script), so they now appear under Settings → Skills &
 phase bindings and can be bound and called by any member with access to shared
 skills. Misses are tracked with
-`report_skill_miss`. Attach the real CP Group and Avolta Hudson documents as
-`references/` files on the two request skills.
+`report_skill_miss`.
+
+All four were rewritten on 17 Nov 2026 (v1.1.0) from the feedback on past
+requests: the applicant is always Personalisation Hub, the cash ask is kept
+apart from AWS infrastructure, prices come only from calculator.aws, and the
+claim's sign-off form copies the funded success criteria word for word. Each
+live skill also has a `references/` file (sizing, the CP Group structure, the
+APN Innovation Sandbox template, the customer sign-off form). Those reference
+files name customers and amounts, so they live only in the console's skills
+library and are deliberately not copied into this public repo. The files here
+are each skill's `SKILL.md` only.
 
 ### Aidan voice skill (18 Nov 2026)
 
@@ -2672,6 +2681,14 @@ page or `update_skill`/`upload_skill`, and bind the new one with
 `settings/phaseSkillBindings.deploy`. `ROUTINE_INSTRUCTIONS.md` enforces the
 same three checks (Build, Review Batch gate, Deploy step 3c) even when a
 skill does not resolve.
+
+`skill-sources/ph-ticket-intake.md` was added on 17 Nov 2026, when the copies
+here were brought back in line with the live library: `ph-build-agent` had
+never received its "docs ship with the code" section live, `ph-reviewer`'s
+live copy lacked the docs check, and `ph-spec-sync-check` was missing from
+the library altogether (uploaded that day; not yet bound to the deploy
+phase). When a live skill is edited, update its copy here in the same
+session.
 
 ## Live whiteboard
 
