@@ -368,6 +368,38 @@ export const HOLIDAY_NOTE = 'Public Holidays: Please call to confirm';
 /** The opening hours template's default third headline, which says the same as HOLIDAY_NOTE. */
 export const HOLIDAY_HEADLINE = 'Public Holidays:<br><span class="reg">Please call to confirm</span>';
 
+// ---------- landscape wording ----------
+// Landscape screens hang inside the pharmacy (above or near the dispensary), portrait ones outside it, so a
+// promotion's scenes can carry in-store wording for landscape (28 Nov 2026): sparse overrides kept beside the copy
+// they replace, each falling back to the shared (portrait) copy when missing or blank:
+//   content.landscape = { introTitle, introSub }      (the intro; in the master's greeting section)
+//   slots[i].landscape = { title, sub, line1, line2 }  (moves, and inherits or detaches, with its slot)
+//   close.landscape   = { title, sub, line1, line2 }
+// Only text changes: slot count, labels, icons, the greeting and every timing stay shared.
+export const LANDSCAPE_SLOT_FIELDS = ['title', 'sub', 'line1', 'line2'];
+export const LANDSCAPE_INTRO_FIELDS = ['introTitle', 'introSub'];
+/** The default in-store intro and close for landscape (the approved landscape reference videos, 28 Nov 2026). */
+export const LANDSCAPE_INTRO = () => ({ introTitle: 'Our services', introSub: 'Speak to your pharmacist' });
+export const LANDSCAPE_CLOSE = () => ({ title: 'Speak to your pharmacist', sub: "We're here to help", line1: 'Ask us about any of these services' });
+const isObjLike = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+const hasText = (v) => typeof v === 'string' && v.trim() !== '';
+const overlay = (base, over, keys) => {
+  if (!isObjLike(over)) return base;
+  const out = { ...base };
+  for (const k of keys) if (hasText(over[k])) out[k] = over[k];
+  return out;
+};
+/** A promotion-scenes content with its landscape wording in place of the shared copy (blank or missing: shared). */
+export function landscapeContent(content) {
+  if (!isObjLike(content)) return content;
+  const out = overlay(content, content.landscape, LANDSCAPE_INTRO_FIELDS);
+  if (Array.isArray(content.slots)) out.slots = content.slots.map((x) => (isObjLike(x) ? overlay(x, x.landscape, LANDSCAPE_SLOT_FIELDS) : x));
+  if (isObjLike(content.close)) out.close = overlay(content.close, content.close.landscape, LANDSCAPE_SLOT_FIELDS);
+  return out;
+}
+/** The copy a promotion-scenes content plays in `orientation`. */
+export const copyFor = (content, orientation) => (orientation === 'landscape' ? landscapeContent(content) : content);
+
 // Content a promotion falls back to when a pharmacy has none for it yet (as the prototype does).
 const S = (label, icon, title, sub, line1, line2) => ({ label, icon, title, sub, line1, line2 });
 export function defaultContent(base) {
@@ -378,12 +410,13 @@ export function defaultContent(base) {
   }
   return {
     greeting: 'Hello,<br>${Suburb}', introTitle: 'Three reasons to walk in', introSub: 'No fuss. Just ask in store.',
+    landscape: LANDSCAPE_INTRO(),
     slots: [
-      S('Blood pressure', 'monitor_heart', 'Blood pressure checks', 'Free, as often as you like', 'Know your numbers', 'Pop in this morning'),
+      { ...S('Blood pressure', 'monitor_heart', 'Blood pressure checks', 'Free, as often as you like', 'Know your numbers', 'Pop in this morning'), landscape: { line2: 'Ask us this morning' } },
       S('MedsCheck', 'pill', 'MedsCheck', 'Know your medicines better', 'Sit down with your pharmacist', 'Review your medicines together'),
       S('Medicine packs', 'calendar_month', 'Weekly medicine packs', 'Sorted for you', 'The right dose, every day', 'Ask us to set one up'),
     ],
-    close: { title: 'Walk in today', sub: 'Speak directly with a pharmacist', line1: 'We look forward to seeing you', line2: 'Trusted local care' },
+    close: { title: 'Walk in today', sub: 'Speak directly with a pharmacist', line1: 'We look forward to seeing you', line2: 'Trusted local care', landscape: LANDSCAPE_CLOSE() },
   };
 }
 
@@ -624,7 +657,8 @@ export function renderScene(el, opts) {
   const seq = sequence(play);
   const scene = Math.max(0, Math.min(seq.length - 1, opts.scene | 0));
   const state = storeStateFor(store, opts.now, opts.today);
-  const s = store, d = play.content, sub = s.suburb;
+  // Landscape plays the promotion's in-store wording where it has some (landscapeContent); portrait the shared copy.
+  const s = store, d = hours ? play.content : copyFor(play.content, opts.orientation), sub = s.suburb;
 
   el.style.setProperty('--s-p', s.brand.p);
   el.style.setProperty('--s-p2', boost(s.brand.p, 1.8));

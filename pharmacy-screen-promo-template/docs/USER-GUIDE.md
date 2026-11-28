@@ -157,6 +157,16 @@ The scenes play in order:
 | **Tail: Walk-in close** | Headline ("Walk in today"), accent line, line 1, line 2, seconds |
 | **Footer: Open today bar** | Show or hide it, and its four messages: open, last 30 minutes, before opening, after closing |
 
+**Landscape wording.** Landscape screens hang inside the pharmacy, above or near the dispensary; portrait screens
+are outside it. So a promotion can say it differently in landscape: nothing asks the viewer to walk in, it lists
+the services and points to the pharmacist. Choose **Landscape** on the orientation tabs above the preview: an
+"Editing landscape wording" label appears above the scenes, and the intro's line 1 and line 2, each service's headline, accent
+line, line 1 and line 2, and the close's copy are the landscape ones. A field left empty shows the portrait wording
+greyed and plays it in landscape. The greeting, chip labels, icons and timings are shared by both. **Portrait**
+shows and edits the portrait wording again, and the preview, the experience URL and Download MP4 follow the tab.
+Morning and Afternoon come with in-store wording ("Our services", "Speak to your pharmacist", "Ask us this
+morning", …). A service from the library brings its own landscape wording where it has some.
+
 **Add promotions from the service library**: click **Add promotion** under the scenes. The picker lists all 28
 ready-made services (vaccinations, blood pressure checks, …), grouped by category and searchable. Pick one to
 add it with its copy and icon, then adjust the copy for this pharmacy. **Blank promotion** adds an empty scene.

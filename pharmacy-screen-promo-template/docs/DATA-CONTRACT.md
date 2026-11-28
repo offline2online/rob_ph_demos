@@ -258,9 +258,12 @@ record also has `version`, `createdAt`, `createdBy`, `updatedAt`, `updatedBy`. F
     "<promotion id, scenes template>": {
       "greeting": "Good morning,<br>${Suburb}", "introTitle": "Three reasons to walk in", "introSub": "No fuss. Just ask in store.",
       "introDur": 3,
+      "landscape": { "introTitle": "Our services", "introSub": "Speak to your pharmacist" },   // optional: landscape wording
       "slots": [ { "label": "Blood pressure", "icon": "monitor_heart", "title": "Blood pressure checks",
-                   "sub": "Free, as often as you like", "line1": "Know your numbers", "line2": "Pop in this morning", "dur": 2 } ],
-      "close": { "title": "Walk in today", "sub": "Speak directly with a pharmacist", "line1": "…", "line2": "…", "dur": 2 },
+                   "sub": "Free, as often as you like", "line1": "Know your numbers", "line2": "Pop in this morning", "dur": 2,
+                   "landscape": { "line2": "Ask us this morning" } } ],
+      "close": { "title": "Walk in today", "sub": "Speak directly with a pharmacist", "line1": "…", "line2": "…", "dur": 2,
+                 "landscape": { "title": "Speak to your pharmacist", "sub": "We're here to help", "line1": "Ask us about any of these services" } },
       "footer": { "show": true,
                   "open": "Open today until <span class=\"acc\">${CloseTime}</span>",
                   "closing": "Closing soon · <span class=\"acc\">${CloseTime}</span>",
@@ -285,6 +288,14 @@ record also has `version`, `createdAt`, `createdBy`, `updatedAt`, `updatedBy`. F
   2.7, 2.7, 2.6 for three headlines; part of the `headlines` master section). An occasion beat's seconds are its
   optional `dur`; missing ones share the design's 12 s loop equally (Christmas 6 s each, the others 4 s). The seed
   sets every beat's `dur` so each season's loop totals 7 s (`pharmacy-screen/seed/README.md` → "Season timings").
+- **Landscape wording** (promotion scenes, 28 Nov 2026): landscape screens are inside the pharmacy, portrait ones
+  outside it. In landscape the screen plays each `landscape` override in place of the copy it sits beside: the
+  intro's `content.landscape` (`introTitle`, `introSub`; part of the `greeting` master section), a slot's
+  `slots[i].landscape` and the close's `close.landscape` (`title`, `sub`, `line1`, `line2`; they inherit and detach
+  with `slots` and `close`). Each is optional; a missing or blank one plays the shared copy, so content without any
+  plays the same in both orientations. Portrait never reads them. Text only: slot count, labels, icons, the
+  greeting and timings are shared (`js/render.js` `landscapeContent`). A library service may carry
+  `landscape: {headline, accent, line1, line2}`, copied into a slot's `landscape` when it is added.
 - Occasion beats: `text` is the main line (rich text), `label` the small label line, present only on the beats
   whose design has one. Copy saved in the earlier shape (`scenes[3]` of `title`, `sub`, `line1`, `line2`) still
   plays: unedited as the new defaults, edited beat by beat (`title` as the main line, `sub` as the label).

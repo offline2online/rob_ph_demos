@@ -18,7 +18,9 @@
 // two agree.
 
 const SECTIONS = Object.freeze({
-  greeting: ["greeting", "introTitle", "introSub", "introDur"],
+  // "landscape": the intro's landscape wording ({introTitle, introSub}); a slot's and the close's landscape wording
+  // live inside them (slots[i].landscape, close.landscape), so they inherit and detach with their section.
+  greeting: ["greeting", "introTitle", "introSub", "introDur", "landscape"],
   slots: ["slots"],
   close: ["close"],
   headlines: ["headlines", "headlineDurs"],

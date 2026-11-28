@@ -101,7 +101,10 @@ and 1920px windows, toggling the menu back and forth with six extra promotions, 
 ## Live preview
 
 `../js/render.js` (the screen's own render engine) draws the selected promotion, fed the same config a screen
-gets (`js/model.js` → `renderConfig()` maps the admin records). Portrait/Landscape tabs, the scene timeline
+gets (`js/model.js` → `renderConfig()` maps the admin records). Portrait/Landscape tabs (on a promotion-scenes
+promotion they also choose which wording the copy fields edit: in Landscape the intro lines, each slot's headline,
+accent line and lines 1 and 2, and the close are the landscape wording, `landscape` beside the shared copy, an empty
+field showing the portrait wording as its placeholder; `js/model.js` `landscapeText` / `setLandscapeText`), the scene timeline
 with total time, Play/Pause, click a scene to jump to its editor and focus an editor to show its scene, and
 Copy experience URL (`pharmacy-screen.html?device=${UniqueDeviceID}&promo=<id>&orientation=<o>`, the full URL
 in a wrapping tooltip on hover). In PH's content frame the Clipboard API is refused, so the button falls back
