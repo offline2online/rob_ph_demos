@@ -30,9 +30,10 @@ function showUsed(id, val) {
   row.hidden = !c;
 }
 
-/** A plain-text copy field: its label row with "+ Add token", a one-line input holding `val`, and its tokens used. */
-export function pt(id, label, val) {
-  return `<div class="f ptf"><div class="rt-lab"><label for="${id}">${label}</label>${tokenAdd(id)}</div><input id="${id}" value="${esc(val)}">${usedRow(id, val)}</div>`;
+/** A plain-text copy field: its label row with "+ Add token", a one-line input holding `val`, and its tokens used.
+ *  `ph`: placeholder text shown while it is empty (a landscape field: the shared wording it falls back to). */
+export function pt(id, label, val, ph = '') {
+  return `<div class="f ptf"><div class="rt-lab"><label for="${id}">${label}</label>${tokenAdd(id)}</div><input id="${id}" value="${esc(val)}"${ph ? ` placeholder="${esc(ph)}"` : ''}>${usedRow(id, val)}</div>`;
 }
 
 /** Wire the plain field rendered by pt(): its "+ Add token" menu and its tokens used (the input's own `oninput`,
@@ -43,14 +44,15 @@ export function bindPlainText(id) {
   bindTokenMenu(inp, () => inp.dispatchEvent(new Event('input', { bubbles: true })));
 }
 
-/** The field's markup: a toolbar and a contenteditable box holding `val` (`aria`: its accessible name, else `label`). */
-export function rt(id, label, val, aria = label) {
+/** The field's markup: a toolbar and a contenteditable box holding `val` (`aria`: its accessible name, else `label`;
+ *  `ph`: text shown greyed while the box is empty). */
+export function rt(id, label, val, aria = label, ph = '') {
   return `<div class="f rtf"><div class="rt-lab"><span>${label}</span>${tokenAdd(id)}</div><div class="rt-box"><div class="rt-bar" data-for="${id}">
   <button type="button" data-cmd="bold" title="Bold"><b>B</b></button><button type="button" data-cmd="reg" title="Regular weight">Regular</button>
   <button type="button" data-cmd="italic" title="Italic"><i>I</i></button><button type="button" data-cmd="acc" title="Accent colour"><span class="ms" style="font-size:18px">format_color_text</span></button>
   <span class="sep"></span><button type="button" data-cmd="br" title="Line break (Enter)"><span class="ms" style="font-size:18px">keyboard_return</span></button>
   <button type="button" data-cmd="clear" title="Clear formatting"><span class="ms" style="font-size:18px">format_clear</span></button></div>
-  <div class="rt" id="${id}" contenteditable="true" role="textbox" aria-label="${aria}" aria-multiline="true">${clean(val)}</div></div>${usedRow(id, val)}</div>`;
+  <div class="rt" id="${id}" contenteditable="true" role="textbox" aria-label="${aria}" aria-multiline="true"${ph ? ` data-ph="${esc(ph)}"` : ''}>${clean(val)}</div></div>${usedRow(id, val)}</div>`;
 }
 
 /** Wire the field rendered by rt(): `set(cleanHtml)` stores the value, then `onChange()` saves it. */

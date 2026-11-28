@@ -9,7 +9,7 @@
 // and maps them to the shape the shared render engine (../js/render.js) takes, so the live preview draws
 // exactly what a screen draws.
 
-import { saleCopy, saleSeconds, saleDatePassed as saleDatePassedOn, defaultContent, occasionCopy, OCCASIONS, OCCASION_IDS, DEFAULT_OCCASION, DEFAULT_HTML, footerConfig, beatSeconds, defaultHeadlineSeconds, sceneSeconds, fmtMonthDay, seasonDates, liveOccasion, occasionOf } from '../../js/render.js';
+import { saleCopy, saleSeconds, saleDatePassed as saleDatePassedOn, defaultContent, occasionCopy, OCCASIONS, OCCASION_IDS, DEFAULT_OCCASION, DEFAULT_HTML, footerConfig, beatSeconds, defaultHeadlineSeconds, sceneSeconds, fmtMonthDay, seasonDates, liveOccasion, occasionOf, LANDSCAPE_INTRO, LANDSCAPE_CLOSE } from '../../js/render.js';
 import { storeDate, storeNow, parseOpeningHours, weeklyRows } from '../../js/hours.js';
 import { DATA_TOKENS, isSettableToken, tokensIn, cleanTokens } from '../../js/tokens.js';
 
@@ -57,19 +57,21 @@ export const baseOfTemplate = (templates, id) => {
 
 export const clone = (v) => JSON.parse(JSON.stringify(v));
 const S = (label, icon, title, sub, line1, line2) => ({ label, icon, title, sub, line1, line2 });
-const CLOSE = () => ({ title: 'Walk in today', sub: 'Speak directly with a pharmacist', line1: 'We look forward to seeing you', line2: 'Trusted local care' });
+// Each default carries its landscape (in-store) wording too: render.js landscapeContent.
+const CLOSE = () => ({ title: 'Walk in today', sub: 'Speak directly with a pharmacist', line1: 'We look forward to seeing you', line2: 'Trusted local care', landscape: LANDSCAPE_CLOSE() });
+const L = (slot, landscape) => ({ ...slot, landscape });
 
 // A new pharmacy's starting content, as the prototype's newStore(): morning / afternoon / closed copy for the
 // three default promo IDs, the render engine's defaults for anything else.
 const NEW_CONTENT = {
-  morning: () => ({ greeting: 'Good morning,<br>${Suburb}', introTitle: 'Three reasons to walk in', introSub: 'No fuss. Just ask in store.', slots: [
-    S('Blood pressure', 'monitor_heart', 'Blood pressure checks', 'Free, as often as you like', 'Know your numbers', 'Pop in this morning'),
+  morning: () => ({ greeting: 'Good morning,<br>${Suburb}', introTitle: 'Three reasons to walk in', introSub: 'No fuss. Just ask in store.', landscape: LANDSCAPE_INTRO(), slots: [
+    L(S('Blood pressure', 'monitor_heart', 'Blood pressure checks', 'Free, as often as you like', 'Know your numbers', 'Pop in this morning'), { line2: 'Ask us this morning' }),
     S('MedsCheck', 'pill', 'MedsCheck', 'Know your medicines better', 'Sit down with your pharmacist', 'Review your medicines together'),
     S('Medicine packs', 'calendar_month', 'Weekly medicine packs', 'Sorted for you', 'The right dose, every day', 'Ask us to set one up')], close: CLOSE() }),
-  afternoon: () => ({ greeting: 'Good afternoon,<br>${Suburb}', introTitle: 'Three reasons to walk in', introSub: 'No fuss. Just ask in store.', slots: [
+  afternoon: () => ({ greeting: 'Good afternoon,<br>${Suburb}', introTitle: 'Three reasons to walk in', introSub: 'No fuss. Just ask in store.', landscape: LANDSCAPE_INTRO(), slots: [
     S('Vaccinations', 'vaccines', 'Vaccinations', 'No appointment needed', 'Flu and other vaccines', 'Given by our trained pharmacists'),
     S('Scripts', 'prescriptions', 'Script on File', 'Reorder without the paper', 'We keep your scripts safe', 'Ask us how'),
-    S('Advice', 'medical_services', 'Ask a pharmacist', 'Free health advice', 'No appointment needed', 'Talk to us on your way home')], close: CLOSE() }),
+    L(S('Advice', 'medical_services', 'Ask a pharmacist', 'Free health advice', 'No appointment needed', 'Talk to us on your way home'), { line2: 'Talk to us today' })], close: CLOSE() }),
   closed: () => ({ headlines: ["Sorry, we're closed", 'Serving ${Suburb}', 'Public Holidays:<br><span class="reg">Please call to confirm</span>'], showAddress: false }),
   occasions: () => defaultContent('occasion'),
 };
@@ -123,7 +125,7 @@ export function newPharmacyContent(promotions, templates) {
 // (config-api/src/inherit.js — keep the two section maps equal; test/admin-model.test.mjs checks they are).
 
 export const MASTER_SECTIONS = {
-  greeting: ['greeting', 'introTitle', 'introSub', 'introDur'],
+  greeting: ['greeting', 'introTitle', 'introSub', 'introDur', 'landscape'], // landscape: the intro's landscape wording
   slots: ['slots'],
   close: ['close'],
   headlines: ['headlines', 'headlineDurs'],
@@ -515,7 +517,31 @@ export function storeCodeError(code, pharmacies, selfId) {
 }
 
 /** A library service as a new scene slot. */
-export const serviceToSlot = (s) => ({ label: s.label, icon: s.icon || 'medical_services', title: s.headline || s.label, sub: s.accent || '', line1: s.line1 || '', line2: s.line2 || '', svc: s.id });
+/**
+ * Landscape wording in the editor (render.js landscapeContent). `obj` is the content (intro: introTitle, introSub),
+ * a slot or the close; its override lives in obj.landscape[key]. landscapeText: the override ('' when unset).
+ * setLandscapeText: sets it, a blank value removing it (and an empty landscape object), so the field falls back
+ * to the shared copy again.
+ */
+export const landscapeText = (obj, key) => (obj && obj.landscape && typeof obj.landscape === 'object' && typeof obj.landscape[key] === 'string' ? obj.landscape[key] : '');
+export function setLandscapeText(obj, key, value) {
+  const v = typeof value === 'string' ? value : '';
+  const l = obj.landscape && typeof obj.landscape === 'object' && !Array.isArray(obj.landscape) ? obj.landscape : {};
+  if (v.replace(/<br\s*\/?>/gi, '').trim()) l[key] = v; else delete l[key];
+  if (Object.keys(l).length) obj.landscape = l; else delete obj.landscape;
+}
+/** Copy as the placeholder of a landscape field: its shared text, markup and line breaks dropped. */
+export const plainCopy = (v) => String(v || '').replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
+
+/** A slot from a library service; the service's landscape wording ({headline, accent, line1, line2}) becomes the
+ *  slot's (title, sub, line1, line2), blank ones left out so they fall back to the shared copy. */
+export function serviceToSlot(s) {
+  const slot = { label: s.label, icon: s.icon || 'medical_services', title: s.headline || s.label, sub: s.accent || '', line1: s.line1 || '', line2: s.line2 || '', svc: s.id };
+  const l = s.landscape && typeof s.landscape === 'object' ? s.landscape : {};
+  const land = Object.fromEntries([['title', l.headline], ['sub', l.accent], ['line1', l.line1], ['line2', l.line2]].filter(([, v]) => typeof v === 'string' && v.trim()));
+  if (Object.keys(land).length) slot.landscape = land;
+  return slot;
+}
 export const blankSlot = () => S('New service', 'medical_services', 'New promotion', 'Accent line', 'Line 1', 'Line 2');
 
 /** The service library filtered by search text and, optionally, to services this store offers. Grouped by category. */

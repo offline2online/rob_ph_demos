@@ -1900,3 +1900,55 @@ test('special opening hours: the editor\'s preview plays what the screen plays, 
   assert.deepEqual(x.errors, []);
   await x.ctx.close();
 });
+
+test('landscape wording: the orientation tabs show and edit each wording separately, and the preview follows', async () => {
+  const { ctx, page, errors } = await open();
+  await page.click('#playBtn'); // pause
+  await page.selectOption('#pvSel', '__master');
+  await page.waitForFunction(() => window.pharmacyAdmin.state.cur.isMaster);
+  await page.click('#dpTabs button:has-text("Afternoon")');
+  await page.click('#tl button[data-i="0"]');
+  const text = (sel) => page.$eval(`#screen ${sel}`, (e) => e.textContent.replace(/\s+/g, ' ').trim());
+  // Portrait: the shared wording, no landscape note.
+  assert.equal(await page.inputValue('#dit'), 'Three reasons to walk in');
+  assert.equal(await page.$('#landNote'), null);
+  assert.equal(await text('.s-title'), 'Three reasons to walk in');
+  // Landscape: the in-store wording, with the shared wording as each field's placeholder.
+  await page.click('#orTabs button[data-or="landscape"]');
+  await page.waitForFunction(() => document.getElementById('screen').classList.contains('land') && document.getElementById('landNote'));
+  assert.equal(await page.inputValue('#dit'), 'Our services');
+  assert.equal(await page.getAttribute('#dit', 'placeholder'), 'Three reasons to walk in');
+  assert.equal(await page.inputValue('#s1line2'), 'Talk to us today');
+  assert.equal(await page.getAttribute('#s1line2', 'placeholder'), 'Talk to us on your way home');
+  assert.equal(await page.inputValue('#s2sub'), 'Ask us to book');
+  assert.equal(await page.inputValue('#cl4'), '');
+  assert.equal(await page.getAttribute('#cl4', 'placeholder'), 'Trusted local care since 1952');
+  assert.equal(await page.$eval('#cl1', (e) => e.textContent), 'Speak to your pharmacist');
+  await page.waitForFunction(() => document.querySelector('#screen .s-title').textContent === 'Our services');
+  // An edit in landscape changes the landscape wording only.
+  await page.fill('#cl3', 'Ask us about our services');
+  await settle(page);
+  let master = (await api('GET', '/api/admin/promotions/seed-promotion-afternoon')).body.master;
+  assert.equal(master.close.landscape.line1, 'Ask us about our services');
+  assert.equal(master.close.line1, 'We look forward to seeing you');
+  // Emptied, a landscape field falls back to the shared wording.
+  await page.fill('#dis', '');
+  await settle(page);
+  master = (await api('GET', '/api/admin/promotions/seed-promotion-afternoon')).body.master;
+  assert.deepEqual(master.landscape, { introTitle: 'Our services' });
+  assert.equal(master.introSub, 'No fuss. Just ask in store.');
+  await page.waitForFunction(() => document.querySelector('#screen .s-sub').textContent === 'No fuss. Just ask in store.');
+  // The screens get it: a pharmacy that inherits the master.
+  const scr = (await api('GET', '/api/screens/VIC-MP-002?promo=afternoon', { token: null })).body;
+  assert.equal(scr.promotions.afternoon.content.close.landscape.line1, 'Ask us about our services');
+  // Back in portrait: the shared wording, untouched.
+  await page.fill('#dis', 'Speak to your pharmacist');
+  await settle(page);
+  await page.click('#orTabs button[data-or="portrait"]');
+  await page.waitForFunction(() => !document.getElementById('screen').classList.contains('land') && !document.getElementById('landNote'));
+  assert.equal(await page.inputValue('#cl3'), 'We look forward to seeing you');
+  assert.equal(await page.inputValue('#dis'), 'No fuss. Just ask in store.');
+  assert.equal(await text('.s-sub'), 'No fuss. Just ask in store.');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});

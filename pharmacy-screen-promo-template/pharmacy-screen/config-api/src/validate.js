@@ -420,7 +420,23 @@ function normaliseService(input, stored = {}) {
     line1: text("line1"),
     line2: text("line2"),
     offeredBy,
+    ...serviceLandscape(merged.landscape),
   };
+}
+
+// A service's landscape (in-store) wording, used when it is added to a promotion slot (admin/js/model.js
+// serviceToSlot): {headline, accent, line1, line2}, each optional. Blank fields are dropped; none left: no key.
+const SERVICE_LANDSCAPE_FIELDS = ["headline", "accent", "line1", "line2"];
+function serviceLandscape(value) {
+  if (value === undefined || value === null) return {};
+  if (!isPlainObject(value)) throw bad("landscape must be an object {headline, accent, line1, line2}");
+  const out = {};
+  for (const k of SERVICE_LANDSCAPE_FIELDS) {
+    const v = str(value[k], `landscape.${k}`, { max: LIMITS.serviceText, required: false, allowEmpty: true });
+    assertSafe(v, `landscape.${k}`, UNSAFE_MARKUP);
+    if (v.trim()) out[k] = v;
+  }
+  return Object.keys(out).length ? { landscape: out } : {};
 }
 
 module.exports = {

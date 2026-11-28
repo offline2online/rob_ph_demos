@@ -101,7 +101,10 @@
       "line2": "Talk to us in store",
       "offeredBy": [
         "VIC-MP-001"
-      ]
+      ],
+      "landscape": {
+        "line2": "Talk to us today"
+      }
     },
     {
       "key": "uti",
@@ -141,7 +144,10 @@
       "line2": "Just ask in store",
       "offeredBy": [
         "VIC-MP-005"
-      ]
+      ],
+      "landscape": {
+        "line2": "Just ask us"
+      }
     },
     {
       "key": "meds",
@@ -322,7 +328,10 @@
       "line2": "Under 16? Bring a parent",
       "offeredBy": [
         "VIC-MP-001"
-      ]
+      ],
+      "landscape": {
+        "accent": "Ask us to book"
+      }
     },
     {
       "key": "lang",

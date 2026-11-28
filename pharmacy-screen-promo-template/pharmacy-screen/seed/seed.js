@@ -38,6 +38,10 @@
 // any missing default promotion, with its master from promotions.json (the
 // Big Brand Sale copy); no pharmacy's content is written for it, and nothing
 // else changes.
+// Landscape wording (28 Nov 2026): Morning / Afternoon content and library
+// services the seed made get the fixtures' landscape (in-store) wording where
+// the copy it overrides is still the fixture's (upgradeLandscape); the shared
+// (portrait) copy is never changed, and edited copy gets none.
 // With --reset, seeded records that differ from the fixtures are put back to
 // the fixture values (records the seed doesn't know about are never touched,
 // and a pharmacy's content for promotions other than the four defaults is
@@ -165,6 +169,47 @@ function upgradeSeasonal(content, fresh, legacy) {
   const copy = upgradeOccasions(content, fresh, legacy);
   return upgradeTimings(copy || content, fresh) || copy;
 }
+/**
+ * Landscape wording (28 Nov 2026): Morning / Afternoon content the seed made, with no landscape (in-store) wording
+ * yet, gets the fixture's wherever the copy it overrides is still the fixture's own: the intro's (content.landscape),
+ * each slot's (slots[i].landscape, matched by position and headline) and the close's (close.landscape). Only adds
+ * landscape keys; the shared (portrait) copy is never changed, and copy someone edited gets none (it falls back to
+ * its own shared copy in landscape). Null when nothing changes.
+ */
+const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+const sameFields = (a, b, keys) => keys.every((k) => (a && a[k]) === (b && b[k]));
+function upgradeLandscape(content, fresh) {
+  if (!isObj(content) || !isObj(fresh)) return null;
+  const out = { ...content };
+  let changed = false;
+  const overridden = (land) => Object.keys(land || {});
+  if (isObj(fresh.landscape) && content.landscape === undefined && sameFields(content, fresh, overridden(fresh.landscape).concat("introTitle", "introSub"))) {
+    out.landscape = JSON.parse(JSON.stringify(fresh.landscape));
+    changed = true;
+  }
+  if (Array.isArray(content.slots) && Array.isArray(fresh.slots)) {
+    const slots = content.slots.map((x, i) => {
+      const f = fresh.slots[i];
+      if (!isObj(x) || !isObj(f) || !isObj(f.landscape) || x.landscape !== undefined) return x;
+      if (!sameFields(x, f, overridden(f.landscape).concat("title"))) return x;
+      changed = true;
+      return { ...x, landscape: { ...f.landscape } };
+    });
+    if (changed) out.slots = slots;
+  }
+  if (isObj(content.close) && isObj(fresh.close) && isObj(fresh.close.landscape) && content.close.landscape === undefined
+    && sameFields(content.close, fresh.close, overridden(fresh.close.landscape).concat("title"))) {
+    out.close = { ...content.close, landscape: { ...fresh.close.landscape } };
+    changed = true;
+  }
+  return changed ? out : null;
+}
+
+/** Every upgrade of seeded content (seasonal, then landscape wording); null when nothing changes. */
+function upgradeContent(content, fresh, legacy) {
+  const seasonal = upgradeSeasonal(content, fresh, legacy);
+  return upgradeLandscape(seasonal || content, fresh) || seasonal;
+}
 const logoHash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex").slice(0, 20);
 // The path setLogo() stores a logo under (content-hash named), to tell
 // whether a stored logo is the fixture's without downloading it.
@@ -237,9 +282,10 @@ async function seedConfig({ store, blobs, reset = false, fixtures = loadFixtures
       // promotion made by hand is left exactly as it is.
       await svc.updatePromotion(SEED_ACTOR, existing.id, { master });
       report.promotions.updated.push(p.promoId);
-    } else if (!reset && master && existing.id === ids.promotion(p.key) && upgradeSeasonal(existing.master, master, fixtures.legacyOccasions)) {
-      // A master the seed made still holding old default occasion copy, or a season on the old default timings.
-      await svc.updatePromotion(SEED_ACTOR, existing.id, { master: upgradeSeasonal(existing.master, master, fixtures.legacyOccasions) });
+    } else if (!reset && master && existing.id === ids.promotion(p.key) && upgradeContent(existing.master, master, fixtures.legacyOccasions)) {
+      // A master the seed made still holding old default occasion copy, a season on the old default timings, or
+      // Morning / Afternoon copy with no landscape wording yet.
+      await svc.updatePromotion(SEED_ACTOR, existing.id, { master: upgradeContent(existing.master, master, fixtures.legacyOccasions) });
       report.promotions.updated.push(p.promoId);
     } else if (renamed) {
       report.promotions.updated.push(p.promoId);
@@ -274,10 +320,11 @@ async function seedConfig({ store, blobs, reset = false, fixtures = loadFixtures
       const have = existing.content || {};
       const seeded = existing.id === ids.pharmacy(ph.key);
       const added = seeded ? Object.fromEntries(Object.entries(content).filter(([id]) => createdPromotionIds.has(id) && !have[id])) : {};
-      // Old default occasion copy, or a season on the old default timings, on a pharmacy the seed made: the new defaults.
+      // Old default occasion copy, a season on the old default timings, or default copy with no landscape wording
+      // yet, on a pharmacy the seed made: the new defaults (upgradeContent).
       if (seeded) {
         for (const [id, value] of Object.entries(content)) {
-          const up = !added[id] && upgradeSeasonal(have[id], value, fixtures.legacyOccasions);
+          const up = !added[id] && upgradeContent(have[id], value, fixtures.legacyOccasions);
           if (up) added[id] = up;
         }
       }
@@ -323,6 +370,11 @@ async function seedConfig({ store, blobs, reset = false, fixtures = loadFixtures
     const { id: _id, version: _v, createdAt: _ca, createdBy: _cb, updatedAt: _ua, updatedBy: _ub, ...stored } = existing;
     if (reset && !same(want, normaliseService(stored))) {
       await svc.updateService(SEED_ACTOR, existing.id, fields);
+      report.services.updated.push(key);
+    } else if (!reset && want.landscape && !stored.landscape && existing.id === ids.service(key)
+      && Object.keys(want.landscape).every((k) => stored[k] === want[k])) {
+      // Landscape wording (28 Nov 2026): a service the seed made, its copy as the fixture's, gets the fixture's.
+      await svc.updateService(SEED_ACTOR, existing.id, { landscape: want.landscape });
       report.services.updated.push(key);
     } else {
       report.services.unchanged.push(key);
@@ -405,4 +457,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { seedConfig, loadFixtures, campaignDataFor, summarise, parseArgs, upgradeOccasions, upgradeTimings, ids, SEED_ACTOR };
+module.exports = { seedConfig, loadFixtures, campaignDataFor, summarise, parseArgs, upgradeOccasions, upgradeTimings, upgradeLandscape, ids, SEED_ACTOR };

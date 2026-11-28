@@ -263,6 +263,8 @@ function setOrient(o) {
   document.querySelectorAll('#orTabs button').forEach((b) => b.setAttribute('aria-selected', b.dataset.or === o));
   document.querySelector('.wrap').classList.toggle('isLand', o === 'landscape');
   renderUrl(); lastKey = '';
+  // A promotion-scenes promotion's copy fields edit the wording of the orientation shown (landscape: in-store).
+  if (S.cur && S.promotions.length && !isHours() && !isOcc() && !isSale()) keepPlace('#dpBody', renderDp);
   requestAnimationFrame(() => { fit(); lastKey = ''; });
 }
 $('orTabs').onclick = (e) => { const b = e.target.closest('button'); if (b) setOrient(b.dataset.or); };
@@ -369,22 +371,32 @@ function renderDp() {
   if (isSale()) { renderSale(B, d); hideTimings(B); decorateSections(B); return; }
   const f = pt; // every plain copy field has + Add token and its tokens used (rich-text.js)
   const F = footerConfig(d);
-  B.innerHTML = `<span class="pill" id="loopLen" style="justify-self:start"></span><div><div class="slot"><div class="slot-h">Top: Greeting<label class="dur" style="margin-left:auto" title="How long this shows on screen"><span class="ms">timer</span><input type="number" id="ddur" min="1" max="60" step="0.5" value="${+d.introDur || 3}" aria-label="Seconds on screen">s</label></div><div class="stack">${rt('dg', 'Headline', d.greeting)}${f('dit', 'Line 1', d.introTitle)}${f('dis', 'Line 2', d.introSub)}</div></div></div>
+  // Landscape (the orientation tabs above the preview): the intro lines, each slot's headline, accent line and
+  // lines 1 and 2, and the close's copy are its landscape (in-store) wording, saved in their `landscape`; an empty
+  // field shows the shared (portrait) text greyed and plays it. The greeting, chip labels, icons and timings are shared.
+  const land = orient === 'landscape';
+  const cv = (obj, k) => (land ? M.landscapeText(obj, k) : obj[k]);
+  const cph = (obj, k) => (land ? M.plainCopy(obj[k]) : '');
+  const cset = (obj, k, v) => { if (land) M.setLandscapeText(obj, k, v); else obj[k] = v; };
+  const lf = (id, label, obj, k) => f(id, label, cv(obj, k), cph(obj, k));
+  const lr = (id, label, obj, k) => rt(id, label, cv(obj, k), label, cph(obj, k));
+  const landNote = land ? '<div class="inh-bar land-note" id="landNote" role="status"><span class="pill inh-pill"><span class="ms">stay_current_landscape</span>Editing landscape wording</span><span class="ms help" title="Landscape screens are inside the pharmacy, so these lines can say it differently from portrait. Leave a field empty to use the portrait wording, shown greyed. The greeting, chip labels, icons and timings are shared.">info</span></div>' : '';
+  B.innerHTML = `<span class="pill" id="loopLen" style="justify-self:start"></span>${landNote}<div><div class="slot"><div class="slot-h">Top: Greeting<label class="dur" style="margin-left:auto" title="How long this shows on screen"><span class="ms">timer</span><input type="number" id="ddur" min="1" max="60" step="0.5" value="${+d.introDur || 3}" aria-label="Seconds on screen">s</label></div><div class="stack">${rt('dg', 'Headline', d.greeting)}${lf('dit', 'Line 1', d, 'introTitle')}${lf('dis', 'Line 2', d, 'introSub')}</div></div></div>
    <div id="slotsSec" style="display:grid;gap:12px"><div id="slotList" style="display:grid;gap:12px">${d.slots.map((x, i) => `<div class="slot" data-i="${i}"><div class="slot-h"><span class="ms drag" title="Drag to reorder" aria-label="Drag to reorder">drag_indicator</span><span class="ic" style="background:${esc(s.colours.primary)}"><span class="ms">${esc(x.icon)}</span></span>Promotion ${i + 1}<span class="hint" style="font-weight:400">· ${esc(x.label)}</span>
       <span style="margin-left:auto;display:flex;gap:2px;align-items:center"><label class="dur" title="How long this shows on screen"><span class="ms">timer</span><input type="number" id="s${i}dur" min="1" max="60" step="0.5" value="${+x.dur || 2}" aria-label="Seconds on screen">s</label><button type="button" class="text mv" data-mv="-1" ${i ? '' : 'disabled'} title="Move up" aria-label="Move up"><span class="ms">arrow_upward</span></button><button type="button" class="text mv" data-mv="1" ${i < d.slots.length - 1 ? '' : 'disabled'} title="Move down" aria-label="Move down"><span class="ms">arrow_downward</span></button>
       <button type="button" class="text del" ${d.slots.length > 1 ? '' : 'disabled'} style="color:var(--err)" title="Delete promotion" aria-label="Delete promotion ${i + 1}"><span class="ms">delete</span><span class="delt"></span></button></span></div>
-     <div class="stack">${rt(`s${i}title`, 'Headline', x.title)}
-     ${f(`s${i}sub`, 'Accent line', x.sub)}
+     <div class="stack">${lr(`s${i}title`, 'Headline', x, 'title')}
+     ${lf(`s${i}sub`, 'Accent line', x, 'sub')}
      <div class="grid2">${f(`s${i}label`, 'Service chip label', x.label)}<div class="f icp-wrap"><span style="font-size:12px;color:var(--muted)">Icon</span><button type="button" class="icp" id="s${i}icon" aria-haspopup="listbox" aria-expanded="false"><span class="cur"><span class="ms">${esc(x.icon)}</span><span>${esc(String(x.icon).replace(/_/g, ' '))}</span></span><span class="ms">expand_more</span></button></div></div>
-     ${f(`s${i}line1`, 'Line 1', x.line1)}
-     ${f(`s${i}line2`, 'Line 2', x.line2)}</div></div>`).join('')}</div>
+     ${lf(`s${i}line1`, 'Line 1', x, 'line1')}
+     ${lf(`s${i}line2`, 'Line 2', x, 'line2')}</div></div>`).join('')}</div>
    <button type="button" id="addSlot" ${d.slots.length < maxSlots() ? '' : S.lock ? 'hidden' : 'disabled'} style="justify-self:start" aria-expanded="false"><span class="ms">add</span>Add promotion</button>
    <div class="svcpick" id="svcPick" hidden>
      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input type="search" id="svcQ" placeholder="Search ${S.services.length} services" style="flex:1;min-width:180px" autocomplete="off">
        <button type="button" class="text" id="svcBlank"><span class="ms">edit_note</span>Blank promotion</button>
        <button type="button" class="text" id="svcClose" title="Close without adding" aria-label="Close without adding"><span class="ms">close</span>Close</button></div>
      <div class="svclist" id="svcList"></div></div></div>
-   <div class="slot"><div class="slot-h">Tail: Walk-in close<label class="dur" style="margin-left:auto" title="How long this shows on screen"><span class="ms">timer</span><input type="number" id="cdur" min="1" max="60" step="0.5" value="${+d.close.dur || 2}" aria-label="Seconds on screen">s</label></div><div class="stack">${rt('cl1', 'Headline', d.close.title)}${f('cl2', 'Accent line', d.close.sub)}${f('cl3', 'Line 1', d.close.line1)}${f('cl4', 'Line 2', d.close.line2)}</div></div>
+   <div class="slot"><div class="slot-h">Tail: Walk-in close<label class="dur" style="margin-left:auto" title="How long this shows on screen"><span class="ms">timer</span><input type="number" id="cdur" min="1" max="60" step="0.5" value="${+d.close.dur || 2}" aria-label="Seconds on screen">s</label></div><div class="stack">${lr('cl1', 'Headline', d.close, 'title')}${lf('cl2', 'Accent line', d.close, 'sub')}${lf('cl3', 'Line 1', d.close, 'line1')}${lf('cl4', 'Line 2', d.close, 'line2')}</div></div>
    <div class="slot" id="footSlot"><div class="slot-h">Footer: Open today bar<label class="chk" style="margin-left:auto;font-weight:400"><input type="checkbox" id="ftShow" ${F.show !== false ? 'checked' : ''}>Show</label></div>
      <div class="stack">${rt('ftOpen', 'While open', F.open)}${rt('ftClosing', 'Last 30 minutes', F.closing)}${rt('ftBefore', 'Before opening', F.before)}${rt('ftClosed', 'After closing', F.closed)}</div>
      <span class="hint">Use \${CloseTime} and \${OpenTime} for today's hours.</span></div>`;
@@ -394,7 +406,7 @@ function renderDp() {
   $('cdur').oninput = (e) => { d.close.dur = M.clampDur(e.target.value); changed(); total(); };
   d.slots.forEach((x, i) => { $(`s${i}dur`).oninput = (e) => { x.dur = M.clampDur(e.target.value); changed(); total(); }; });
   total();
-  bindRt('dg', (v) => { d.greeting = v; }); on('dit', (v) => { d.introTitle = v; }); on('dis', (v) => { d.introSub = v; });
+  bindRt('dg', (v) => { d.greeting = v; }); on('dit', (v) => cset(d, 'introTitle', v)); on('dis', (v) => cset(d, 'introSub', v));
   const reflow = () => { scene = 0; elapsed = 0; lastKey = ''; changed(); renderDp(); };
   const drawSvc = () => {
     const used = new Set(d.slots.map((x) => x.svc));
@@ -432,14 +444,15 @@ function renderDp() {
     };
   });
   d.slots.forEach((x, i) => {
-    ['label', 'sub', 'line1', 'line2'].forEach((k) => on(`s${i}${k}`, (v) => { x[k] = v; }));
-    bindRt(`s${i}title`, (v) => { x.title = v; });
+    on(`s${i}label`, (v) => { x.label = v; });
+    ['sub', 'line1', 'line2'].forEach((k) => on(`s${i}${k}`, (v) => cset(x, k, v)));
+    bindRt(`s${i}title`, (v) => cset(x, 'title', v));
     $(`s${i}icon`).onclick = (e) => { e.stopPropagation(); openPicker($(`s${i}icon`), x.icon, (v) => { x.icon = v; changed(); renderDp(); }); };
   });
   const fset = (k, v) => { d.footer = Object.assign({}, footerConfig(d), { [k]: v }); };
   bindRt('ftOpen', (v) => fset('open', v)); bindRt('ftClosing', (v) => fset('closing', v)); bindRt('ftBefore', (v) => fset('before', v)); bindRt('ftClosed', (v) => fset('closed', v));
   $('ftShow').onchange = (e) => { fset('show', e.target.checked); changed(); };
-  bindRt('cl1', (v) => { d.close.title = v; }); on('cl2', (v) => { d.close.sub = v; }); on('cl3', (v) => { d.close.line1 = v; }); on('cl4', (v) => { d.close.line2 = v; });
+  bindRt('cl1', (v) => cset(d.close, 'title', v)); on('cl2', (v) => cset(d.close, 'sub', v)); on('cl3', (v) => cset(d.close, 'line1', v)); on('cl4', (v) => cset(d.close, 'line2', v));
   ['dit', 'dis', 'cl2', 'cl3', 'cl4', ...d.slots.flatMap((x, i) => ['sub', 'label', 'line1', 'line2'].map((k) => `s${i}${k}`))].forEach(bindPlainText);
   hideTimings(B); decorateSections(B); renderBarTabs();
 }

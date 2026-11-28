@@ -48,6 +48,12 @@ For a local API already holding the seed: `cd ../config-api && npm run dev:seed`
   still holds an occasion's old default copy (`fixtures/occasions-legacy.json`, the three-scene copy from before
   the standalone designs) gets that occasion's new default copy from the fixtures. Copy anyone edited is kept.
   The next run is a no-op.
+- **Landscape wording (28 Nov 2026).** Morning and Afternoon in the fixtures carry landscape (in-store) wording
+  (`landscape` on the intro, each slot and the close; `docs/DATA-CONTRACT.md` §4), and the library's come-in lines
+  have theirs (`services.json` `landscape`). On a re-run, a seeded promotion master, a seeded pharmacy's content
+  and a seeded service with no landscape wording yet get the fixture's wherever the copy it overrides is still the
+  fixture's (`upgradeLandscape` in `seed.js`). Only landscape keys are added: portrait copy is never changed, and
+  copy someone edited gets none (it plays its own copy in landscape). The next run is a no-op.
 - **Season timings.** Every season's beats carry their seconds on screen (`dur`), as set on the live master on
   21 Nov 2026; each loop totals 7 s, so the playback duration is 8 s:
 

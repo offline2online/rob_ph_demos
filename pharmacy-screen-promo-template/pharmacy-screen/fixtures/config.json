@@ -77,6 +77,10 @@
      "greeting": "Good morning,<br>${Suburb}",
      "introTitle": "Three reasons to walk in",
      "introSub": "No fuss. Just ask in store.",
+     "landscape": {
+      "introTitle": "Our services",
+      "introSub": "Speak to your pharmacist"
+     },
      "slots": [
       {
        "label": "Blood pressure",
@@ -84,7 +88,10 @@
        "title": "Blood pressure checks",
        "sub": "Free, as often as you like",
        "line1": "Know your numbers",
-       "line2": "Pop in this morning"
+       "line2": "Pop in this morning",
+       "landscape": {
+        "line2": "Ask us this morning"
+       }
       },
       {
        "label": "MedsCheck",
@@ -107,13 +114,22 @@
       "title": "Walk in today",
       "sub": "Speak directly with a pharmacist",
       "line1": "We look forward to seeing you",
-      "line2": "Trusted local care since 1952"
+      "line2": "Trusted local care since 1952",
+      "landscape": {
+       "title": "Speak to your pharmacist",
+       "sub": "We're here to help",
+       "line1": "Ask us about any of these services"
+      }
      }
     },
     "afternoon": {
      "greeting": "Good afternoon,<br>${Suburb}",
      "introTitle": "Three reasons to walk in",
      "introSub": "No fuss. Just ask in store.",
+     "landscape": {
+      "introTitle": "Our services",
+      "introSub": "Speak to your pharmacist"
+     },
      "slots": [
       {
        "label": "Vaccinations",
@@ -129,7 +145,10 @@
        "title": "Sleep apnoea",
        "sub": "Screening and sleep studies",
        "line1": "Advice, CPAP machines and masks",
-       "line2": "Talk to us on your way home"
+       "line2": "Talk to us on your way home",
+       "landscape": {
+        "line2": "Talk to us today"
+       }
       },
       {
        "label": "Ear piercing",
@@ -137,14 +156,22 @@
        "title": "Ear piercing",
        "sub": "Ask in store to book",
        "line1": "Standard lobe piercing",
-       "line2": "Under 16? Bring a parent"
+       "line2": "Under 16? Bring a parent",
+       "landscape": {
+        "sub": "Ask us to book"
+       }
       }
      ],
      "close": {
       "title": "Walk in today",
       "sub": "Speak directly with a pharmacist",
       "line1": "We look forward to seeing you",
-      "line2": "Trusted local care since 1952"
+      "line2": "Trusted local care since 1952",
+      "landscape": {
+       "title": "Speak to your pharmacist",
+       "sub": "We're here to help",
+       "line1": "Ask us about any of these services"
+      }
      }
     },
     "closed": {
@@ -309,6 +336,10 @@
      "greeting": "Good morning,<br>${Suburb}",
      "introTitle": "Three reasons to walk in",
      "introSub": "No fuss. Just ask in store.",
+     "landscape": {
+      "introTitle": "Our services",
+      "introSub": "Speak to your pharmacist"
+     },
      "slots": [
       {
        "label": "Diabetes care",
@@ -316,7 +347,10 @@
        "title": "Diabetes care",
        "sub": "Glucose monitoring and advice",
        "line1": "Talk to our diabetes educator",
-       "line2": "Pop in this morning"
+       "line2": "Pop in this morning",
+       "landscape": {
+        "line2": "Ask us this morning"
+       }
       },
       {
        "label": "Blood pressure",
@@ -339,13 +373,22 @@
       "title": "Walk in today",
       "sub": "Speak directly with a pharmacist",
       "line1": "We look forward to seeing you",
-      "line2": "Trusted local care"
+      "line2": "Trusted local care",
+      "landscape": {
+       "title": "Speak to your pharmacist",
+       "sub": "We're here to help",
+       "line1": "Ask us about any of these services"
+      }
      }
     },
     "afternoon": {
      "greeting": "Good afternoon,<br>${Suburb}",
      "introTitle": "Grab it on the way home",
      "introSub": "Quick help, no wait.",
+     "landscape": {
+      "introTitle": "Our services",
+      "introSub": "Speak to your pharmacist"
+     },
      "slots": [
       {
        "label": "Cold and flu",
@@ -361,7 +404,10 @@
        "title": "Lunchbox snacks",
        "sub": "Healthy, easy options",
        "line1": "Ready for tomorrow",
-       "line2": "Grab a few on your way"
+       "line2": "Grab a few on your way",
+       "landscape": {
+        "line2": "Grab a few today"
+       }
       },
       {
        "label": "Sunscreen",
@@ -376,7 +422,12 @@
       "title": "Walk in today",
       "sub": "Speak directly with a pharmacist",
       "line1": "We look forward to seeing you",
-      "line2": "Trusted local care"
+      "line2": "Trusted local care",
+      "landscape": {
+       "title": "Speak to your pharmacist",
+       "sub": "We're here to help",
+       "line1": "Ask us about any of these services"
+      }
      }
     },
     "closed": {
@@ -541,6 +592,10 @@
      "greeting": "Good morning,<br>${Suburb}",
      "introTitle": "Ready for the beach?",
      "introSub": "Everything for your day out.",
+     "landscape": {
+      "introTitle": "Our services",
+      "introSub": "Speak to your pharmacist"
+     },
      "slots": [
       {
        "label": "Sunscreen",
@@ -556,7 +611,10 @@
        "title": "Hydration",
        "sub": "Stay topped up",
        "line1": "Electrolytes for hot days",
-       "line2": "Pop in this morning"
+       "line2": "Pop in this morning",
+       "landscape": {
+        "line2": "Ask us this morning"
+       }
       },
       {
        "label": "Recovery",
@@ -571,13 +629,22 @@
       "title": "Walk in today",
       "sub": "Speak directly with a pharmacist",
       "line1": "We look forward to seeing you",
-      "line2": "Trusted local care"
+      "line2": "Trusted local care",
+      "landscape": {
+       "title": "Speak to your pharmacist",
+       "sub": "We're here to help",
+       "line1": "Ask us about any of these services"
+      }
      }
     },
     "afternoon": {
      "greeting": "Good afternoon,<br>${Suburb}",
      "introTitle": "Take a look around",
      "introSub": "Something for everyone.",
+     "landscape": {
+      "introTitle": "Our services",
+      "introSub": "Speak to your pharmacist"
+     },
      "slots": [
       {
        "label": "Gifts",
@@ -601,14 +668,22 @@
        "title": "Holiday essentials",
        "sub": "Travel sizes and first aid",
        "line1": "Everything for your stay",
-       "line2": "Pop in anytime"
+       "line2": "Pop in anytime",
+       "landscape": {
+        "line2": "Ask us anytime"
+       }
       }
      ],
      "close": {
       "title": "Walk in today",
       "sub": "Speak directly with a pharmacist",
       "line1": "We look forward to seeing you",
-      "line2": "Trusted local care"
+      "line2": "Trusted local care",
+      "landscape": {
+       "title": "Speak to your pharmacist",
+       "sub": "We're here to help",
+       "line1": "Ask us about any of these services"
+      }
      }
     },
     "closed": {
@@ -773,6 +848,10 @@
      "greeting": "Good morning,<br>${Suburb}",
      "introTitle": "Before you shop",
      "introSub": "Drop in on your centre run.",
+     "landscape": {
+      "introTitle": "Our services",
+      "introSub": "Speak to your pharmacist"
+     },
      "slots": [
       {
        "label": "MedsCheck",
@@ -803,13 +882,22 @@
       "title": "Walk in today",
       "sub": "Speak directly with a pharmacist",
       "line1": "We look forward to seeing you",
-      "line2": "Trusted local care"
+      "line2": "Trusted local care",
+      "landscape": {
+       "title": "Speak to your pharmacist",
+       "sub": "We're here to help",
+       "line1": "Ask us about any of these services"
+      }
      }
     },
     "afternoon": {
      "greeting": "Good afternoon,<br>${Suburb}",
      "introTitle": "Quick grabs",
      "introSub": "In and out in minutes.",
+     "landscape": {
+      "introTitle": "Our services",
+      "introSub": "Speak to your pharmacist"
+     },
      "slots": [
       {
        "label": "Pain relief",
@@ -840,7 +928,12 @@
       "title": "Walk in today",
       "sub": "Speak directly with a pharmacist",
       "line1": "We look forward to seeing you",
-      "line2": "Trusted local care"
+      "line2": "Trusted local care",
+      "landscape": {
+       "title": "Speak to your pharmacist",
+       "sub": "We're here to help",
+       "line1": "Ask us about any of these services"
+      }
      }
     },
     "closed": {
@@ -1005,6 +1098,10 @@
      "greeting": "Good morning,<br>${Suburb}",
      "introTitle": "Three reasons to walk in",
      "introSub": "We speak your language.",
+     "landscape": {
+      "introTitle": "Our services",
+      "introSub": "Speak to your pharmacist"
+     },
      "slots": [
       {
        "label": "Medicine packs",
@@ -1035,13 +1132,22 @@
       "title": "Walk in today",
       "sub": "Speak directly with a pharmacist",
       "line1": "We look forward to seeing you",
-      "line2": "Trusted local care"
+      "line2": "Trusted local care",
+      "landscape": {
+       "title": "Speak to your pharmacist",
+       "sub": "We're here to help",
+       "line1": "Ask us about any of these services"
+      }
      }
     },
     "afternoon": {
      "greeting": "Good afternoon,<br>${Suburb}",
      "introTitle": "On your way home?",
      "introSub": "We make it easy.",
+     "landscape": {
+      "introTitle": "Our services",
+      "introSub": "Speak to your pharmacist"
+     },
      "slots": [
       {
        "label": "Vitamins",
@@ -1049,7 +1155,10 @@
        "title": "Vitamins and wellness",
        "sub": "Top up on your way home",
        "line1": "Advice that suits you",
-       "line2": "Ask our team"
+       "line2": "Ask our team",
+       "landscape": {
+        "sub": "Top up today"
+       }
       },
       {
        "label": "Home delivery",
@@ -1057,7 +1166,10 @@
        "title": "Free home delivery",
        "sub": "We bring it to you",
        "line1": "Scripts and everyday needs",
-       "line2": "Ask in store to set up"
+       "line2": "Ask in store to set up",
+       "landscape": {
+        "line2": "Ask us to set up"
+       }
       },
       {
        "label": "Scripts",
@@ -1072,7 +1184,12 @@
       "title": "Walk in today",
       "sub": "Speak directly with a pharmacist",
       "line1": "We look forward to seeing you",
-      "line2": "Trusted local care"
+      "line2": "Trusted local care",
+      "landscape": {
+       "title": "Speak to your pharmacist",
+       "sub": "We're here to help",
+       "line1": "Ask us about any of these services"
+      }
      }
     },
     "closed": {

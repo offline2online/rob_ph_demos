@@ -10,6 +10,16 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Added
 
+- **In-store wording for landscape Morning and Afternoon.** Landscape screens are inside the pharmacy, so in
+  landscape the promotion scenes play landscape wording that never asks the viewer to walk in: intro "Our services"
+  / "Speak to your pharmacist", close "Speak to your pharmacist" / "We're here to help" / "Ask us about any of these
+  services", and service lines such as "Ask us this morning", "Talk to us today", "Ask us to book". Portrait plays
+  exactly what it did. The copy can now differ by orientation: optional `landscape` overrides beside the copy they
+  replace (`content.landscape`, `slots[i].landscape`, `close.landscape`), each falling back to the shared copy when
+  empty, inherited with their master section (docs/DATA-CONTRACT.md §4). The editor's Portrait/Landscape tabs choose
+  which wording its copy fields edit, and the preview and Download MP4 follow. Defaults, seed data, fixtures and the
+  service library carry the wording; re-running the seed adds it to seeded content still on the fixture copy,
+  leaving edited copy and every portrait line alone. Sales Promos, Seasonal and Closed are unchanged.
 - **Special opening hours on the screen (Christmas, New Year, Australia Day).** The proxy passes a store's special
   hours through from Personalisation Hub as `store_info.special_hours[]` (`name`, `date`, `open`, `open_time`,
   `close_time`; checked strictly, `[]` when PH sends none; docs/DATA-CONTRACT.md). The "Open today" bar and
